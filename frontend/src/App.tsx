@@ -5,6 +5,10 @@ import CoachDashboard from './pages/CoachDashboard'
 import MatchAnalysisDashboard from './pages/MatchAnalysisDashboard'
 import RegisterPage from './pages/RegisterPage'
 import LoginPage from './pages/LoginPage'
+import UploadPage from './pages/UploadPage'
+import JobDetailsPage from './pages/JobDetailsPage'
+import HighlightsViewerPage from './pages/HighlightsViewerPage'
+import ProfilePage from './pages/ProfilePage'
 import ProtectedRoute from './components/ProtectedRoute'
 import { authService } from './utils/auth'
 
@@ -16,7 +20,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
 
-        {/* Protected Routes */}
+        {/* Protected Player Routes */}
         <Route
           path="/player-dashboard"
           element={
@@ -26,10 +30,46 @@ export default function App() {
           }
         />
         <Route
+          path="/upload"
+          element={
+            <ProtectedRoute requiredRole="PLAYER">
+              <UploadPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/job/:jobId"
+          element={
+            <ProtectedRoute requiredRole="PLAYER">
+              <JobDetailsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/highlights/:videoId"
+          element={
+            <ProtectedRoute requiredRole="PLAYER">
+              <HighlightsViewerPage />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Protected Coach Routes */}
+        <Route
           path="/coach-dashboard"
           element={
             <ProtectedRoute requiredRole="COACH">
               <CoachDashboard />
+            </ProtectedRoute>
+          }
+        />
+
+        {/* Shared Protected Routes */}
+        <Route
+          path="/profile"
+          element={
+            <ProtectedRoute>
+              <ProfilePage />
             </ProtectedRoute>
           }
         />
