@@ -68,13 +68,9 @@ def db_health_check():
         return {"status": "error", "detail": str(e)}
 
 
-# Import routers
-from api.routes import videos, coaches, connections, users
+from routes import auth
 
-app.include_router(videos.router, prefix="/api/v1/videos", tags=["videos"])
-app.include_router(coaches.router, prefix="/api/v1/coaches", tags=["coaches"])
-app.include_router(connections.router, prefix="/api/v1/connect", tags=["connections"])
-app.include_router(users.router, prefix="/api/v1/users", tags=["users"])
+app.include_router(auth.router) 
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

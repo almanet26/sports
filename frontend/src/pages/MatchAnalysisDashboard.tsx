@@ -1,5 +1,8 @@
+import DashboardLayout from '../components/DashboardLayout';
+
 export default function MatchAnalysisDashboard() {
   return (
+    <DashboardLayout>
     <div className="min-h-screen bg-slate-900 text-slate-100 flex">
       {/* Far Left - Minimal Icon Navigation */}
       <aside className="w-16 bg-slate-950 border-r border-slate-800 flex flex-col items-center py-6 gap-6">
@@ -275,5 +278,6 @@ export default function MatchAnalysisDashboard() {
         </div>
       </aside>
     </div>
+    </DashboardLayout>
   );
 }

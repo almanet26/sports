@@ -1,5 +1,8 @@
+import DashboardLayout from '../components/DashboardLayout';
+
 export default function CoachDashboard() {
   return (
+    <DashboardLayout>
     <div className="space-y-6 min-h-screen">
       <div className="flex justify-between items-center">
         <div>
@@ -108,5 +111,6 @@ export default function CoachDashboard() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   );
 }

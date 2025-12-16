@@ -1,6 +1,9 @@
+import DashboardLayout from '../components/DashboardLayout';
+
 export default function PlayerDashboard() {
   return (
-    <div className="space-y-6 min-h-screen">
+    <DashboardLayout>
+      <div className="space-y-6 min-h-screen">
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-slate-100">Player Dashboard</h1>
@@ -91,5 +94,6 @@ export default function PlayerDashboard() {
         </div>
       </div>
     </div>
+    </DashboardLayout>
   );
 }
