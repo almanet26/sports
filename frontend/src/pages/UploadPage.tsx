@@ -84,8 +84,8 @@ export default function UploadPage() {
       
       // Redirect to job details
       navigate('/job/123');
-    } catch (err: any) {
-      setError(err.message || 'Failed to start processing');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to start processing')
     } finally {
       setLoading(false);
       setUploadProgress(0);
