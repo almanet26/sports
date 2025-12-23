@@ -1,9 +1,19 @@
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import Column, String, DateTime, ForeignKey, Text
+from enum import Enum
+from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Integer, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database.config import Base, SessionLocal
+
+
+class JobStatus(str, Enum):
+    """Job status enumeration"""
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
 
 class UserSession(Base):
     __tablename__ = "user_sessions"
@@ -90,3 +100,36 @@ class UserSession(Base):
 
     def __repr__(self):
         return f"<UserSession {self.id} for user {self.user_id}>"
+
+
+class ProcessingJob(Base):
+    """Video processing job tracking"""
+    __tablename__ = "processing_jobs"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    job_id = Column(String(36), unique=True, nullable=False, index=True)
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    video_url = Column(Text, nullable=False)
+    match_id = Column(String(255), nullable=False)
+    data_source = Column(String(50), nullable=False)  # cricsheet, sportmonks, etc.
+    status = Column(String(20), nullable=False, default=JobStatus.QUEUED.value)  # queued, processing, completed, failed
+    
+    # Video processing results
+    video_id = Column(String(255), nullable=True)
+    total_clips = Column(Integer, nullable=True)
+    total_events = Column(Integer, nullable=True)
+    result_data = Column(JSON, nullable=True)  # Store clips info, events, etc.
+    
+    # Error handling
+    error_message = Column(Text, nullable=True)
+    
+    # Timestamps
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationship
+    user = relationship("User")
+
+    def __repr__(self):
+        return f"<ProcessingJob {self.job_id} ({self.status})>"
