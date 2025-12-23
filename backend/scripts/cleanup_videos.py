@@ -6,7 +6,7 @@ import os
 import shutil
 from pathlib import Path
 
-storage_path = Path("./storage/videos")
+storage_path = Path("./storage/trimmed")
 
 if storage_path.exists():
     print(f"Cleaning up: {storage_path.absolute()}")
