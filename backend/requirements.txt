@@ -7,6 +7,8 @@ pydantic-settings>=2.0.0
 
 # HTTP Client
 requests>=2.31.0
+beautifulsoup4>=4.12.0  # Web scraping for Play-Cricket
+lxml>=4.9.0  # Parser for BeautifulSoup
 
 # Database & ORM
 sqlalchemy>=2.0.23
@@ -24,21 +26,24 @@ python-jose[cryptography]>=3.3.0
 # Video Processing
 yt-dlp>=2023.11.16  # YouTube downloader
 opencv-python>=4.8.1  # Video analysis
-ffmpeg-python>=0.2.0  # Video trimming/editing
+# Note: FFmpeg is used via subprocess, not ffmpeg-python package
 
 # Task Queue (For production)
-celery>=5.3.4
+# celery>=5.3.4
 
 # Development & Testing
-pytest>=7.4.3
-pytest-asyncio>=0.21.1
-httpx>=0.25.1  # For testing FastAPI
+# pytest>=7.4.3
+# pytest-asyncio>=0.21.1
+# httpx>=0.25.1  # For testing FastAPI
+# black>=24.9.1   
+# pytest>=7.4.0
+# pytest-cov>=4.1.0
 
-# Machine Learning (If needed)
-# numpy>=1.26.2
+# Machine Learning 
+numpy>=1.26.2
+easyocr>=1.7.0
 # torch
 # torchvision
-# easyocr
 # pillow>=10.1.0
 
 # Cloud Storage (For production)

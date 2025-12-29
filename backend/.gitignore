@@ -1,5 +1,6 @@
 # Python
 __pycache__/
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.so
@@ -16,86 +17,74 @@ parts/
 sdist/
 var/
 wheels/
+pip-wheel-metadata/
+share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
 MANIFEST
 
-# Virtual Environment
+# Virtual Environments
 venv/
-env/
 ENV/
+env/
 .venv
+.ENV
 
-# Environment Variables
-.env
-.env.local
-.env.production
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-
-# Logs
+# Logs & Databases
+logs/*.log
 *.log
-logs/
 *.log.*
+*.sqlite
+*.db
+*.db-journal
+logs/
 
-# Testing
-.pytest_cache/
-.coverage
-htmlcov/
-.tox/
-.hypothesis/
-
-# Type Checking
-.mypy_cache/
-.dmypy.json
-dmypy.json
-.pytype/
-
-# IDE
+# IDE & Editor Settings
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
-.project
-.pydevproject
-.settings/
-
-# OS
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
-desktop.ini
 
-# Storage (videos and processed files)
-storage/raw/*.mp4
-storage/raw/*.mkv
-storage/raw/*.webm
-storage/trimmed/*.mp4
-storage/trimmed/*.json
-# Keep directory structure
-!storage/raw/.gitkeep
-!storage/trimmed/.gitkeep
+# Testing & Coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
 
-# Documentation builds
-docs/_build/
-site/
+# Project-Specific
+.EasyOCR/
+**/.EasyOCR/
+debug_frames/
+roi_check.jpg
+*.jpg
+*.png
+*.jpeg
+!docs/*.png
+!docs/**/*.png
 
 # Jupyter Notebooks
-.ipynb_checkpoints
+.ipynb_checkpoints/
 *.ipynb
 
-# Celery
-celerybeat-schedule
-celerybeat.pid
+# Configuration overrides
+config/local_*.json
+config/*_override.json
+
+# Temporary files
+*.tmp
+*.bak
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
 
 # Media files (large files)
 *.mp4
@@ -105,13 +94,39 @@ celerybeat.pid
 *.webm
 *.flv
 
-# Temporary files
-*.tmp
-*.temp
-tmp/
-temp/
+# Storage (videos and processed files)
+storage/raw/*.mp4
+storage/raw/*.mkv
+storage/raw/*.avi
+storage/raw/*.mov
+storage/raw/*.webm
+storage/raw/*.flv
+storage/trimmed/*.mp4
+storage/highlight/*.mp4
+**/*.mp4
+**/*.mkv
+**/*.avi
+**/*.mov
+**/*.webm
+storage/
 
-# API Keys (safety check)
+# API Keys
 *_secrets.py
 secrets.json
 credentials.json
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Keep Folder Structure (Git Tracking)
+!storage/.gitkeep
+!storage/raw/.gitkeep
+!storage/trimmed/.gitkeep
+!storage/highlight/.gitkeep
+!logs/.gitkeep

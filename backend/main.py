@@ -68,8 +68,8 @@ def db_health_check():
         return {"status": "error", "detail": str(e)}
 
 
-from routes import auth
-
+# Include API routes
+from api.routes import auth
 app.include_router(auth.router) 
 
 if __name__ == "__main__":
