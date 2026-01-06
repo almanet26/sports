@@ -1,51 +1,36 @@
+# ============================================
+# Cricket Highlight Platform - Backend Dependencies
+# ============================================
+
 # Core Framework & Server
 fastapi>=0.104.1
 uvicorn[standard]>=0.24.0
+gunicorn>=21.2.0             # Production WSGI server (Render)
 python-dotenv>=1.0.0
-python-multipart>=0.0.6
+python-multipart>=0.0.6      # Required for file uploads
+pydantic>=2.5.0
 pydantic-settings>=2.0.0
 
 # HTTP Client
 requests>=2.31.0
-beautifulsoup4>=4.12.0  # Web scraping for Play-Cricket
-lxml>=4.9.0  # Parser for BeautifulSoup
+httpx>=0.25.1                # Async HTTP client
+aiofiles>=23.2.1             # Async file operations
 
 # Database & ORM
 sqlalchemy>=2.0.23
-psycopg2-binary>=2.9.9  # PostgreSQL driver
-redis>=5.0.1  # For caching and task queue
+psycopg2-binary>=2.9.9       # PostgreSQL driver
 
 # Authentication & Security
-pydantic[email]>=2.5.0
 email-validator>=2.0.0
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
-bcrypt==4.0.1
+bcrypt>=4.0.1
 python-jose[cryptography]>=3.3.0
 
 # Video Processing
-yt-dlp>=2023.11.16  # YouTube downloader
-opencv-python>=4.8.1  # Video analysis
-# Note: FFmpeg is used via subprocess, not ffmpeg-python package
+yt-dlp>=2023.11.16           # YouTube downloader
+opencv-python-headless>=4.8.1  # Video analysis (headless for server - no GUI deps)
 
-# Task Queue (For production)
-# celery>=5.3.4
-
-# Development & Testing
-# pytest>=7.4.3
-# pytest-asyncio>=0.21.1
-# httpx>=0.25.1  # For testing FastAPI
-# black>=24.9.1   
-# pytest>=7.4.0
-# pytest-cov>=4.1.0
-
-# Machine Learning 
+# Machine Learning & OCR
 numpy>=1.26.2
-easyocr>=1.7.0
-# torch
-# torchvision
-# pillow>=10.1.0
-
-# Cloud Storage (For production)
-# boto3>=1.29.7  # AWS S3
-# azure-storage-blob  # Azure Blob Storage
+easyocr>=1.7.0               # OCR text recognition

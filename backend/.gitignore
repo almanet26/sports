@@ -130,3 +130,5 @@ Thumbs.db
 !storage/trimmed/.gitkeep
 !storage/highlight/.gitkeep
 !logs/.gitkeep
+
+src/
