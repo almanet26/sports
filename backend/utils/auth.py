@@ -16,15 +16,16 @@ import secrets
 import os
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("JWT_EXPIRATION_MINUTES", "1800"))  
 REFRESH_TOKEN_EXPIRE_DAYS = 30
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 def get_password_hash(password: str) -> str:
@@ -51,9 +52,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
     return encoded_jwt
 
 
-def create_refresh_token() -> str:
-    """Create a secure refresh token"""
-    return secrets.token_urlsafe(64)
+def create_refresh_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """Creates a refresh token"""
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(days=7)
+    
+    to_encode.update({"exp": expire, "type": "refresh"})
+    
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
 
 def verify_access_token(token: str) -> dict:
@@ -73,7 +83,7 @@ def get_current_user(
     credentials: HTTPAuthorizationCredentials = Security(security),
     db: Session = Depends(get_db),
 ) -> User:
-    """Get current authenticated user from JWT token"""
+    """Get current authenticated user from JWT token with retry logic"""
     token = credentials.credentials
     payload = verify_access_token(token)
     email = payload.get("sub")
@@ -81,11 +91,61 @@ def get_current_user(
     if email is None:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
-    user = db.query(User).filter(User.email == email).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
+    # Retry logic for transient database errors
+    max_retries = 3
+    last_error = None
+    
+    for attempt in range(max_retries):
+        try:
+            user = db.query(User).filter(User.email == email).first()
+            if user is None:
+                raise HTTPException(status_code=401, detail="User not found")
+            return user
+        except HTTPException:
+            raise
+        except Exception as e:
+            last_error = e
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(0.5 * (attempt + 1))
+                # Try to rollback and get fresh connection
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+            continue
+    
+    # All retries failed
+    raise HTTPException(
+        status_code=503, 
+        detail="Database temporarily unavailable. Please try again."
+    )
 
-    return user
+
+def get_optional_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(optional_security),
+    db: Session = Depends(get_db),
+) -> Optional[User]:
+    """
+    Get current user if authenticated, otherwise return None.
+    Use this for endpoints that should allow both authenticated and unauthenticated access.
+    """
+    if credentials is None:
+        return None
+    
+    try:
+        token = credentials.credentials
+        payload = verify_access_token(token)
+        email = payload.get("sub")
+        
+        if email is None:
+            return None
+        
+        user = db.query(User).filter(User.email == email).first()
+        return user
+    except Exception:
+        # Any error in auth means no user
+        return None
 
 
 def require_role(allowed_roles: list):
