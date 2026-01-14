@@ -8,10 +8,49 @@ from datetime import datetime
 import uuid
 
 
-UserCreate = None
-UserLogin = None
-Token = None
-UserResponse = None
+# Registration Schemas
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    role: str  # PLAYER, COACH, ADMIN
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v):
+        if v not in ["PLAYER", "COACH", "ADMIN"]:
+            raise ValueError("Role must be PLAYER, COACH, or ADMIN")
+        return v
+
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError("Password must be at least 8 characters")
+        return v
+
+
+# Login Schemas
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+# Token Response
+class UserResponse(BaseModel):
+    id: uuid.UUID
+    email: str
+    name: str  # Changed from full_name to match User model
+    role: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: Optional[dict] = None
 
 
 # Registration Schemas

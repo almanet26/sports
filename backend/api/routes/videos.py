@@ -1,23 +1,723 @@
 """
 Video processing API routes.
+
+Handles:
+- Video upload (file + metadata)
+- Public library browsing
+- Private dashboard management
+- Event filtering
+- Legacy processing endpoints
 """
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Depends, UploadFile, File, Form, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, HttpUrl
 from typing import Optional, List
+from pathlib import Path
+from datetime import datetime
 import logging
+import shutil
+import uuid
 
-from src.engine import (
-    download_video,
-    fetch_match_data,
-    generate_highlights,
-    create_highlight_reel,
-)
 from utils.config import settings
-from utils.auth import get_current_user
+from utils.auth import get_current_user, get_optional_user, require_role
+from utils.youtube import download_youtube_video, validate_youtube_url
+from database.config import get_db
 from database.models.user import User
+from database.models.video import Video, HighlightEvent, HighlightJob, VideoStatus, VideoVisibility
+from schemas.video import (
+    VideoUploadRequest, VideoUpdateRequest, VideoResponse, VideoListResponse,
+    HighlightEventResponse, VideoEventsResponse
+)
+from sqlalchemy.orm import Session
+
+# Lazy import for legacy engine functions
+def get_engine_functions():
+    from src.engine import (
+        download_video,
+        fetch_match_data,
+        generate_highlights,
+        create_highlight_reel,
+    )
+    return download_video, fetch_match_data, generate_highlights, create_highlight_reel
 
 router = APIRouter(prefix="/videos", tags=["videos"])
+logger = logging.getLogger(__name__)
+
+# ============ Storage Configuration ============
+UPLOAD_DIR = Path("storage/uploads")
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+# ============ NEW: Video Upload Endpoints ============
+
+@router.post("/upload", response_model=VideoResponse, status_code=201)
+async def upload_video(
+    file: UploadFile = File(...),
+    title: str = Form(...),
+    description: Optional[str] = Form(None),
+    match_date: Optional[str] = Form(None),
+    teams: Optional[str] = Form(None),
+    venue: Optional[str] = Form(None),
+    visibility: str = Form("private"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["ADMIN", "COACH"])),
+):
+    """
+    Upload a video file with metadata.
+    
+    **Access Control:** 
+    - ADMIN: Can upload to public library
+    - COACH (Premium): Can upload to private dashboard
+    - PLAYER (Free): Cannot upload
+    
+    **File Constraints:**
+    - Max size: 2GB
+    - Formats: mp4, mkv, avi, mov, webm
+    """
+    # Validate file type
+    allowed_extensions = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
+        )
+    
+    # Enforce visibility rules
+    if visibility == "public" and current_user.role != "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can upload to public library"
+        )
+    
+    # Generate unique filename
+    video_id = str(uuid.uuid4())
+    file_path = UPLOAD_DIR / f"{video_id}{file_ext}"
+    
+    # Save file
+    try:
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(file.file, buffer)
+        file_size = file_path.stat().st_size
+    except Exception as e:
+        logger.error(f"Failed to save file: {e}")
+        raise HTTPException(status_code=500, detail="Failed to save video file")
+    
+    # Parse match_date if provided
+    parsed_date = None
+    if match_date:
+        try:
+            parsed_date = datetime.fromisoformat(match_date)
+        except ValueError:
+            pass
+    
+    # Create video record
+    video = Video(
+        id=video_id,
+        title=title,
+        description=description,
+        file_path=str(file_path),
+        file_size_bytes=file_size,
+        match_date=parsed_date,
+        teams=teams,
+        venue=venue,
+        visibility=visibility,
+        uploaded_by=current_user.id,
+        status=VideoStatus.PENDING.value,
+    )
+    
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+    
+    logger.info(f"Video uploaded: {video.id} by {current_user.email}")
+    
+    return VideoResponse(
+        id=video.id,
+        title=video.title,
+        description=video.description,
+        duration_seconds=video.duration_seconds,
+        match_date=video.match_date,
+        teams=video.teams,
+        venue=video.venue,
+        visibility=video.visibility,
+        status=video.status,
+        total_events=video.total_events or 0,
+        total_fours=video.total_fours or 0,
+        total_sixes=video.total_sixes or 0,
+        total_wickets=video.total_wickets or 0,
+        uploaded_by=video.uploaded_by,
+        created_at=video.created_at,
+    )
+
+
+@router.post("/upload/youtube", response_model=VideoResponse, status_code=201)
+async def upload_youtube_video(
+    url: str = Form(...),
+    title: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    match_date: Optional[str] = Form(None),
+    teams: Optional[str] = Form(None),
+    venue: Optional[str] = Form(None),
+    visibility: str = Form("private"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["ADMIN", "COACH"])),
+):
+    """
+    Upload a video from YouTube URL.
+    
+    **Access Control:** 
+    - ADMIN: Can upload to public library
+    - COACH (Premium): Can upload to private dashboard
+    - PLAYER (Free): Cannot upload
+    
+    **Process:**
+    1. Validates YouTube URL
+    2. Downloads video using yt-dlp
+    3. Stores in uploads directory
+    4. Creates video record with metadata
+    """
+    # Validate YouTube URL
+    if not validate_youtube_url(url):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid YouTube URL. Please provide a valid YouTube video link."
+        )
+    
+    # Enforce visibility rules
+    if visibility == "public" and current_user.role != "ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Only admins can upload to public library"
+        )
+    
+    # Generate unique video ID
+    video_id = str(uuid.uuid4())
+    
+    # Download video from YouTube
+    try:
+        logger.info(f"Downloading YouTube video: {url}")
+        download_result = download_youtube_video(
+            url=url,
+            output_dir=UPLOAD_DIR,
+            video_id=video_id,
+        )
+        
+        file_path = Path(download_result['file_path'])
+        file_size = download_result['file_size']
+        duration = download_result['duration']
+        youtube_title = download_result['title']
+        
+        # Use provided title or fall back to YouTube title
+        final_title = title if title else youtube_title
+        
+    except Exception as e:
+        logger.error(f"Failed to download YouTube video: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to download video from YouTube: {str(e)}"
+        )
+    
+    # Parse match_date if provided
+    parsed_date = None
+    if match_date:
+        try:
+            parsed_date = datetime.fromisoformat(match_date)
+        except ValueError:
+            pass
+    
+    # Create video record
+    video = Video(
+        id=video_id,
+        title=final_title,
+        description=description,
+        file_path=str(file_path),
+        file_size_bytes=file_size,
+        duration_seconds=duration,
+        match_date=parsed_date,
+        teams=teams,
+        venue=venue,
+        visibility=visibility,
+        uploaded_by=current_user.id,
+        status=VideoStatus.PENDING.value,
+    )
+    
+    db.add(video)
+    db.commit()
+    db.refresh(video)
+    
+    logger.info(f"YouTube video uploaded: {video.id} from {url} by {current_user.email}")
+    
+    return VideoResponse(
+        id=video.id,
+        title=video.title,
+        description=video.description,
+        duration_seconds=video.duration_seconds,
+        match_date=video.match_date,
+        teams=video.teams,
+        venue=video.venue,
+        visibility=video.visibility,
+        status=video.status,
+        total_events=video.total_events or 0,
+        total_fours=video.total_fours or 0,
+        total_sixes=video.total_sixes or 0,
+        total_wickets=video.total_wickets or 0,
+        uploaded_by=video.uploaded_by,
+        created_at=video.created_at,
+    )
+
+
+@router.get("/all", response_model=VideoListResponse)
+def list_all_videos(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    visibility: Optional[str] = Query(None, description="Filter by visibility: PUBLIC, PRIVATE"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["ADMIN"])),
+):
+    """
+    List ALL videos (Admin only).
+    
+    **Access Control:** ADMIN only.
+    """
+    offset = (page - 1) * per_page
+    
+    query = db.query(Video).filter(Video.deleted_at.is_(None))
+    
+    if visibility:
+        query = query.filter(Video.visibility == visibility)
+    
+    total = query.count()
+    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
+    
+    return VideoListResponse(
+        videos=[VideoResponse(
+            id=v.id,
+            title=v.title,
+            description=v.description,
+            duration_seconds=v.duration_seconds,
+            match_date=v.match_date,
+            teams=v.teams,
+            venue=v.venue,
+            visibility=v.visibility,
+            status=v.status,
+            total_events=v.total_events or 0,
+            total_fours=v.total_fours or 0,
+            total_sixes=v.total_sixes or 0,
+            total_wickets=v.total_wickets or 0,
+            uploaded_by=v.uploaded_by,
+            created_at=v.created_at,
+            file_path=v.file_path,
+            supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+        ) for v in videos],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.get("/public", response_model=VideoListResponse)
+def list_public_videos(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """
+    List all public videos (Public Library).
+    
+    **Access:** Open to all users (including unauthenticated).
+    """
+    offset = (page - 1) * per_page
+    
+    query = db.query(Video).filter(
+        Video.visibility == VideoVisibility.PUBLIC.value,
+        Video.deleted_at.is_(None),
+    )
+    
+    total = query.count()
+    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
+    
+    return VideoListResponse(
+        videos=[VideoResponse(
+            id=v.id,
+            title=v.title,
+            description=v.description,
+            duration_seconds=v.duration_seconds,
+            match_date=v.match_date,
+            teams=v.teams,
+            venue=v.venue,
+            visibility=v.visibility,
+            status=v.status,
+            total_events=v.total_events or 0,
+            total_fours=v.total_fours or 0,
+            total_sixes=v.total_sixes or 0,
+            total_wickets=v.total_wickets or 0,
+            uploaded_by=v.uploaded_by,
+            created_at=v.created_at,
+            file_path=v.file_path,
+            supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+        ) for v in videos],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.get("/private", response_model=VideoListResponse)
+def list_private_videos(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["COACH"])),
+):
+    """
+    List user's private videos (Premium Dashboard).
+    
+    **Access Control:** COACH (Premium) only.
+    """
+    offset = (page - 1) * per_page
+    
+    query = db.query(Video).filter(
+        Video.uploaded_by == current_user.id,
+        Video.visibility == VideoVisibility.PRIVATE.value,
+        Video.deleted_at.is_(None),
+    )
+    
+    total = query.count()
+    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
+    
+    return VideoListResponse(
+        videos=[VideoResponse(
+            id=v.id,
+            title=v.title,
+            description=v.description,
+            duration_seconds=v.duration_seconds,
+            match_date=v.match_date,
+            teams=v.teams,
+            venue=v.venue,
+            visibility=v.visibility,
+            status=v.status,
+            total_events=v.total_events or 0,
+            total_fours=v.total_fours or 0,
+            total_sixes=v.total_sixes or 0,
+            total_wickets=v.total_wickets or 0,
+            uploaded_by=v.uploaded_by,
+            created_at=v.created_at,
+            file_path=v.file_path,
+            supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+        ) for v in videos],
+        total=total,
+        page=page,
+        per_page=per_page,
+    )
+
+
+@router.get("/{video_id}", response_model=VideoResponse)
+def get_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """
+    Get video details by ID.
+    
+    **Access Control:**
+    - Public videos: accessible to all (no auth required)
+    - Private videos: owner or ADMIN only
+    """
+    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check access - public videos are accessible to everyone
+    if video.visibility == VideoVisibility.PRIVATE.value:
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+        if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Get supercut_path from highlight_job if available
+    supercut_path = None
+    if video.highlight_job and video.highlight_job.supercut_path:
+        supercut_path = video.highlight_job.supercut_path
+    
+    return VideoResponse(
+        id=video.id,
+        title=video.title,
+        description=video.description,
+        duration_seconds=video.duration_seconds,
+        match_date=video.match_date,
+        teams=video.teams,
+        venue=video.venue,
+        visibility=video.visibility,
+        status=video.status,
+        total_events=video.total_events or 0,
+        total_fours=video.total_fours or 0,
+        total_sixes=video.total_sixes or 0,
+        total_wickets=video.total_wickets or 0,
+        uploaded_by=video.uploaded_by,
+        created_at=video.created_at,
+        file_path=video.file_path,
+        supercut_path=supercut_path,
+    )
+
+
+@router.get("/{video_id}/stream")
+def stream_video(
+    video_id: str,
+):
+    """
+    Stream the original video file.
+    
+    **Access Control:**
+    - Public videos: accessible to all (no auth required)
+    - Private videos: owner or ADMIN only
+    
+    Note: Database session is managed manually to prevent connection
+    timeout during long video streams.
+    """
+    # Manually manage DB session to close before streaming
+    from database.config import SessionLocal
+    db = SessionLocal()
+    
+    try:
+        video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
+        
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # For private videos, we'd need auth - but for simplicity, 
+        # only serve public videos without auth on this endpoint
+        if video.visibility == VideoVisibility.PRIVATE.value:
+            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+        
+        # Extract needed data before closing session
+        file_path_str = video.file_path
+        video_title = video.title
+    finally:
+        db.close()
+    
+    # Now stream file with DB connection closed
+    file_path = Path(file_path_str)
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    return FileResponse(
+        path=str(file_path),
+        media_type="video/mp4",
+        filename=f"{video_title}.mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
+
+
+@router.get("/{video_id}/supercut")
+def stream_supercut(
+    video_id: str,
+):
+    """
+    Stream the generated highlight supercut video.
+    
+    **Access Control:**
+    - Public videos: accessible to all (no auth required)
+    - Private videos: require authentication (use /stream endpoint with auth)
+    
+    **Status:**
+    - 404 if supercut not yet generated (processing still in progress)
+    
+    Note: Database session is managed manually to prevent connection
+    timeout during long video streams.
+    """
+    # Manually manage DB session to close before streaming
+    from database.config import SessionLocal
+    db = SessionLocal()
+    
+    try:
+        video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
+        
+        if not video:
+            raise HTTPException(status_code=404, detail="Video not found")
+        
+        # For private videos, require authentication
+        if video.visibility == VideoVisibility.PRIVATE.value:
+            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+        
+        # Check if highlight job exists and has supercut
+        if not video.highlight_job or not video.highlight_job.supercut_path:
+            raise HTTPException(status_code=404, detail="Supercut not yet generated. Processing may still be in progress.")
+        
+        # Extract needed data before closing session
+        supercut_path_str = video.highlight_job.supercut_path
+        video_title = video.title
+    finally:
+        db.close()
+    
+    # Now stream file with DB connection closed
+    supercut_path = Path(supercut_path_str)
+    if not supercut_path.exists():
+        raise HTTPException(status_code=404, detail="Supercut file not found on disk")
+    
+    return FileResponse(
+        path=str(supercut_path),
+        media_type="video/mp4",
+        filename=f"{video_title}_highlights.mp4",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        }
+    )
+
+
+@router.get("/{video_id}/events", response_model=VideoEventsResponse)
+def get_video_events(
+    video_id: str,
+    event_type: Optional[str] = Query(None, description="Filter by event type: FOUR, SIX, WICKET"),
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """
+    Get highlight events for a video with optional filtering.
+    
+    **Filters:**
+    - `event_type=FOUR`: Show only fours
+    - `event_type=SIX`: Show only sixes
+    - `event_type=WICKET`: Show only wickets
+    
+    **Access Control:**
+    - Public videos: accessible to all (no auth required)
+    - Private videos: owner or ADMIN only
+    """
+    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check access - public videos are accessible to everyone
+    if video.visibility == VideoVisibility.PRIVATE.value:
+        if not current_user:
+            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+        if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
+            raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Query events
+    query = db.query(HighlightEvent).filter(HighlightEvent.video_id == video_id)
+    
+    if event_type:
+        event_type = event_type.upper()
+        if event_type not in ["FOUR", "SIX", "WICKET"]:
+            raise HTTPException(status_code=400, detail="Invalid event_type. Use: FOUR, SIX, WICKET")
+        query = query.filter(HighlightEvent.event_type == event_type)
+    
+    events = query.order_by(HighlightEvent.timestamp_seconds).all()
+    
+    return VideoEventsResponse(
+        video_id=video_id,
+        events=[HighlightEventResponse(
+            id=e.id,
+            event_type=e.event_type,
+            timestamp_seconds=e.timestamp_seconds,
+            score_before=e.score_before,
+            score_after=e.score_after,
+            overs=e.overs,
+            clip_path=e.clip_path,
+            clip_duration_seconds=e.clip_duration_seconds,
+        ) for e in events],
+        total=len(events),
+        filter_applied=event_type,
+    )
+
+
+@router.post("/{video_id}/publish", response_model=VideoResponse)
+def publish_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_role(["COACH"])),
+):
+    """
+    Publish a private video to the public library.
+    
+    **Access Control:** COACH (Premium) only - can publish their own videos.
+    """
+    video = db.query(Video).filter(
+        Video.id == video_id,
+        Video.uploaded_by == current_user.id,
+        Video.deleted_at.is_(None),
+    ).first()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found or access denied")
+    
+    if video.visibility == VideoVisibility.PUBLIC.value:
+        raise HTTPException(status_code=400, detail="Video is already public")
+    
+    if video.status != VideoStatus.COMPLETED.value:
+        raise HTTPException(status_code=400, detail="Only processed videos can be published")
+    
+    video.visibility = VideoVisibility.PUBLIC.value
+    db.commit()
+    db.refresh(video)
+    
+    logger.info(f"Video published: {video.id} by {current_user.email}")
+    
+    return VideoResponse(
+        id=video.id,
+        title=video.title,
+        description=video.description,
+        duration_seconds=video.duration_seconds,
+        match_date=video.match_date,
+        teams=video.teams,
+        venue=video.venue,
+        visibility=video.visibility,
+        status=video.status,
+        total_events=video.total_events or 0,
+        total_fours=video.total_fours or 0,
+        total_sixes=video.total_sixes or 0,
+        total_wickets=video.total_wickets or 0,
+        uploaded_by=video.uploaded_by,
+        created_at=video.created_at,
+    )
+
+
+@router.delete("/{video_id}", status_code=204)
+def delete_video(
+    video_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Soft delete a video.
+    
+    **Access Control:**
+    - Users can delete their own private videos
+    - ADMIN can delete any video
+    """
+    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
+    
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found")
+    
+    # Check permission
+    if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Soft delete
+    video.deleted_at = datetime.utcnow()
+    db.commit()
+    
+    logger.info(f"Video deleted: {video.id} by {current_user.email}")
+    
+    return None
+
+
+# ============ LEGACY: Existing Processing Endpoints ============
 logger = logging.getLogger(__name__)
 
 
@@ -68,6 +768,9 @@ def process_video_task(
     from database.config import get_db
     from database.models.session import ProcessingJob, JobStatus
     from datetime import datetime
+    
+    # Import engine functions
+    download_video, fetch_match_data, generate_highlights, create_highlight_reel = get_engine_functions()
     
     db = next(get_db())
     
@@ -309,6 +1012,9 @@ async def create_reel(
     """
     try:
         from pathlib import Path
+
+        # Import engine functions
+        _, _, _, create_highlight_reel = get_engine_functions()
 
         # Construct video path
         video_path = Path(settings.STORAGE_RAW_PATH) / f"{video_id}.mp4"
