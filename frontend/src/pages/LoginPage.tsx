@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { useAuthStore } from '../store/authStore';
 
 interface LoginFormData {
   email: string;
@@ -9,6 +10,8 @@ interface LoginFormData {
 export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
+  const login = useAuthStore((state) => state.login);
+  
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
     password: '',
@@ -25,45 +28,18 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(formData),
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || 'Login failed');
-      }
-
-      const data = await response.json();
-      console.log('Login successful:', data);
-
-      // Store tokens
-      localStorage.setItem('access_token', data.access_token);
-      localStorage.setItem('refresh_token', data.refresh_token);
-
-      // Fetch user profile to determine role
-      const profileResponse = await fetch('http://localhost:8000/api/v1/auth/me', {
-        headers: {
-          'Authorization': `Bearer ${data.access_token}`,
-        },
-      });
-
-      if (profileResponse.ok) {
-        const profile = await profileResponse.json();
-        localStorage.setItem('user_profile', JSON.stringify(profile));
-
-        // Redirect based on role
-        if (profile.role === 'PLAYER') {
-          navigate('/player-dashboard');
-        } else if (profile.role === 'COACH') {
-          navigate('/coach-dashboard');
-        } else {
-          navigate('/');
-        }
+      await login(formData.email, formData.password);
+      
+      // Redirect based on role (user is updated by the store)
+      const currentUser = useAuthStore.getState().user;
+      if (currentUser?.role === 'PLAYER') {
+        navigate('/player');
+      } else if (currentUser?.role === 'COACH') {
+        navigate('/coach');
+      } else if (currentUser?.role === 'ADMIN') {
+        navigate('/admin');
+      } else {
+        navigate('/');
       }
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred during login');
