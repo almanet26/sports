@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import DashboardLayout from '../components/DashboardLayout';
+import { DashboardLayout } from '../components/layout/DashboardLayout';
 import { authService } from '../utils/auth';
+import { authApi } from '../lib/api';
 
 export default function ProfilePage() {
   const userProfile = authService.getUserProfile();
@@ -15,9 +16,17 @@ export default function ProfilePage() {
   });
 
   const handleSave = async () => {
-    // TODO: Implement API call to update profile
-    console.log('Saving profile:', formData);
-    setIsEditing(false);
+    try {
+      await authApi.updateProfile({
+        name: formData.name,
+        phone: formData.phone,
+        team: formData.team,
+        profile_bio: formData.bio
+      });
+      setIsEditing(false);
+    } catch (error) {
+      console.error('Failed to update profile:', error);
+    }
   };
 
   return (
