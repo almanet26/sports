@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
 
 interface RegisterFormData {
   name: string;
@@ -44,35 +45,27 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/api/v1/auth/register', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-          role: formData.role,
-          phone: formData.phone || null,
-          jersey_number: formData.jerseyNumber || null,
-          team: formData.team || null,
-          profile_bio: formData.profileBio || null,
-        }),
+      const response = await api.post('/auth/register', {
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+        role: formData.role,
+        phone: formData.phone || null,
+        jersey_number: formData.jerseyNumber || null,
+        team: formData.team || null,
+        profile_bio: formData.profileBio || null,
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.detail || 'Registration failed');
-      }
-
-      const data = await response.json();
-      console.log('Registration successful:', data);
+      console.log('Registration successful:', response.data);
 
       // Redirect to login
       navigate('/login', { state: { message: 'Registration successful! Please log in.' } });
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'An error occurred during registration');
+      if (err instanceof Error) {
+        setError(err.message);
+      } else {
+        setError('An error occurred during registration');
+      }
     } finally {
       setLoading(false);
     }
