@@ -9,6 +9,7 @@ import { DashboardLayout } from './components/layout/DashboardLayout';
 // Pages
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import LandingPage from './pages/LandingPage';
 import PlayerDashboard from './pages/PlayerDashboard';
 import CoachDashboard from './pages/CoachDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -85,7 +86,7 @@ function RoleGuard({ allowedRoles, fallbackPath = '/player' }: RoleGuardProps) {
 }
 
 // Guest Route - Only accessible when NOT authenticated
- function GuestRoute() {
+function GuestRoute() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
   
@@ -118,7 +119,10 @@ export default function AppRouter() {
   return (
     <BrowserRouter>
       <Routes>
-        {/* Guest Only Routes */}
+        {/* Public Home Page - Accessible to all */}
+        <Route path="/" element={<LandingPage />} />
+        
+        {/* Auth Pages - Guest only */}
         <Route element={<GuestRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
@@ -131,9 +135,9 @@ export default function AppRouter() {
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/library" element={<HighlightsPage />} />
+            <Route path="/video/:videoId" element={<VideoDetailPage />} />
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/settings" element={<ProfilePage />} />
-            <Route path="/video/:videoId" element={<VideoDetailPage />} />
             <Route path="/player" element={<PlayerDashboard />} />
           </Route>
         </Route>
@@ -163,8 +167,7 @@ export default function AppRouter() {
         <Route path="/profile" element={<Navigate to="/settings" replace />} />
         
         {/* Default Routes */}
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>
   );
