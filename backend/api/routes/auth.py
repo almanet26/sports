@@ -42,7 +42,7 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     new_user = User(
         email=user_data.email,
         password_hash=hashed_password,
-        name=user_data.full_name,  # User model has 'name' field
+        name=user_data.name,  
         role=user_data.role,
     )
 

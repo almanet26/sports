@@ -113,9 +113,15 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
         db.commit()
         db.refresh(job)
         
-        # Extract clips
+        # Extract clips with configurable padding
         clips_dir = Path("storage/trimmed") / video_id
         clips_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Use config values for padding or fall back to defaults
+        clip_before = config.get('padding_before', 12) if config else 12
+        clip_after = config.get('padding_after', 8) if config else 8
+        
+        logger.info(f"Extracting clips with padding: before={clip_before}s, after={clip_after}s")
         
         clips = []
         if events:
@@ -123,8 +129,8 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
                 video_path=video_path,
                 events=events,
                 output_dir=str(clips_dir),
-                before=12,
-                after=5,
+                before=clip_before,
+                after=clip_after,
             )
         
         job.progress_percent = 80

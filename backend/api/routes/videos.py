@@ -60,6 +60,8 @@ async def upload_video(
     teams: Optional[str] = Form(None),
     venue: Optional[str] = Form(None),
     visibility: str = Form("private"),
+    padding_before: float = Form(12.0),
+    padding_after: float = Form(8.0),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["ADMIN", "COACH"])),
 ):

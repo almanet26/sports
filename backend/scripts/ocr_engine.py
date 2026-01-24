@@ -33,8 +33,8 @@ class ScoreboardConfig:
     """ROI configuration for scoreboard regions (calibrated for 1080p broadcasts)."""
 
     DEFAULTS = {
-        'score': {'x': 216, 'y': 940, 'width': 170, 'height': 70},
-        'overs': {'x': 216, 'y': 1010, 'width': 100, 'height': 40},
+        'score': {'x': 140, 'y': 620, 'width': 100, 'height': 50},
+        'overs': {'x': 140, 'y': 670, 'width': 60, 'height': 30},
     }
 
     def __init__(self, config_file: Optional[str] = None):
@@ -479,7 +479,7 @@ class EventDetector:
 
 
 # VIDEO PROCESSING
-def visualize_roi(video_path: str, config: ScoreboardConfig, timestamp: float = 5900.0) -> str:
+def visualize_roi(video_path: str, config: ScoreboardConfig, timestamp: float = 0.0) -> str:
     """Draw ROI boxes on a single frame for calibration verification."""
     logger.info("=" * 60)
     logger.info("🔍 ROI VISUALIZATION MODE")
@@ -490,26 +490,50 @@ def visualize_roi(video_path: str, config: ScoreboardConfig, timestamp: float = 
         raise ValueError(f"Cannot open video: {video_path}")
 
     fps = video.get(cv2.CAP_PROP_FPS)
-    video.set(cv2.CAP_PROP_POS_FRAMES, int(timestamp * fps))
+    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    frame_idx = min(int(timestamp * fps), total_frames - 1)
+    
+    logger.info(f"Video: {Path(video_path).name} | FPS: {fps:.0f} | Total frames: {total_frames}")
+    logger.info(f"Reading frame at timestamp {timestamp}s (frame {frame_idx}/{total_frames})")
+    
+    video.set(cv2.CAP_PROP_POS_FRAMES, frame_idx)
     ret, frame = video.read()
     video.release()
 
     if not ret:
         raise ValueError(f"Cannot read frame at {timestamp}s")
 
+    height, width = frame.shape[:2]
+    logger.info(f"Frame dimensions: {width}x{height}")
+    logger.info(f"Score ROI: ({config.roi_x}, {config.roi_y}) to ({config.roi_x + config.roi_width}, {config.roi_y + config.roi_height})")
+    logger.info(f"Overs ROI: ({config.overs_roi_x}, {config.overs_roi_y}) to ({config.overs_roi_x + config.overs_roi_width}, {config.overs_roi_y + config.overs_roi_height})")
+
+    # Validate ROI bounds
+    if config.roi_y + config.roi_height > height or config.roi_x + config.roi_width > width:
+        logger.warning(f"⚠️  Score ROI partially outside frame bounds! Frame: {width}x{height}")
+    if config.overs_roi_y + config.overs_roi_height > height or config.overs_roi_x + config.overs_roi_width > width:
+        logger.warning(f"⚠️  Overs ROI partially outside frame bounds! Frame: {width}x{height}")
+
     # Draw Score ROI (green)
-    cv2.rectangle(frame, (config.roi_x, config.roi_y), (config.roi_x + config.roi_width, config.roi_y + config.roi_height), (0, 255, 0), 3)
-    cv2.putText(frame, "SCORE", (config.roi_x, config.roi_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    pt1_score = (config.roi_x, config.roi_y)
+    pt2_score = (config.roi_x + config.roi_width, config.roi_y + config.roi_height)
+    cv2.rectangle(frame, pt1_score, pt2_score, (0, 255, 0), 3)
+    cv2.putText(frame, "SCORE", (config.roi_x, max(10, config.roi_y - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
     # Draw Overs ROI (blue)
-    cv2.rectangle(frame, (config.overs_roi_x, config.overs_roi_y), (config.overs_roi_x + config.overs_roi_width, config.overs_roi_y + config.overs_roi_height), (255, 0, 0), 3)
-    cv2.putText(frame, "OVERS", (config.overs_roi_x, config.overs_roi_y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
+    pt1_overs = (config.overs_roi_x, config.overs_roi_y)
+    pt2_overs = (config.overs_roi_x + config.overs_roi_width, config.overs_roi_y + config.overs_roi_height)
+    cv2.rectangle(frame, pt1_overs, pt2_overs, (255, 0, 0), 3)
+    cv2.putText(frame, "OVERS", (config.overs_roi_x, max(10, config.overs_roi_y - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 0), 2)
+
+    # Draw frame dimensions text at bottom
+    cv2.putText(frame, f"Frame: {width}x{height}", (10, height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
     output_path = "roi_check.jpg"
     cv2.imwrite(output_path, frame)
     logger.info(f"✅ Saved: {output_path}")
-    logger.info(f"   Score ROI (GREEN): ({config.roi_x}, {config.roi_y}) {config.roi_width}x{config.roi_height}")
-    logger.info(f"   Overs ROI (BLUE):  ({config.overs_roi_x}, {config.overs_roi_y}) {config.overs_roi_width}x{config.overs_roi_height}")
+    logger.info(f"   Green box (SCORE): ({config.roi_x}, {config.roi_y}) {config.roi_width}x{config.roi_height}")
+    logger.info(f"   Blue box (OVERS):  ({config.overs_roi_x}, {config.overs_roi_y}) {config.overs_roi_width}x{config.overs_roi_height}")
     return output_path
 
 
@@ -633,30 +657,177 @@ def process_video(video_path: str, config: ScoreboardConfig, sample_interval: fl
 
 
 # OUTPUT GENERATION
-def extract_clips(video_path: str, events: List[Dict], output_dir: str, before: int = 12, after: int = 5) -> List[str]:
-    """Extract video clips around detected events using FFmpeg."""
+
+# Clip extraction padding (seconds) - captures bowler run-up and crowd reaction
+PADDING_BEFORE: float = 12.0
+PADDING_AFTER: float = 10.0
+
+# Smart merge threshold: if gap between clips is <= this, merge into one continuous clip
+MERGE_GAP_THRESHOLD: float = 7.0
+
+
+def get_video_duration(video_path: str) -> float:
+    """Get video duration in seconds using FFprobe."""
+    cmd = [
+        'ffprobe', '-v', 'error', '-show_entries', 'format=duration',
+        '-of', 'default=noprint_wrappers=1:nokey=1', video_path
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode == 0:
+            return float(result.stdout.strip())
+    except (ValueError, subprocess.SubprocessError) as e:
+        logger.warning(f"Could not determine video duration: {e}")
+    return float('inf')  # Fallback: no upper bound
+
+
+def calculate_clip_ranges(
+    events: List[Dict],
+    video_duration: float,
+    padding_before: float = PADDING_BEFORE,
+    padding_after: float = PADDING_AFTER,
+    merge_gap: float = MERGE_GAP_THRESHOLD
+) -> List[Dict]:
+    """
+    Calculate merged clip ranges from event timestamps.
+    
+    Applies padding to each event and merges overlapping/nearby clips to create
+    smooth, continuous highlight segments instead of choppy individual cuts.
+    
+    Args:
+        events: List of detected events with 'timestamp' key
+        video_duration: Total video duration in seconds (for bounds checking)
+        padding_before: Seconds to include before event (bowler run-up)
+        padding_after: Seconds to include after event (crowd reaction)
+        merge_gap: If gap between clips is <= this, merge into one clip
+    
+    Returns:
+        List of merged clip ranges: [{'start': float, 'end': float, 'events': List[Dict]}]
+    """
+    if not events:
+        return []
+    
+    # Step 1: Create raw time ranges with padding (bounds-checked)
+    raw_ranges = []
+    for event in events:
+        ts = event['timestamp']
+        start = max(0.0, ts - padding_before)
+        end = min(video_duration, ts + padding_after)
+        raw_ranges.append({
+            'start': start,
+            'end': end,
+            'events': [event]
+        })
+    
+    # Step 2: Sort by start time
+    raw_ranges.sort(key=lambda r: r['start'])
+    
+    # Step 3: Smart merge - coalesce overlapping/nearby clips
+    merged = [raw_ranges[0]]
+    
+    for current in raw_ranges[1:]:
+        last = merged[-1]
+        
+        # Merge condition: current starts within (last.end + merge_gap)
+        # This handles both overlapping clips and clips that are close together
+        if current['start'] <= last['end'] + merge_gap:
+            # Extend the last range to include current
+            last['end'] = max(last['end'], current['end'])
+            last['events'].extend(current['events'])
+            logger.debug(f"Merged clips: {last['start']:.1f}s - {last['end']:.1f}s "
+                        f"({len(last['events'])} events)")
+        else:
+            # Gap too large - start a new clip
+            merged.append(current)
+    
+    logger.info(f"📊 Clip coalescing: {len(events)} events → {len(merged)} clips")
+    for i, clip in enumerate(merged, 1):
+        duration = clip['end'] - clip['start']
+        event_types = [e['type'] for e in clip['events']]
+        logger.info(f"   Clip {i}: {clip['start']:.1f}s - {clip['end']:.1f}s "
+                   f"({duration:.1f}s, events: {event_types})")
+    
+    return merged
+
+
+def extract_clips(
+    video_path: str,
+    events: List[Dict],
+    output_dir: str,
+    before: float = PADDING_BEFORE,
+    after: float = PADDING_AFTER,
+    merge_gap: float = MERGE_GAP_THRESHOLD
+) -> List[str]:
+    """
+    Extract video clips around detected events using FFmpeg with smart merging.
+    
+    Applies configurable padding to capture bowler run-up and crowd reaction,
+    then merges nearby clips to prevent choppy playback when events occur
+    back-to-back (e.g., consecutive boundaries).
+    
+    Args:
+        video_path: Path to source video
+        events: List of detected events with 'timestamp' key
+        output_dir: Directory for output clips
+        before: Seconds of padding before each event
+        after: Seconds of padding after each event
+        merge_gap: Merge clips if gap between them is <= this value
+    
+    Returns:
+        List of paths to extracted clip files
+    """
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     video_id = Path(video_path).stem
     clips = []
-
-    logger.info(f"\n✂️ Extracting {len(events)} clips ({before}s before, {after}s after)")
-
-    for i, event in enumerate(events, 1):
-        ts = event['timestamp']
-        start = max(0, ts - before)
-        clip_name = f"{video_id}_clip_{i:03d}_{event['type']}_{int(ts)}.mp4"
+    
+    if not events:
+        logger.warning("No events to extract clips from")
+        return clips
+    
+    # Get video duration for bounds checking
+    video_duration = get_video_duration(video_path)
+    logger.info(f"Video duration: {video_duration:.1f}s")
+    
+    # Calculate merged clip ranges
+    clip_ranges = calculate_clip_ranges(
+        events, video_duration, before, after, merge_gap
+    )
+    
+    logger.info(f"\n✂️ Extracting {len(clip_ranges)} clips "
+               f"(padding: {before}s before, {after}s after, merge gap: {merge_gap}s)")
+    
+    for i, clip_range in enumerate(clip_ranges, 1):
+        start = clip_range['start']
+        end = clip_range['end']
+        duration = end - start
+        event_count = len(clip_range['events'])
+        
+        # Generate descriptive filename
+        event_types = '_'.join(sorted(set(e['type'] for e in clip_range['events'])))
+        clip_name = f"{video_id}_clip_{i:03d}_{event_types}_{int(start)}-{int(end)}.mp4"
         clip_path = Path(output_dir) / clip_name
-
-        cmd = ['ffmpeg', '-ss', str(start), '-i', video_path, '-t', str(before + after), '-c', 'copy', '-avoid_negative_ts', '1', '-y', str(clip_path)]
-
+        
+        cmd = [
+            'ffmpeg',
+            '-ss', str(start),
+            '-i', video_path,
+            '-t', str(duration),
+            '-c', 'copy',
+            '-avoid_negative_ts', '1',
+            '-y',
+            str(clip_path)
+        ]
+        
         result = subprocess.run(cmd, capture_output=True)
         if result.returncode == 0:
             clips.append(str(clip_path))
             size = clip_path.stat().st_size / (1024 * 1024)
-            logger.info(f"  [{i}/{len(events)}] {clip_name} ({size:.1f} MB)")
+            logger.info(f"  [{i}/{len(clip_ranges)}] {clip_name} "
+                       f"({duration:.1f}s, {event_count} events, {size:.1f} MB)")
         else:
-            logger.error(f"  [{i}/{len(events)}] Failed: {clip_name}")
-
+            logger.error(f"  [{i}/{len(clip_ranges)}] Failed: {clip_name}")
+            logger.debug(f"FFmpeg stderr: {result.stderr.decode()}")
+    
     return clips
 
 
@@ -709,7 +880,7 @@ def parse_args():
 
     parser.add_argument('--interval', type=float, default=1.0, help='Sample interval (seconds)')
     parser.add_argument('--max-frames', type=int, help='Max frames to process')
-    parser.add_argument('--start-time', type=float, default=5900.0, help='Start time (seconds)')
+    parser.add_argument('--start-time', type=float, default=0.0, help='Start time (seconds, default: 0)')
     parser.add_argument('--min-confidence', type=float, default=0.4, help='OCR confidence threshold')
 
     # ROI overrides
@@ -722,8 +893,9 @@ def parse_args():
     parser.add_argument('--overs-roi-width', type=int)
     parser.add_argument('--overs-roi-height', type=int)
 
-    parser.add_argument('--before', type=int, default=12, help='Seconds before event')
-    parser.add_argument('--after', type=int, default=5, help='Seconds after event')
+    parser.add_argument('--before', type=float, default=PADDING_BEFORE, help=f'Seconds before event (default: {PADDING_BEFORE})')
+    parser.add_argument('--after', type=float, default=PADDING_AFTER, help=f'Seconds after event (default: {PADDING_AFTER})')
+    parser.add_argument('--merge-gap', type=float, default=MERGE_GAP_THRESHOLD, help=f'Merge clips if gap <= this (default: {MERGE_GAP_THRESHOLD}s)')
     parser.add_argument('--no-clips', action='store_true', help='Skip clip extraction')
     parser.add_argument('--no-supercut', action='store_true', help='Skip supercut')
 
@@ -802,7 +974,10 @@ def main():
 
     clips = []
     if not args.no_clips:
-        clips = extract_clips(args.video_path, events, args.output_dir, args.before, args.after)
+        clips = extract_clips(
+            args.video_path, events, args.output_dir,
+            before=args.before, after=args.after, merge_gap=args.merge_gap
+        )
 
     if not args.no_supercut and clips:
         supercut_path = Path(args.supercut_dir) / f"{video_id}_highlights.mp4"

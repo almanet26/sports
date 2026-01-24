@@ -16,7 +16,7 @@ import { videosApi, jobsApi } from '../lib/api';
 type UploadStage = 'idle' | 'uploading' | 'processing' | 'completed' | 'error';
 type UploadMode = 'file' | 'youtube';
 
-const MAX_SIZE_MB = 800;
+const MAX_SIZE_MB = 10000;
 
 interface VideoMetadata {
   title: string;
@@ -51,6 +51,11 @@ export default function VideoUpload() {
     matchDate: '',
     visibility: 'private',
   });
+
+  // Advanced Settings State
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [paddingBefore, setPaddingBefore] = useState(12); // Pre-roll duration in seconds
+  const [paddingAfter, setPaddingAfter] = useState(8);   // Post-roll duration in seconds
 
   // Cleanup polling on unmount
   useEffect(() => {
@@ -113,7 +118,10 @@ export default function VideoUpload() {
       setVideoId(uploadedVideoId);
 
       setStage('processing');
-      await jobsApi.trigger(uploadedVideoId);
+      await jobsApi.trigger(uploadedVideoId, {
+        padding_before: paddingBefore,
+        padding_after: paddingAfter,
+      });
       startPolling(uploadedVideoId);
     } catch (err: unknown) {
       setStage('error');
@@ -155,6 +163,8 @@ export default function VideoUpload() {
     formData.append('venue', metadata.venue);
     formData.append('match_date', metadata.matchDate);
     formData.append('visibility', metadata.visibility);
+    formData.append('padding_before', String(paddingBefore));
+    formData.append('padding_after', String(paddingAfter));
 
     try {
       const response = await videosApi.upload(formData, (progress) => {
@@ -165,7 +175,10 @@ export default function VideoUpload() {
       setVideoId(uploadedVideoId);
 
       setStage('processing');
-      await jobsApi.trigger(uploadedVideoId);
+      await jobsApi.trigger(uploadedVideoId, {
+        padding_before: paddingBefore,
+        padding_after: paddingAfter,
+      });
       startPolling(uploadedVideoId);
     } catch (err: unknown) {
       setStage('error');
@@ -264,6 +277,9 @@ export default function VideoUpload() {
       matchDate: '',
       visibility: 'private',
     });
+    setShowAdvanced(false);
+    setPaddingBefore(12);
+    setPaddingAfter(8);
     if (pollIntervalRef.current) {
       clearInterval(pollIntervalRef.current);
     }
@@ -545,6 +561,76 @@ export default function VideoUpload() {
                   <option value="private" className="bg-gray-900">Private (Only you can see)</option>
                   <option value="public" className="bg-gray-900">Public (Everyone can see)</option>
                 </select>
+              </div>
+
+              {/* Advanced Settings Accordion */}
+              <div className="border-t border-white/10 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvanced(!showAdvanced)}
+                  className="w-full flex items-center justify-between py-2 text-left text-white/70 hover:text-white transition-colors"
+                >
+                  <span className="flex items-center gap-2 text-sm font-medium">
+                    <i className="fas fa-sliders-h text-blue-400"></i>
+                    Advanced Clip Settings
+                  </span>
+                  <motion.i
+                    animate={{ rotate: showAdvanced ? 180 : 0 }}
+                    transition={{ duration: 0.2 }}
+                    className="fas fa-chevron-down text-xs"
+                  />
+                </button>
+                
+                {showAdvanced && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mt-4 space-y-4"
+                  >
+                    <p className="text-xs text-white/50 mb-3">
+                      Fine-tune how clips are extracted around detected events. These settings affect the accuracy and context of generated highlights.
+                    </p>
+                    
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-white/70 mb-1">
+                          Pre-Roll Duration (sec)
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={paddingBefore}
+                            onChange={(e) => setPaddingBefore(Math.max(1, Math.min(30, parseInt(e.target.value) || 12)))}
+                            className="w-full px-4 py-2 glass border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 bg-transparent"
+                          />
+                          <span className="text-white/40 text-sm whitespace-nowrap">seconds</span>
+                        </div>
+                        <p className="text-xs text-white/40 mt-1">Footage before the event (default: 12s)</p>
+                      </div>
+                      
+                      <div>
+                        <label className="block text-sm font-medium text-white/70 mb-1">
+                          Post-Roll Duration (sec)
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="number"
+                            min={1}
+                            max={30}
+                            value={paddingAfter}
+                            onChange={(e) => setPaddingAfter(Math.max(1, Math.min(30, parseInt(e.target.value) || 8)))}
+                            className="w-full px-4 py-2 glass border border-white/20 rounded-xl text-white focus:outline-none focus:border-blue-500 bg-transparent"
+                          />
+                          <span className="text-white/40 text-sm whitespace-nowrap">seconds</span>
+                        </div>
+                        <p className="text-xs text-white/40 mt-1">Footage after the event (default: 8s)</p>
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
               </div>
             </motion.div>
           )}
