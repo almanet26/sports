@@ -18,6 +18,7 @@ from datetime import datetime
 import logging
 import shutil
 import uuid
+import os
 
 from utils.config import settings
 from utils.auth import get_current_user, get_optional_user, require_role
@@ -49,7 +50,7 @@ UPLOAD_DIR = Path("storage/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-# ============ NEW: Video Upload Endpoints ============
+# ============ Video Upload Endpoints ============
 
 @router.post("/upload", response_model=VideoResponse, status_code=201)
 async def upload_video(
@@ -74,7 +75,7 @@ async def upload_video(
     - PLAYER (Free): Cannot upload
     
     **File Constraints:**
-    - Max size: 2GB
+    - Max size: 10GB
     - Formats: mp4, mkv, avi, mov, webm
     """
     # Validate file type
@@ -85,6 +86,12 @@ async def upload_video(
             status_code=400,
             detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
         )
+    
+    # Check file size 
+    CHUNK_SIZE = 8192  # 8KB chunks for streaming
+    MAX_FILE_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10000")) * 1024 * 1024  # Default: 10GB
+    
+    logger.info(f"Max upload size: {MAX_FILE_SIZE / (1024*1024*1024):.2f}GB")
     
     # Enforce visibility rules
     if visibility == "public" and current_user.role != "ADMIN":
@@ -97,14 +104,33 @@ async def upload_video(
     video_id = str(uuid.uuid4())
     file_path = UPLOAD_DIR / f"{video_id}{file_ext}"
     
-    # Save file
+    # Save file with streaming to avoid memory issues
     try:
+        total_size = 0
         with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+            while chunk := await file.read(CHUNK_SIZE):
+                total_size += len(chunk)
+                
+                # Check size limit during upload
+                if total_size > MAX_FILE_SIZE:
+                    buffer.close()
+                    file_path.unlink(missing_ok=True)  # Delete partial file
+                    raise HTTPException(
+                        status_code=413,
+                        detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB. "
+                               f"For videos >10GB, use YouTube URL upload (supports up to 12GB)."
+                    )
+                
+                buffer.write(chunk)
+        
         file_size = file_path.stat().st_size
+        logger.info(f"File uploaded: {video_id}{file_ext} ({file_size / (1024*1024):.2f}MB)")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Failed to save file: {e}")
-        raise HTTPException(status_code=500, detail="Failed to save video file")
+        file_path.unlink(missing_ok=True)  # Clean up on error
+        raise HTTPException(status_code=500, detail=f"Failed to save video file: {str(e)}")
     
     # Parse match_date if provided
     parsed_date = None

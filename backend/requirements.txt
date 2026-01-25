@@ -28,7 +28,7 @@ bcrypt==4.2.1
 python-jose[cryptography]>=3.3.0
 
 # Video Processing
-yt-dlp>=2023.11.16           # YouTube downloader
+yt-dlp>=2024.12.13           # YouTube downloader (latest with bot bypass improvements)
 opencv-python-headless>=4.8.1  # Video analysis (headless for server - no GUI deps)
 
 # Machine Learning & OCR

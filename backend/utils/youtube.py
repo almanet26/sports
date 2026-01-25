@@ -40,8 +40,8 @@ def download_youtube_video(
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Configure yt-dlp options
-    ydl_opts = {
+    # Base yt-dlp configuration (NO cookies here - added per-attempt)
+    base_ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
         'outtmpl': str(output_dir / f'{video_id}.%(ext)s'),
         'quiet': False,
@@ -53,30 +53,70 @@ def download_youtube_video(
             'preferedformat': 'mp4',
         }],
         # Download restrictions
-        'max_filesize': 2 * 1024 * 1024 * 1024,  # 2GB max
+        'max_filesize': 12 * 1024 * 1024 * 1024,  # 12GB max for cricket matches
+        
+        # Bot bypass strategies (cookies added per-attempt below)
+        'user_agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'web'],
+                'player_skip': ['webpage', 'configs'],
+            }
+        },
+        # Additional anti-bot measures
+        'nocheckcertificate': True,
+        'socket_timeout': 30,
+        'ignoreerrors': False,  # Fail fast on errors
     }
     
     try:
         logger.info(f"Downloading YouTube video: {url}")
         
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            # Extract info without downloading first (to validate and get metadata)
-            info = ydl.extract_info(url, download=False)
-            
-            if not info:
-                raise ValueError("Could not extract video information")
-            
-            title = info.get('title', 'Unknown Title')
-            duration = info.get('duration', 0)
-            
-            logger.info(f"Video info: {title} ({duration}s)")
-            
-            # Check duration (optional: skip very long videos)
-            if duration > 14400:  # 4 hours
-                raise ValueError("Video is too long (max 4 hours)")
-            
-            # Now download
-            ydl.download([url])
+        # Try multiple methods in sequence (cookies → no cookies)
+        download_attempts = [
+            # Attempt 1: Chrome cookies (if available)
+            {**base_ydl_opts, 'cookiesfrombrowser': ('chrome',)},
+            # Attempt 2: Firefox cookies (if available)  
+            {**base_ydl_opts, 'cookiesfrombrowser': ('firefox',)},
+            # Attempt 3: No cookies - Android client emulation only (works on Render)
+            base_ydl_opts,
+        ]
+        
+        last_error = None
+        for attempt_num, attempt_opts in enumerate(download_attempts, 1):
+            try:
+                logger.info(f"Download attempt {attempt_num}/{len(download_attempts)}")
+                
+                with yt_dlp.YoutubeDL(attempt_opts) as ydl:
+                    # Extract info without downloading first (to validate and get metadata)
+                    info = ydl.extract_info(url, download=False)
+                    
+                    if not info:
+                        raise ValueError("Could not extract video information")
+                    
+                    title = info.get('title', 'Unknown Title')
+                    duration = info.get('duration', 0)
+                    
+                    logger.info(f"Video info: {title} ({duration}s)")
+                    
+                    # Check duration (cricket matches can be very long)
+                    if duration > 28800:  # 8 hours max
+                        raise ValueError("Video is too long (max 8 hours). Consider trimming before upload.")
+                    
+                    # Now download
+                    ydl.download([url])
+                    
+                    # If we reach here, download succeeded
+                    break
+                    
+            except Exception as e:
+                last_error = e
+                logger.warning(f"Attempt {attempt_num} failed: {str(e)}")
+                if attempt_num < len(download_attempts):
+                    continue
+                else:
+                    # All attempts failed, raise the last error
+                    raise last_error
         
         # Find the downloaded file (yt-dlp may add different extensions)
         downloaded_files = list(output_dir.glob(f"{video_id}.*"))

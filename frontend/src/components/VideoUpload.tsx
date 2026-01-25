@@ -16,7 +16,9 @@ import { videosApi, jobsApi } from '../lib/api';
 type UploadStage = 'idle' | 'uploading' | 'processing' | 'completed' | 'error';
 type UploadMode = 'file' | 'youtube';
 
-const MAX_SIZE_MB = 10000;
+// Large file support: 10GB default (configurable by backend)
+// For files >10GB, YouTube URL upload handles up to 12GB
+const MAX_SIZE_MB = 10000; // 10GB
 
 interface VideoMetadata {
   title: string;
@@ -182,8 +184,27 @@ export default function VideoUpload() {
       startPolling(uploadedVideoId);
     } catch (err: unknown) {
       setStage('error');
-      const error = err as { response?: { data?: { detail?: string } } };
-      setError(error.response?.data?.detail || 'Upload failed. Please try again.');
+      const error = err as { 
+        response?: { data?: { detail?: string }, status?: number },
+        message?: string,
+        code?: string 
+      };
+      
+      let errorMessage = 'Upload failed. Please try again.';
+      
+      if (error.code === 'ERR_NETWORK' || error.code === 'ERR_CONNECTION_RESET') {
+        errorMessage = 'Connection lost during upload. This may be due to file size or timeout limits. Try a smaller file (<500MB) or shorter video.';
+      } else if (error.response?.status === 413) {
+        errorMessage = 'File too large. Maximum size is 500MB for cloud deployment.';
+      } else if (error.response?.status === 401) {
+        errorMessage = 'Authentication failed. Please log in again.';
+      } else if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
+      setError(errorMessage);
     }
   };
 
