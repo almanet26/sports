@@ -1,0 +1,128 @@
+# VSCode & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node.js (Frontend)
+node_modules/
+frontend/dist/
+frontend/.env
+
+# Python (Backend)
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+backend/lib/
+backend/lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+venv/
+ENV/
+env/
+.venv
+.ENV
+backend/venv/
+backend/.env
+backend/.mypy_cache/
+backend/.pytest_cache/
+
+# Logs & Databases
+logs/*.log
+*.log
+*.log.*
+*.sqlite
+*.db
+*.db-journal
+backend/logs/
+
+# Testing & Coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+
+# Project-Specific
+.EasyOCR/
+**/.EasyOCR/
+debug_frames/
+roi_check.jpg
+*.jpg
+*.png
+*.jpeg
+!docs/*.png
+!docs/**/*.png
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Configuration overrides
+config/local_*.json
+config/*_override.json
+
+# Temporary files
+*.tmp
+*.bak
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# Media files (large files)
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.flv
+
+# Storage (videos and processed files)
+storage/
+backend/storage/
+
+# API Keys
+*_secrets.py
+secrets.json
+credentials.json
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Keep Folder Structure (Git Tracking)
+!backend/storage/.gitkeep
+!backend/storage/raw/.gitkeep
+!backend/storage/trimmed/.gitkeep
+!backend/storage/highlight/.gitkeep
+!backend/logs/.gitkeep
+
+# GitHub 
+.github/

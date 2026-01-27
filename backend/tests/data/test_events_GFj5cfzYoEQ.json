@@ -1,0 +1,161 @@
+{
+  "video_id": "GFj5cfzYoEQ",
+  "title": "India VS Pakistan Extended Highlights | Asia Cup Final",
+  "duration": 1650.0,
+  "test_scenarios": [
+    {
+      "scenario": "Full event set with all types",
+      "events": [
+        {
+          "over": "2.3",
+          "type": "FOUR",
+          "timestamp": 512.0,
+          "batsman": "Rohit Sharma",
+          "bowler": "Shaheen Afridi",
+          "description": "Beautiful cover drive"
+        },
+        {
+          "over": "4.5",
+          "type": "SIX",
+          "timestamp": 652.0,
+          "batsman": "Virat Kohli",
+          "bowler": "Haris Rauf",
+          "description": "Over mid-wicket"
+        },
+        {
+          "over": "8.2",
+          "type": "WICKET",
+          "timestamp": 1002.0,
+          "batsman": "KL Rahul",
+          "bowler": "Shadab Khan",
+          "description": "Caught behind"
+        },
+        {
+          "over": "12.4",
+          "type": "SIX",
+          "timestamp": 1317.0,
+          "batsman": "Hardik Pandya",
+          "bowler": "Mohammad Nawaz",
+          "description": "Straight down the ground"
+        },
+        {
+          "over": "15.1",
+          "type": "FOUR",
+          "timestamp": 1597.0,
+          "batsman": "Hardik Pandya",
+          "bowler": "Haris Rauf",
+          "description": "Pulled to boundary"
+        },
+        {
+          "over": "15.3",
+          "type": "SIX",
+          "timestamp": 1610.0,
+          "batsman": "Hardik Pandya",
+          "bowler": "Haris Rauf",
+          "description": "Maximum over cover"
+        },
+        {
+          "over": "15.5",
+          "type": "WICKET",
+          "timestamp": 1625.0,
+          "batsman": "Hardik Pandya",
+          "bowler": "Haris Rauf",
+          "description": "Bowled"
+        }
+      ]
+    },
+    {
+      "scenario": "Only boundaries (no wickets)",
+      "events": [
+        {
+          "over": "2.3",
+          "type": "FOUR",
+          "timestamp": 512.0
+        },
+        {
+          "over": "4.5",
+          "type": "SIX",
+          "timestamp": 652.0
+        },
+        {
+          "over": "12.4",
+          "type": "SIX",
+          "timestamp": 1317.0
+        },
+        {
+          "over": "15.1",
+          "type": "FOUR",
+          "timestamp": 1597.0
+        }
+      ]
+    },
+    {
+      "scenario": "Consecutive events (merge test)",
+      "merge_threshold": 10.0,
+      "events": [
+        {
+          "over": "15.1",
+          "type": "FOUR",
+          "timestamp": 1597.0,
+          "note": "Should merge with next two events"
+        },
+        {
+          "over": "15.3",
+          "type": "SIX",
+          "timestamp": 1610.0,
+          "note": "13 seconds after previous (within merge threshold)"
+        },
+        {
+          "over": "15.5",
+          "type": "WICKET",
+          "timestamp": 1625.0,
+          "note": "15 seconds after SIX (within merge threshold)"
+        }
+      ],
+      "expected_clips": 1,
+      "expected_clip_duration": 38.0
+    },
+    {
+      "scenario": "Events beyond video duration (error handling)",
+      "events": [
+        {
+          "over": "8.0",
+          "type": "SIX",
+          "timestamp": 1710.0,
+          "note": "Beyond video duration - should be capped"
+        },
+        {
+          "over": "9.0",
+          "type": "WICKET",
+          "timestamp": 1990.0,
+          "note": "Beyond video duration - should be capped"
+        }
+      ],
+      "expected_behavior": "Timestamps capped to video duration with warning"
+    },
+    {
+      "scenario": "Empty events (edge case)",
+      "events": [],
+      "expected_behavior": "Should handle gracefully with no clips generated"
+    }
+  ],
+  "audio_analysis": {
+    "method": "energy_based",
+    "chunk_size": 5,
+    "threshold_percentile": 85,
+    "expected_detections_range": [15, 30],
+    "note": "Audio analysis should detect 15-30 high-energy moments"
+  },
+  "sync_configuration": {
+    "match_start_time": 30.0,
+    "match_type": "T20",
+    "overs": 20,
+    "sync_points": {
+      "0.1": 30.0,
+      "5.1": 180.0,
+      "10.1": 360.0,
+      "15.1": 540.0,
+      "20.1": 720.0
+    }
+  }
+}

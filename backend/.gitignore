@@ -1,0 +1,134 @@
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environments
+venv/
+ENV/
+env/
+.venv
+.ENV
+
+# Logs & Databases
+logs/*.log
+*.log
+*.log.*
+*.sqlite
+*.db
+*.db-journal
+logs/
+
+# IDE & Editor Settings
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Testing & Coverage
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+*.cover
+.hypothesis/
+.tox/
+
+# Project-Specific
+.EasyOCR/
+**/.EasyOCR/
+debug_frames/
+roi_check.jpg
+*.jpg
+*.png
+*.jpeg
+!docs/*.png
+!docs/**/*.png
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb
+
+# Configuration overrides
+config/local_*.json
+config/*_override.json
+
+# Temporary files
+*.tmp
+*.bak
+*~.nib
+local.properties
+.settings/
+.loadpath
+.recommenders
+
+# Media files (large files)
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.flv
+
+# Storage (videos and processed files)
+storage/raw/*.mp4
+storage/raw/*.mkv
+storage/raw/*.avi
+storage/raw/*.mov
+storage/raw/*.webm
+storage/raw/*.flv
+storage/trimmed/*.mp4
+storage/highlight/*.mp4
+**/*.mp4
+**/*.mkv
+**/*.avi
+**/*.mov
+**/*.webm
+storage/
+
+# API Keys
+*_secrets.py
+secrets.json
+credentials.json
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Keep Folder Structure (Git Tracking)
+!storage/.gitkeep
+!storage/raw/.gitkeep
+!storage/trimmed/.gitkeep
+!storage/highlight/.gitkeep
+!logs/.gitkeep
+
+src/

@@ -1,0 +1,82 @@
+{
+  "description": "Test cases for Cricket Highlight Generator API",
+  "base_url": "http://localhost:8000/api/v1",
+  "test_cases": [
+    {
+      "name": "Process video with mock data",
+      "endpoint": "/videos/process",
+      "method": "POST",
+      "requires_auth": true,
+      "body": {
+        "video_url": "https://www.youtube.com/watch?v=GFj5cfzYoEQ",
+        "match_id": "asia_cup_2023_final",
+        "data_source": "mock",
+        "merge_threshold": 10.0
+      },
+      "expected_response": {
+        "status": 200,
+        "has_job_id": true,
+        "has_status": true
+      }
+    },
+    {
+      "name": "Get highlights for processed video",
+      "endpoint": "/videos/highlights/GFj5cfzYoEQ",
+      "method": "GET",
+      "requires_auth": true,
+      "expected_response": {
+        "status": 200,
+        "has_video_id": true,
+        "has_clips": true,
+        "min_clips": 1
+      }
+    },
+    {
+      "name": "Process video with different merge threshold",
+      "endpoint": "/videos/process",
+      "method": "POST",
+      "requires_auth": true,
+      "body": {
+        "video_url": "https://www.youtube.com/watch?v=awJ11QqXSBo",
+        "data_source": "mock",
+        "merge_threshold": 15.0
+      },
+      "expected_response": {
+        "status": 200
+      }
+    },
+    {
+      "name": "Invalid video URL",
+      "endpoint": "/videos/process",
+      "method": "POST",
+      "requires_auth": true,
+      "body": {
+        "video_url": "https://www.youtube.com/watch?v=INVALID123",
+        "data_source": "mock"
+      },
+      "expected_response": {
+        "status": 500
+      }
+    }
+  ],
+  "auth_test_case": {
+    "register": {
+      "endpoint": "/auth/register",
+      "method": "POST",
+      "body": {
+        "email": "test@cricket.com",
+        "password": "TestPass123!",
+        "full_name": "Test User",
+        "role": "PLAYER"
+      }
+    },
+    "login": {
+      "endpoint": "/auth/login",
+      "method": "POST",
+      "form_data": {
+        "username": "test@cricket.com",
+        "password": "TestPass123!"
+      }
+    }
+  }
+}
