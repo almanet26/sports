@@ -22,7 +22,10 @@ export default function ProfilePage() {
       await authApi.updateProfile({
         name: formData.name,
         team: formData.team,
+        phone: formData.phone,
         jersey_number: Number(formData.jerseyNumber),
+        team: formData.team,
+        profile_bio: formData.bio,
       });
       setIsEditing(false);
     } catch (error) {
@@ -135,6 +138,8 @@ export default function ProfilePage() {
               <p className="text-white ...">{formData.name}</p>
             )}
 
+            <p className="text-white glass rounded-xl px-4 py-3 border border-white/10">{formData.name}</p>
+            <p className="text-xs text-white/40 mt-1">Name cannot be changed</p>
           </div>
 
           {/* Email */}

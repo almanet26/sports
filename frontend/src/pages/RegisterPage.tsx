@@ -54,6 +54,10 @@ export default function RegisterPage() {
         //phone: formData.phone || null,
         jersey_number: formData.jerseyNumber || null,
         team: formData.team || null,
+        phone: formData.phone || null,
+        jersey_number: formData.jerseyNumber || null,
+        team: formData.team || null,
+        profile_bio: formData.profileBio || null,
       });
 
       console.log('Registration successful:', response.data);
@@ -205,6 +209,7 @@ export default function RegisterPage() {
                     ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-transparent text-white'
                     : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
                     }`}
+
                 >
                   <i className="fas fa-running mr-2"></i>
                   Player

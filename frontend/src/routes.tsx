@@ -18,9 +18,7 @@ import HighlightsPage from './pages/HighlightsPage';
 import VideoDetailPage from './pages/VideoDetailPage';
 import RequestsPage from './pages/RequestsPage';
 import ProfilePage from './pages/ProfilePage';
-import stats from './pages/PlayerStatsPage';
-import matches from './pages/MatchesPage';
-import notifications from './pages/NotificationsPage';
+import stats from './pages/PlayerStatsPage'; import matches from './pages/MatchesPage'; import notifications from './pages/NotificationsPage';
 
 // ============ Auth Initializer (runs once on module load) ============
 let authInitialized = false;
@@ -37,6 +35,16 @@ function initializeAuthOnce() {
       const user = JSON.parse(userProfile);
       useAuthStore.setState({
         token,
+
+  
+  const token = localStorage.getItem('access_token');
+  const userProfile = localStorage.getItem('user_profile');
+  
+  if (token && userProfile) {
+    try {
+      const user = JSON.parse(userProfile);
+      useAuthStore.setState({ 
+        token, 
         isAuthenticated: true,
         user,
       });
@@ -64,6 +72,14 @@ function ProtectedRoute() {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
 
+
+  
+  const shouldRedirect = useMemo(() => !isAuthenticated, [isAuthenticated]);
+  
+  if (shouldRedirect) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
   return <Outlet />;
 }
 
@@ -85,6 +101,15 @@ function RoleGuard({ allowedRoles, fallbackPath = '/player' }: RoleGuardProps) {
     return <Navigate to={fallbackPath} replace />;
   }
 
+  
+  if (!user) {
+    return <Navigate to="/login" state={{ from: location }} replace />;
+  }
+  
+  if (!allowedRoles.includes(user.role)) {
+    return <Navigate to={fallbackPath} replace />;
+  }
+  
   return <Outlet />;
 }
 
@@ -93,12 +118,21 @@ function GuestRoute() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
 
+
   if (isAuthenticated && user) {
     const targetPath = user.role === 'ADMIN' ? '/admin' :
       user.role === 'COACH' ? '/coach' : '/player';
     return <Navigate to={targetPath} replace />;
   }
 
+
+  
+  if (isAuthenticated && user) {
+    const targetPath = user.role === 'ADMIN' ? '/admin' : 
+                       user.role === 'COACH' ? '/coach' : '/player';
+    return <Navigate to={targetPath} replace />;
+  }
+  
   return <Outlet />;
 }
 
@@ -107,12 +141,23 @@ function DashboardRedirect() {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
+
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
   }
 
   const targetPath = user.role === 'ADMIN' ? '/admin' :
     user.role === 'COACH' ? '/coach' : '/player';
+
+
+  
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+  
+  const targetPath = user.role === 'ADMIN' ? '/admin' : 
+                     user.role === 'COACH' ? '/coach' : '/player';
+  
 
   return <Navigate to={targetPath} replace />;
 }
@@ -134,6 +179,9 @@ export default function AppRouter() {
         {/* Dashboard Redirect */}
         <Route path="/dashboard" element={<DashboardRedirect />} />
 
+        {/* Dashboard Redirect */}
+        <Route path="/dashboard" element={<DashboardRedirect />} />
+        
         {/* Protected Routes - All authenticated users */}
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
@@ -165,9 +213,17 @@ export default function AppRouter() {
           </Route>
         </Route>
 
+
         {/* Legacy Redirects */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
         <Route path="/profile" element={<Navigate to="/settings" replace />} />
+
+
+        
+        {/* Legacy Redirects */}
+        <Route path="/highlights" element={<Navigate to="/library" replace />} />
+        <Route path="/profile" element={<Navigate to="/settings" replace />} />
+        
 
         {/* Default Routes */}
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -175,5 +231,4 @@ export default function AppRouter() {
     </BrowserRouter>
   );
 }
-
 export { ProtectedRoute, RoleGuard, GuestRoute, DashboardRedirect };
