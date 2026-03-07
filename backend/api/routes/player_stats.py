@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from database.config import SessionLocal
 from database.models.player_stats import PlayerStats
+from schemas.player_stats import PlayerStatsResponse
 
 router = APIRouter(prefix="/player-stats")
 
@@ -15,7 +16,7 @@ def get_db():
         db.close()
 
 
-@router.get("/{player_id}")
+@router.get("/{player_id}", response_model=PlayerStatsResponse)
 def get_player_stats(player_id: str, db: Session = Depends(get_db)):
     stats = (
         db.query(PlayerStats)

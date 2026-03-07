@@ -1,14 +1,15 @@
-from sqlalchemy import Column, Integer, Float
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from sqlalchemy import Column, Integer, Float, String, DateTime
+from sqlalchemy.sql import func
+from database.config import Base
 
 
 class PlayerStats(Base):
     __tablename__ = "player_stats"
 
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, nullable=False)
+
+    # must match users.id (VARCHAR in Supabase)
+    player_id = Column(String, nullable=False, index=True)
 
     # Batting stats
     matches = Column(Integer, default=0)
@@ -25,3 +26,7 @@ class PlayerStats(Base):
     # Fielding stats
     catches = Column(Integer, default=0)
     run_outs = Column(Integer, default=0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now())
+    
