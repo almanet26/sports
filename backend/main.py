@@ -27,6 +27,12 @@ STORAGE_DIRS = [
     "storage/raw",
     "storage/trimmed",
     "storage/highlight",
+    "storage/reports",
+    "storage/bowling_videos",
+    "storage/batting_videos",
+    "storage/submissions",
+    "storage/submission_videos",
+    "storage/temp_frames",
 ]
 for dir_path in STORAGE_DIRS:
     Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -104,10 +110,15 @@ app.add_middleware(
 app.mount("/static/uploads", StaticFiles(directory="storage/uploads"), name="uploads")
 app.mount("/static/clips", StaticFiles(directory="storage/trimmed"), name="clips")
 app.mount("/static/highlights", StaticFiles(directory="storage/highlight"), name="highlights")
+app.mount("/static/reports", StaticFiles(directory="storage/reports"), name="reports")
+app.mount("/static/bowling_videos", StaticFiles(directory="storage/bowling_videos"), name="bowling_videos")
+app.mount("/static/batting_videos", StaticFiles(directory="storage/batting_videos"), name="batting_videos")
+app.mount("/static/submissions", StaticFiles(directory="storage/submissions"), name="submissions")
+app.mount("/static/submission_videos", StaticFiles(directory="storage/submission_videos"), name="submission_videos")
+app.mount("/static/temp_frames", StaticFiles(directory="storage/temp_frames"), name="temp_frames")
 
 
-# ============ Health Check Endpoints ============
-
+# Health Check Endpoints 
 @app.get("/", tags=["health"])
 def read_root():
     """Root endpoint - API info."""
@@ -139,19 +150,7 @@ def db_health_check():
 
 
 # Include API Routers 
-from api.routes import (
-    auth,
-    videos,
-    jobs,
-    requests,
-    player_stats,
-    bowling,
-    BOWLING_AVAILABLE,
-    batting,
-    BATTING_AVAILABLE,
-    submissions,
-    SUBMISSIONS_AVAILABLE
-) 
+from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE 
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
@@ -164,7 +163,6 @@ app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 
 # Match request/voting routes
 app.include_router(requests.router, prefix="/api/v1", tags=["requests"])
-
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])
@@ -192,9 +190,6 @@ else:
 
 
 # Entry Point 
-
-# ============ Entry Point ============
-
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
@@ -203,6 +198,4 @@ if __name__ == "__main__":
         reload=True,
         log_level="info",
     )
-    
-    
 
