@@ -26,6 +26,9 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [document, setDocument] = useState<File | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,19 +61,37 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/register', {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        role: formData.role,
-        phone: formData.phone || undefined,
-        team: formData.team || undefined,
-      });
+      // For coaches with documents, use FormData
+      if (formData.role === 'COACH' && document) {
+        const formDataToSend = new FormData();
+        formDataToSend.append('name', formData.name);
+        formDataToSend.append('email', formData.email);
+        formDataToSend.append('password', formData.password);
+        formDataToSend.append('role', formData.role);
+        formDataToSend.append('document', document);
 
-      console.log('Registration successful:', response.data);
+        await api.post('/auth/register', formDataToSend, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      } else {
+        // Regular JSON for players or coaches without documents
+        await api.post('/auth/register', {
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: formData.role,
+          phone: formData.phone || undefined,
+          team: formData.team || undefined,
+        });
+      }
+
+      // Different messages for coach vs player
+      const message = formData.role === 'COACH' 
+        ? 'Registration successful! Your account is pending admin approval. You will be notified once verified.'
+        : 'Registration successful! Please log in.';
 
       // Redirect to login
-      navigate('/login', { state: { message: 'Registration successful! Please log in.' } });
+      navigate('/login', { state: { message } });
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: unknown } } };
       const detail = axiosErr?.response?.data?.detail;
@@ -255,16 +276,20 @@ export default function RegisterPage() {
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="Min 8 characters"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className="w-full px-4 py-3 pr-10 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-lock text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-white/30 hover:text-white/60 transition-colors"
+                >
+                  <i className={`fas ${showPassword ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                </button>
               </div>
             </motion.div>
 
@@ -279,18 +304,49 @@ export default function RegisterPage() {
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className="w-full px-4 py-3 pr-10 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-shield-alt text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-white/30 hover:text-white/60 transition-colors"
+                >
+                  <i className={`fas ${showConfirmPassword ? 'fa-eye' : 'fa-eye-slash'}`}></i>
+                </button>
               </div>
             </motion.div>
+
+            {/* Coach Document Upload */}
+            {formData.role === 'COACH' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+              >
+                <label className="block text-sm font-medium text-white/80 mb-2">
+                  Upload Document (CV/Certificate) - Optional
+                </label>
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept=".pdf,.doc,.docx"
+                    onChange={(e) => setDocument(e.target.files?.[0] || null)}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-500 file:text-white hover:file:bg-blue-600 transition-all duration-300"
+                  />
+                  {document && (
+                    <p className="text-xs text-green-400 mt-2">
+                      <i className="fas fa-check-circle mr-1"></i>
+                      {document.name} selected
+                    </p>
+                  )}
+                </div>
+              </motion.div>
+            )}
 
             {/* Conditional Fields for Player */}
             {formData.role === 'PLAYER' && (

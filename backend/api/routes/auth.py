@@ -3,11 +3,13 @@ Authentication API routes.
 """
 
 from datetime import timedelta, datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import logging
 import secrets
+import os
+from pathlib import Path
 
 from database.config import get_db
 from database.models.user import User
@@ -29,24 +31,50 @@ logger = logging.getLogger(__name__)
 @router.post(
     "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
 )
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+async def register(
+    name: str = Form(...),
+    email: str = Form(...),
+    password: str = Form(...),
+    role: str = Form(...),
+    phone: str = Form(None),
+    team: str = Form(None),
+    document: UploadFile = File(None),
+    db: Session = Depends(get_db)
+):
     # Check if user already exists
-    existing_user = db.query(User).filter(
-        User.email == user_data.email).first()
-    existing_user = db.query(User).filter(
-        User.email == user_data.email).first()
+    existing_user = db.query(User).filter(User.email == email).first()
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
         )
 
+    # Handle document upload for coaches
+    document_path = None
+    if role == "COACH" and document:
+        upload_dir = Path("storage/coach_documents")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        
+        file_ext = os.path.splitext(document.filename)[1]
+        filename = f"{secrets.token_urlsafe(16)}{file_ext}"
+        file_path = upload_dir / filename
+        
+        with open(file_path, "wb") as f:
+            content = await document.read()
+            f.write(content)
+        
+        document_path = str(file_path)
+
     # Create new user
-    hashed_password = get_password_hash(user_data.password)
+    hashed_password = get_password_hash(password)
     new_user = User(
-        email=user_data.email,
+        email=email,
         password_hash=hashed_password,
-        name=user_data.name,
-        role=user_data.role,
+        name=name,
+        role=role,
+        phone=phone,
+        team=team,
+        coach_document_path=document_path,
+        coach_verification_status="PENDING" if role == "COACH" else None
     )
 
     db.add(new_user)
@@ -69,6 +97,19 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Check if coach is verified
+    if user.role == "COACH" and user.coach_verification_status != "APPROVED":
+        if user.coach_verification_status == "PENDING":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your coach account is pending admin approval. Please wait for verification."
+            )
+        elif user.coach_verification_status == "REJECTED":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Your coach account has been rejected. Please contact support."
+            )
 
     # Update last_login timestamp
     user.last_login = datetime.utcnow()
