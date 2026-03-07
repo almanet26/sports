@@ -160,6 +160,12 @@ def db_health_check():
 
 # Include API Routers 
 from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE
+try:
+    from api.routes import admin
+    ADMIN_AVAILABLE = True
+except ImportError:
+    admin = None
+    ADMIN_AVAILABLE = False
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
@@ -210,6 +216,13 @@ if WORKER_AVAILABLE and worker is not None:
     logger.info("Internal worker endpoint enabled")
 else:
     logger.warning("Internal worker endpoint disabled")
+
+# Admin routes
+if ADMIN_AVAILABLE and admin is not None:
+    app.include_router(admin.router, prefix="/api/v1", tags=["admin"])
+    logger.info("Admin routes enabled")
+else:
+    logger.warning("Admin routes disabled")
 
 
 # Entry Point 

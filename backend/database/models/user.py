@@ -25,6 +25,13 @@ class User(Base):
     team = Column(String, nullable=True)
     stripe_customer_id = Column(String, nullable=True)
     
+    # Coach verification fields
+    coach_verification_status = Column(String, default='PENDING')  # PENDING, APPROVED, REJECTED
+    coach_document_path = Column(String, nullable=True)  # Path to uploaded CV/document
+    coach_verification_notes = Column(Text, nullable=True)
+    verified_by_admin_id = Column(String(36), nullable=True)
+    verified_at = Column(DateTime(timezone=True), nullable=True)
+    
     # Authentication fields
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
