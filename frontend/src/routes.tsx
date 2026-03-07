@@ -11,6 +11,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import LandingPage from './pages/LandingPage';
 import PlayerDashboard from './pages/PlayerDashboard';
+import SubscriptionPage from './pages/SubscriptionPage';
 import CoachDashboard from './pages/CoachDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import UploadPage from './pages/UploadPage';
@@ -153,6 +154,7 @@ export default function AppRouter() {
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/settings" element={<ProfilePage />} />
             <Route path="/player" element={<PlayerDashboard />} />
+            <Route path="/player/subscription" element={<SubscriptionPage />} />
             <Route path="/player/:id" element={<PlayerPerformance />} />
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
