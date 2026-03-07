@@ -23,13 +23,18 @@ from schemas.bowling import (
     BowlingAnalysisSummary,
     BiometricsResponse,
     FeedbackResponse,
+    DetectedBowlingFlaw,
+    BowlingDrillRecommendation,
 )
 from utils.auth import get_current_user
 from scripts.bowling_engine import (
     CricketPoseAnalyzer, 
     GeminiManager, 
     create_pdf, 
-    MEDIAPIPE_AVAILABLE
+    MEDIAPIPE_AVAILABLE,
+    BOWLING_ANALYSIS_PROMPT,
+    extract_bowling_flaws,
+    extract_bowling_drills,
 )
 
 logger = logging.getLogger(__name__)
@@ -43,7 +48,7 @@ REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 VIDEOS_DIR.mkdir(parents=True, exist_ok=True)
 
 # Singleton engines (heavy init — reuse across requests)
-analyzer = CricketPoseAnalyzer()
+analyzer = CricketPoseAnalyzer() if MEDIAPIPE_AVAILABLE else None
 gemini = GeminiManager()
 
 
@@ -104,47 +109,15 @@ async def analyze_bowling(
         shutil.move(annotated_video_path, final_video_path)
         annotated_video_url = f"/static/bowling_videos/{video_filename}"
 
-        # AI Feedback
-        prompt = (
-            "You are a professional elite cricket bowling coach and biomechanics analyst.\n"
-            "Analyze this fast bowler's technique using the provided biomechanical metrics.\n\n"
-            f"METRICS SUMMARY:\n{display_df.describe().to_string()}\n\n"
-            "REQUIRED STRUCTURE (use this exact format):\n\n"
-            "**OVERALL ASSESSMENT**\n"
-            "Provide a 2-3 sentence executive summary of the bowler's action quality.\n\n"
-            "**PHASE-BY-PHASE TECHNICAL ANALYSIS**\n\n"
-            "**1. Run-Up & Approach**\n"
-            "- Observation 1\n"
-            "- Observation 2\n\n"
-            "**2. Back Foot Contact & Loading Phase**\n"
-            "- Observation 1\n"
-            "- Observation 2\n\n"
-            "**3. Delivery Stride & Front Foot Landing**\n"
-            "- Observation 1\n"
-            "- Observation 2\n\n"
-            "**4. Release Point & Arm Mechanics**\n"
-            "- Elbow angle analysis\n"
-            "- Release height consistency\n\n"
-            "**5. Follow-Through & Energy Transfer**\n"
-            "- Observation 1\n"
-            "- Observation 2\n\n"
-            "**SPECIFIC CORRECTIONS & DRILLS**\n"
-            "- **Drill 1**: [Name] - [Detailed instructions]\n"
-            "- **Drill 2**: [Name] - [Detailed instructions]\n"
-            "- **Drill 3**: [Name] - [Detailed instructions]\n\n"
-            "**PERFORMANCE SUMMARY**\n"
-            "- **Primary Strength**: [Specific strength]\n"
-            "- **Critical Weakness**: [Specific weakness]\n"
-            "- **Top Priority Fix**: [Single most important correction]\n\n"
-            "FORMATTING RULES:\n"
-            "- Use ** for bold headings and emphasis\n"
-            "- Use - for bullet points\n"
-            "- Keep each point actionable and specific\n"
-            "- Reference actual metrics when relevant\n"
-            "- Avoid vague advice\n\n"
-            "Tone: Direct, professional, encouraging but honest."
+        # AI Feedback — use upgraded prompt with YouTube drill extraction
+        prompt = BOWLING_ANALYSIS_PROMPT.format(
+            metrics_summary=display_df.describe().to_string()
         )
         feedback_text = gemini.call_gemini(prompt, str(temp_video_path))
+
+        # Extract structured data from AI markdown
+        detected_flaws = extract_bowling_flaws(feedback_text)
+        drill_recommendations = extract_bowling_drills(feedback_text)
 
         # PDF Report
         pdf_bytes = create_pdf(feedback_text, display_df, images)
@@ -193,6 +166,12 @@ async def analyze_bowling(
             annotated_video_url=annotated_video_url,
             report_url=report_url,
             created_at=analysis.created_at,
+            detected_flaws=[
+                DetectedBowlingFlaw(**f) for f in detected_flaws
+            ],
+            drill_recommendations=[
+                BowlingDrillRecommendation(**d) for d in drill_recommendations
+            ],
         )
 
     except HTTPException:
@@ -245,6 +224,11 @@ def get_bowling_analysis(
     if analysis.player_id != current_user.id and current_user.role not in ("COACH", "ADMIN"):
         raise HTTPException(status_code=403, detail="Not authorized to view this analysis")
 
+    # Re-extract structured data from stored AI feedback
+    ai_text = analysis.ai_feedback or ""
+    detected_flaws = extract_bowling_flaws(ai_text)
+    drill_recs = extract_bowling_drills(ai_text)
+
     return BowlingAnalysisResponse(
         id=analysis.id,
         player_id=analysis.player_id,
@@ -255,8 +239,14 @@ def get_bowling_analysis(
         ),
         feedback=FeedbackResponse(
             summary="See full report for details.",
-            full_text=analysis.ai_feedback or "",
+            full_text=ai_text,
         ),
         report_url=analysis.report_url,
         created_at=analysis.created_at,
+        detected_flaws=[
+            DetectedBowlingFlaw(**f) for f in detected_flaws
+        ],
+        drill_recommendations=[
+            BowlingDrillRecommendation(**d) for d in drill_recs
+        ],
     )

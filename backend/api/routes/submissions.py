@@ -52,7 +52,7 @@ from utils.auth import get_current_user
 
 # Engine imports
 try:
-    from scripts.bowling_engine import CricketPoseAnalyzer, GeminiManager, create_pdf, MEDIAPIPE_AVAILABLE
+    from scripts.bowling_engine import CricketPoseAnalyzer, GeminiManager, create_pdf, MEDIAPIPE_AVAILABLE, BOWLING_ANALYSIS_PROMPT
     BOWLING_ENGINE_AVAILABLE = True
 except ImportError:
     BOWLING_ENGINE_AVAILABLE = False
@@ -559,21 +559,8 @@ def _run_bowling_analysis(
         key_frame_url = f"/static/temp_frames/{submission_id}.jpg"
 
     # AI feedback
-    prompt = (
-        "You are a professional elite cricket bowling coach and biomechanics analyst.\n"
-        "Analyze this fast bowler's technique using the provided biomechanical metrics.\n\n"
-        f"METRICS SUMMARY:\n{display_df.describe().to_string()}\n\n"
-        "REQUIRED STRUCTURE:\n\n"
-        "**OVERALL ASSESSMENT**\n"
-        "2-3 sentence executive summary.\n\n"
-        "**PHASE-BY-PHASE TECHNICAL ANALYSIS**\n"
-        "**1. Run-Up & Approach**\n**2. Back Foot Contact & Loading Phase**\n"
-        "**3. Delivery Stride & Front Foot Landing**\n"
-        "**4. Release Point & Arm Mechanics**\n"
-        "**5. Follow-Through & Energy Transfer**\n\n"
-        "**SPECIFIC CORRECTIONS & DRILLS**\n"
-        "**PERFORMANCE SUMMARY**\n\n"
-        "Tone: Direct, professional, encouraging but honest."
+    prompt = BOWLING_ANALYSIS_PROMPT.format(
+        metrics_summary=display_df.describe().to_string()
     )
     ai_text = _bowling_gemini.call_gemini(prompt, video_path) if _bowling_gemini else "AI feedback unavailable."
 

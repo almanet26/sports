@@ -15,9 +15,11 @@ Phase Detection State Machine:
 import cv2
 import numpy as np
 import os
+import re
 import subprocess
 import time
 import math
+import urllib.parse
 import pandas as pd
 from google import genai
 from dotenv import load_dotenv
@@ -115,6 +117,200 @@ BATTING_METRIC_LABELS = {
 
 # Batting phase names
 PHASES = ["Stance", "Trigger/Stride", "Downswing", "Impact", "Follow-Through"]
+
+# UPGRADED GEMINI PROMPT PATTERN (for detailed technical feedback + YouTube drill recommendations)
+BATTING_ANALYSIS_PROMPT = """
+You are a professional elite cricket batting coach and biomechanics analyst.
+Analyze this batter's technique using the provided biomechanical metrics.
+
+IMPORTANT: MediaPipe tracks the BODY only, NOT the bat or ball.
+Your analysis must focus on body mechanics, balance, and movement patterns.
+
+METRICS SUMMARY:
+{metrics_summary}
+
+PHASE DETECTION:
+{phase_info}
+
+REQUIRED STRUCTURE (use this exact format):
+
+**OVERALL ASSESSMENT**
+Provide a 2-3 sentence executive summary of the batter's technique.
+
+**PHASE-BY-PHASE TECHNICAL ANALYSIS**
+
+**1. Stance & Setup**
+- Head position and balance assessment
+- Base width and weight distribution
+
+**2. Trigger Movement & Stride**
+- Stride length and timing
+- Weight transfer pattern
+
+**3. Downswing & Shot Execution**
+- Shoulder rotation analysis
+- Front knee position at contact
+
+**4. Impact Zone**
+- Head alignment at impact (within base?)
+- Balance and stability
+
+**5. Follow-Through**
+- Completion of shot
+- Balance maintenance
+
+**WEAKNESSES**
+For EACH weakness identified, provide EXACTLY this format:
+- [Weakness Name] (Rating: X/10). [Timestamp: X.XXs]. [Detailed explanation]
+
+**SPECIFIC CORRECTIONS & DRILLS**
+- **Drill 1**: [Name] - [Detailed instructions]
+- **Drill 2**: [Name] - [Detailed instructions]
+- **Drill 3**: [Name] - [Detailed instructions]
+
+**PERFORMANCE SUMMARY**
+- **Primary Strength**: [Specific strength]
+- **Critical Weakness**: [Specific weakness]
+- **Top Priority Fix**: [Single most important correction]
+
+**RECOMMENDED TUTORIALS**
+Provide a search intent for EVERY weakness identified above.
+1. Search Intent: [3-5 word YouTube search query for fixing weakness #1 - MUST include 'batting']
+   Why this video: [One line explanation]
+... (Repeat for ALL weaknesses)
+
+**CRITICAL MANDATE**: For EVERY weakness listed, you MUST provide a [Timestamp: X.XXs] where the error is visible.
+
+FORMATTING RULES:
+- Use ** for bold headings and emphasis
+- Use - for bullet points
+- Keep each point actionable and specific
+- Reference actual metrics when relevant
+- Avoid vague advice
+
+Tone: Direct, professional, encouraging but honest.
+"""
+
+
+# YOUTUBE HELPERS
+def generate_youtube_search_link(query: str) -> str:
+    """Build a YouTube search URL from a plain-text query string.
+    
+    We NEVER ask Gemini for URLs (hallucination risk). Gemini provides
+    a short search phrase and we construct the link deterministically.
+    """
+    encoded = urllib.parse.quote_plus(query.strip())
+    return f"https://www.youtube.com/results?search_query={encoded}"
+
+
+def extract_drill_recommendations(report_text: str) -> list[dict]:
+    """Parse Gemini's markdown report and extract drill recommendations.
+    
+    Looks for the RECOMMENDED TUTORIALS section, extracts Search Intent + Why lines,
+    and builds structured drill objects with YouTube search links.
+    
+    Returns:
+        List of dicts: [{"query": str, "title": str, "link": str, "reason": str}, ...]
+    """
+    drills: list[dict] = []
+    
+    if "**RECOMMENDED TUTORIAL" not in report_text:
+        return drills
+    
+    try:
+        # Split at tutorials section
+        if "**RECOMMENDED TUTORIALS**" in report_text:
+            parts = report_text.split("**RECOMMENDED TUTORIALS**")
+        else:
+            parts = report_text.split("**RECOMMENDED TUTORIAL**")
+        
+        if len(parts) < 2:
+            return drills
+        
+        tutorial_content = "".join(parts[1:])
+        search_intents = re.findall(r"Search Intent:\s*(.*)", tutorial_content)
+        whys = re.findall(r"Why this video:\s*(.*)", tutorial_content)
+        
+        for i, intent in enumerate(search_intents):
+            clean_intent = intent.strip().strip('*_`[]()')
+            # Also replace markdown in the middle
+            clean_intent = clean_intent.replace('**', '').replace('*', '').strip()
+            
+            why = whys[i].strip() if i < len(whys) else "To improve your technique."
+            # Strip markdown from reason text
+            why = why.replace('**', '').replace('*', '').strip()
+            
+            # Append 'cricket batting tutorial' for better search results
+            full_query = f"{clean_intent} cricket batting tutorial"
+            link = generate_youtube_search_link(full_query)
+            
+            drills.append({
+                "query": clean_intent,
+                "title": f"Batting Tutorial: {clean_intent}",
+                "link": link,
+                "reason": why,
+            })
+    except Exception as e:
+        logger.warning("Failed to extract drill recommendations: %s", e)
+    
+    return drills
+
+
+def extract_detected_flaws(report_text: str) -> list[dict]:
+    """Parse the WEAKNESSES section from Gemini's markdown report.
+    
+    Expected format per line:
+      - [Weakness Name] (Rating: X/10). [Timestamp: X.XXs]. [Description]
+    
+    Returns:
+        List of dicts: [{"flaw_name": str, "rating": int|None, "timestamp": str|None, "description": str}, ...]
+    """
+    flaws: list[dict] = []
+    
+    # Find the WEAKNESSES section
+    match = re.search(r'\*\*WEAKNESSES\*\*\s*\n(.*?)(?=\n\*\*[A-Z]|\Z)', report_text, re.DOTALL)
+    if not match:
+        return flaws
+    
+    section = match.group(1)
+    
+    for line in section.strip().split('\n'):
+        line = line.strip()
+        if not line.startswith('-'):
+            continue
+        line = line.lstrip('- ').strip()
+        
+        # Extract rating
+        rating_match = re.search(r'\(Rating:\s*(\d+)/10\)', line)
+        rating = int(rating_match.group(1)) if rating_match else None
+        
+        # Extract timestamp
+        ts_match = re.search(r'\[Timestamp:\s*([\d.]+)s\]', line)
+        timestamp = ts_match.group(1) if ts_match else None
+        
+        # Extract flaw name (text before first parenthesis)
+        name_match = re.match(r'^([^(\[]+)', line)
+        flaw_name = name_match.group(1).strip().rstrip('.') if name_match else line[:50]
+        # Strip markdown formatting
+        flaw_name = flaw_name.replace('**', '').replace('*', '').strip()
+        
+        # Description is everything after the timestamp bracket (or rating bracket)
+        desc = line
+        if ts_match:
+            desc = line[ts_match.end():].strip().lstrip('. ')
+        elif rating_match:
+            desc = line[rating_match.end():].strip().lstrip('. ')
+        # Strip markdown formatting from description
+        desc = desc.replace('**', '').replace('*', '').strip()
+        
+        flaws.append({
+            "flaw_name": flaw_name,
+            "rating": rating,
+            "timestamp": timestamp,
+            "description": desc if desc else flaw_name,
+        })
+    
+    return flaws
 
 
 def parse_and_render_markdown(pdf, text: str, base_font_size: int = 11) -> None:

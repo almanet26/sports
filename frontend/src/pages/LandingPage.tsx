@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
+import { useThemeStore } from '../store/themeStore';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
@@ -105,24 +106,24 @@ function TestimonialCard({ name, role, sport, msg, outcome }: TestimonialCardPro
   return (
     <motion.div
       variants={fadeUp}
-      className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl"
+      className="glass rounded-2xl border p-6 backdrop-blur-xl"
     >
       <div className="flex items-center justify-between">
         <div>
           <p className="font-semibold">{name}</p>
-          <p className="text-xs text-white/60">
+          <p className="text-xs opacity-60">
             {role} • {sport}
           </p>
         </div>
-        <span className="text-xs text-white/60 border border-white/10 px-2 py-1 rounded-full">
+        <span className="text-xs opacity-60 border px-2 py-1 rounded-full">
           ★ 4.9
         </span>
       </div>
 
-      <p className="mt-4 text-sm text-white/75 leading-relaxed">"{msg}"</p>
+      <p className="mt-4 text-sm opacity-75 leading-relaxed">"{msg}"</p>
 
-      <div className="mt-4 rounded-2xl border border-white/10 bg-[#0B1020] p-3 text-xs text-white/60">
-        Outcome: <span className="text-white/75">{outcome}</span>
+      <div className="mt-4 glass rounded-2xl border p-3 text-xs opacity-60">
+        Outcome: <span className="opacity-75">{outcome}</span>
       </div>
     </motion.div>
   );
@@ -142,29 +143,29 @@ function StepCard({ idx, icon, title, desc }: StepCardProps) {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.25 }}
       transition={{ duration: 0.5, delay: idx * 0.08 }}
-      className="rounded-2xl border border-white/10 bg-[#0B1020] p-6"
+      className="glass rounded-2xl border p-6"
     >
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <div className="h-11 w-11 rounded-xl bg-white/10 border border-white/10 grid place-items-center text-xl">
+          <div className="h-11 w-11 rounded-xl glass border grid place-items-center text-xl">
             {icon}
           </div>
           <div>
             <p className="font-semibold">{title}</p>
-            <p className="text-xs text-white/60">Step {String(idx + 1).padStart(2, '0')}</p>
+            <p className="text-xs opacity-60">Step {String(idx + 1).padStart(2, '0')}</p>
           </div>
         </div>
 
-        <span className="text-xs text-white/60 border border-white/20 px-2 py-1 rounded-full bg-gradient-to-r from-green-500/20 to-emerald-500/20">
+        <span className="text-xs opacity-60 border px-2 py-1 rounded-full bg-gradient-to-r from-green-500/20 to-emerald-500/20">
           Live
         </span>
       </div>
 
-      <p className="mt-3 text-sm text-white/60 leading-relaxed">{desc}</p>
+      <p className="mt-3 text-sm opacity-60 leading-relaxed">{desc}</p>
 
-      <div className="mt-5 h-1 rounded-full bg-white/10 overflow-hidden">
+      <div className="mt-5 h-1 rounded-full bg-gray-200 dark:bg-white/10 overflow-hidden">
         <motion.div
-          className="h-full bg-white/60 rounded-full"
+          className="h-full bg-gray-600 dark:bg-white/60 rounded-full"
           animate={{ width: ['20%', '100%', '55%'] }}
           transition={{
             duration: 2.7,
@@ -180,6 +181,11 @@ function StepCard({ idx, icon, title, desc }: StepCardProps) {
 }
 
 export default function LandingPage() {
+  const { theme } = useThemeStore();
+
+  useEffect(() => {
+    document.body.className = theme === 'light' ? 'light-theme' : '';
+  }, [theme]);
   const sports = useMemo(
     () => [
       { id: 'cricket', name: 'Cricket', icon: '🏏', highlight: 'Cover Drive', tip: 'Earlier bat lift for better timing' },
@@ -265,7 +271,11 @@ export default function LandingPage() {
   );
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white overflow-x-hidden relative">
+    <div className={`min-h-screen overflow-x-hidden relative ${
+      theme === 'dark'
+        ? 'bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white'
+        : 'bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-900'
+    }`}>
       {/* Background Glow Effects */}
       <motion.div
         initial={{ opacity: 0, scale: 0.9 }}

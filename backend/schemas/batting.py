@@ -3,7 +3,7 @@ Batting Analysis Schemas for Request/Response validation.
 """
 
 from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
@@ -32,6 +32,22 @@ class BattingPhaseInfo(BaseModel):
     followthrough_start: Optional[int] = None
 
 
+class DetectedFlaw(BaseModel):
+    """A single detected batting flaw extracted from AI analysis."""
+    flaw_name: str = Field(..., description="Name of the detected weakness")
+    description: str = Field("", description="Detailed explanation of the flaw")
+    rating: Optional[int] = Field(None, ge=1, le=10, description="Severity rating 1-10")
+    timestamp: Optional[str] = Field(None, description="Timestamp in seconds where flaw is visible (e.g. '1.25')")
+
+
+class DrillRecommendation(BaseModel):
+    """A YouTube drill recommendation derived from detected flaws."""
+    query: str = Field(..., description="Original search query phrase from AI")
+    title: str = Field(..., description="Display title for the drill link")
+    link: str = Field(..., description="YouTube search URL for the drill")
+    reason: str = Field("", description="Why this drill helps fix the flaw")
+
+
 class BattingAnalysisResponse(BaseModel):
     """Full response from a batting analysis."""
     id: str
@@ -43,6 +59,8 @@ class BattingAnalysisResponse(BaseModel):
     annotated_video_url: Optional[str] = Field(None, description="URL to video with pose skeleton overlay")
     report_url: Optional[str] = None
     created_at: datetime
+    detected_flaws: List[DetectedFlaw] = Field(default_factory=list, description="Weaknesses extracted from AI analysis")
+    drill_recommendations: List[DrillRecommendation] = Field(default_factory=list, description="YouTube drill links for each flaw")
 
     model_config = ConfigDict(from_attributes=True)
 

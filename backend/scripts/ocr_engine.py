@@ -37,6 +37,7 @@ class ScoreboardConfig:
         'score': {'x': 140, 'y': 620, 'width': 100, 'height': 50},
         'overs': {'x': 140, 'y': 670, 'width': 60, 'height': 30},
         'batsman_name': {'x': 274, 'y': 620, 'width': 535, 'height': 40},  # Calibrated: HD overlay
+        'bowler_name': {'x': 500, 'y': 670, 'width': 300, 'height': 30},  # Bowler name strip (below batsman row)
     }
 
     def __init__(self, config_file: Optional[str] = None):
@@ -63,6 +64,11 @@ class ScoreboardConfig:
             self.batsman_roi_y = cfg.get('batsman_roi_y', self.DEFAULTS['batsman_name']['y'])
             self.batsman_roi_width = cfg.get('batsman_roi_width', self.DEFAULTS['batsman_name']['width'])
             self.batsman_roi_height = cfg.get('batsman_roi_height', self.DEFAULTS['batsman_name']['height'])
+            # Bowler name ROI
+            self.bowler_roi_x = cfg.get('bowler_roi_x', self.DEFAULTS['bowler_name']['x'])
+            self.bowler_roi_y = cfg.get('bowler_roi_y', self.DEFAULTS['bowler_name']['y'])
+            self.bowler_roi_width = cfg.get('bowler_roi_width', self.DEFAULTS['bowler_name']['width'])
+            self.bowler_roi_height = cfg.get('bowler_roi_height', self.DEFAULTS['bowler_name']['height'])
             # Suggested start time from auto-calibration
             self.suggested_start_time = cfg.get('suggested_start_time', None)
             self.start_time = float(self.suggested_start_time) if self.suggested_start_time else 0.0
@@ -80,11 +86,17 @@ class ScoreboardConfig:
             self.batsman_roi_y = self.DEFAULTS['batsman_name']['y']
             self.batsman_roi_width = self.DEFAULTS['batsman_name']['width']
             self.batsman_roi_height = self.DEFAULTS['batsman_name']['height']
+            # Bowler name ROI
+            self.bowler_roi_x = self.DEFAULTS['bowler_name']['x']
+            self.bowler_roi_y = self.DEFAULTS['bowler_name']['y']
+            self.bowler_roi_width = self.DEFAULTS['bowler_name']['width']
+            self.bowler_roi_height = self.DEFAULTS['bowler_name']['height']
             self.start_time = 0.0
 
         logger.info(f"Score ROI: ({self.roi_x}, {self.roi_y}) {self.roi_width}x{self.roi_height}")
         logger.info(f"Overs ROI: ({self.overs_roi_x}, {self.overs_roi_y}) {self.overs_roi_width}x{self.overs_roi_height}")
         logger.info(f"Batsman ROI: ({self.batsman_roi_x}, {self.batsman_roi_y}) {self.batsman_roi_width}x{self.batsman_roi_height}")
+        logger.info(f"Bowler ROI: ({self.bowler_roi_x}, {self.bowler_roi_y}) {self.bowler_roi_width}x{self.bowler_roi_height}")
 
     def save(self, config_file: str, suggested_start_time: int = None):
         """Persist configuration to JSON file."""
@@ -95,6 +107,8 @@ class ScoreboardConfig:
             'overs_roi_width': self.overs_roi_width, 'overs_roi_height': self.overs_roi_height,
             'batsman_roi_x': self.batsman_roi_x, 'batsman_roi_y': self.batsman_roi_y,
             'batsman_roi_width': self.batsman_roi_width, 'batsman_roi_height': self.batsman_roi_height,
+            'bowler_roi_x': self.bowler_roi_x, 'bowler_roi_y': self.bowler_roi_y,
+            'bowler_roi_width': self.bowler_roi_width, 'bowler_roi_height': self.bowler_roi_height,
         }
         if suggested_start_time is not None:
             config['suggested_start_time'] = suggested_start_time
@@ -322,6 +336,89 @@ def clean_player_name(text: str) -> str:
         return name
     
     logger.debug(f"Raw Name OCR: '{original_text}' -> Parsed: 'Unknown' (no match)")
+    return 'Unknown'
+
+
+# Regex patterns for stripping bowling figures from OCR text
+# Matches: "2-14", "3-0-14-1", "2/45", "3.2", "0-14", "1/0", "(2-14)", etc.
+BOWLING_FIGURES_PATTERN = re.compile(
+    r'\s*'
+    r'(?:'
+    r'\(?\d{1,2}(?:\.\d)?[\-/]\d{1,2}(?:[\-/]\d{1,3}){0,2}\)?'  # 2-14, 3-0-14-1, 2/45, (2-14)
+    r'|\d{1,2}\.\d'                                                # 3.2 (overs bowled)
+    r')'
+    r'\s*'
+)
+
+
+def clean_bowler_name(text: str) -> str:
+    """
+    Extract bowler name from OCR text, stripping bowling figures.
+    
+    Handles multiple broadcast formats:
+    - "BOULT 2-14"          → "BOULT"
+    - "BUMRAH 3.2-0-19-2"  → "BUMRAH"
+    - "STARC 1/45"          → "STARC"
+    - "CUMMINS (2-14)"      → "CUMMINS"
+    - "DE VILLIERS 0-12"    → "DE VILLIERS"  (multi-word names)
+    - "4 BOULT 2-14"        → "BOULT"  (leading misread digit)
+    
+    Strategy:
+    1. Strip all bowling figure patterns (overs-maidens-runs-wickets)
+    2. Strip leading misread digits (triangle/marker OCR errors)
+    3. Apply PLAYER_NAME_CORRECTIONS for OCR digit→letter fixes
+    4. Return longest valid alphabetic name token(s)
+    
+    Args:
+        text: Raw OCR text from bowler name region
+    
+    Returns:
+        Cleaned bowler name (e.g., 'BOULT', 'BUMRAH') or 'Unknown'
+    """
+    if not text:
+        logger.debug(f"Raw Bowler OCR: '' -> Parsed: 'Unknown'")
+        return 'Unknown'
+    
+    original_text = text
+    text_upper = text.upper().strip()
+    
+    # Step 1: Strip bowling figures patterns
+    cleaned = BOWLING_FIGURES_PATTERN.sub(' ', text_upper).strip()
+    
+    # Step 2: Remove leading single digit (triangle/marker misread)
+    cleaned = re.sub(r'^[▶►▷▸>649]\s+', '', cleaned)
+    
+    # Step 3: Remove any remaining isolated numbers
+    cleaned = re.sub(r'\b\d+\b', '', cleaned).strip()
+    
+    # Step 4: Collapse whitespace
+    cleaned = ' '.join(cleaned.split())
+    
+    # Step 5: Apply letter corrections and extract valid name tokens
+    if cleaned:
+        # Apply corrections
+        for old, new in PLAYER_NAME_CORRECTIONS.items():
+            cleaned = cleaned.replace(old, new)
+        
+        # Extract alphabetic words (3+ chars)
+        name_tokens = re.findall(r'[A-Z]{2,}', cleaned)
+        if name_tokens:
+            # Reconstruct name (handles multi-word names like "DE VILLIERS")
+            name = ' '.join(name_tokens)
+            if len(name) >= 2:
+                logger.debug(f"Raw Bowler OCR: '{original_text}' -> Parsed: '{name}'")
+                return name
+    
+    # Fallback: try finding any 3+ letter alphabetic words in original text
+    words = re.findall(r'[A-Z]{3,}', text_upper)
+    if words:
+        name = max(words, key=len)
+        for old, new in PLAYER_NAME_CORRECTIONS.items():
+            name = name.replace(old, new)
+        logger.debug(f"Raw Bowler OCR: '{original_text}' -> Parsed: '{name}' (fallback)")
+        return name
+    
+    logger.debug(f"Raw Bowler OCR: '{original_text}' -> Parsed: 'Unknown'")
     return 'Unknown'
 
 
@@ -563,6 +660,104 @@ class OCRScoreReader:
             
         except Exception as e:
             logger.warning(f"⚠️  Batsman name OCR error at {timestamp:.1f}s: {e}")
+            return 'Unknown'
+
+    def extract_bowler_name_roi(self, frame, debug_path: Optional[str] = None) -> Optional[any]:
+        """
+        Extract bowler name region WITHOUT heavy preprocessing.
+        
+        Light preprocessing only (upscale + keep original colors) to preserve
+        letter shapes for name OCR. Same approach as batsman name ROI.
+        """
+        # Skip if ROI not configured (x=0, y=0 means unconfigured)
+        if self.config.bowler_roi_x == 0 and self.config.bowler_roi_y == 0:
+            return None
+        
+        try:
+            height, width = frame.shape[:2]
+            
+            x = self.config.bowler_roi_x
+            y = self.config.bowler_roi_y
+            w = self.config.bowler_roi_width
+            h = self.config.bowler_roi_height
+            
+            # Clamp to frame bounds
+            x = max(0, min(x, width - w))
+            y = max(0, min(y, height - h))
+            
+            # Extract raw ROI - keep original colors for best OCR on broadcast text
+            roi = frame[y:y+h, x:x+w].copy()
+            
+            # Upscale for better OCR accuracy
+            roi = cv2.resize(roi, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+            
+            if debug_path:
+                cv2.imwrite(f"{debug_path}_bowler.jpg", roi)
+            
+            return roi
+            
+        except Exception as e:
+            logger.debug(f"Bowler ROI extraction error: {e}")
+            return None
+
+    def read_bowler_name(self, frame, timestamp: float = 0.0, debug_dir: str = None) -> str:
+        """
+        Read bowler name from frame using the configured bowler ROI.
+        
+        Applies `clean_bowler_name()` to strip bowling figures (e.g., "BOULT 2-14" → "BOULT").
+        
+        Args:
+            frame: Video frame (BGR numpy array)
+            timestamp: Frame timestamp for debug logging
+            debug_dir: Optional directory to save failed ROI images for inspection
+        
+        Returns:
+            Cleaned bowler name or 'Unknown' if extraction fails
+        """
+        roi = self.extract_bowler_name_roi(frame)
+        if roi is None:
+            return 'Unknown'
+        
+        try:
+            # Strategy 1: Paragraph mode (best for "BOULT 2-0-14-1" style text)
+            results = self.reader.readtext(roi, detail=1, paragraph=True)
+            if results and len(results) > 0:
+                raw_text = ' '.join([r[1] for r in results if len(r) > 1])
+                if raw_text.strip():
+                    confidence = max([r[2] for r in results if len(r) > 2], default=0.0)
+                    cleaned_name = clean_bowler_name(raw_text)
+                    
+                    logger.info(f"   🎳 Bowler OCR: '{raw_text}' (conf={confidence:.2f}) → '{cleaned_name}'")
+                    
+                    if cleaned_name != 'Unknown':
+                        return cleaned_name
+            
+            # Strategy 2: Word-by-word mode (fallback)
+            results = self.reader.readtext(roi, detail=1, paragraph=False)
+            if results and len(results) > 0:
+                raw_text = ' '.join([r[1] for r in results if len(r) > 1])
+                if raw_text.strip():
+                    cleaned_name = clean_bowler_name(raw_text)
+                    
+                    logger.info(f"   🎳 Bowler OCR (fallback): '{raw_text}' → '{cleaned_name}'")
+                    
+                    if cleaned_name != 'Unknown':
+                        return cleaned_name
+            
+            # OCR failed
+            if debug_dir:
+                from pathlib import Path
+                debug_path = Path(debug_dir) / f"bowler_ocr_failed_{timestamp:.1f}s.jpg"
+                Path(debug_dir).mkdir(parents=True, exist_ok=True)
+                cv2.imwrite(str(debug_path), roi)
+                logger.debug(f"⚠️  Could not extract bowler name at {timestamp:.1f}s")
+            else:
+                logger.debug(f"⚠️  Could not extract bowler name at {timestamp:.1f}s")
+            
+            return 'Unknown'
+            
+        except Exception as e:
+            logger.warning(f"⚠️  Bowler name OCR error at {timestamp:.1f}s: {e}")
             return 'Unknown'
 
     def read_score(self, roi_image, min_confidence: float = 0.4, prev_wickets: Optional[int] = None) -> Tuple[Optional[ScoreState], float, str]:
@@ -1112,6 +1307,18 @@ def visualize_roi(video_path: str, config: ScoreboardConfig, timestamp: float = 
     else:
         logger.warning("⚠️  Batsman Name ROI not configured (x=0, y=0). Set --batsman-roi-x/y to enable player attribution.")
 
+    # Draw Bowler Name ROI (magenta/pink) - only if configured
+    if config.bowler_roi_x > 0 or config.bowler_roi_y > 0:
+        bowler_x = config.bowler_roi_x
+        bowler_y = config.bowler_roi_y
+        bowler_w = config.bowler_roi_width
+        bowler_h = config.bowler_roi_height
+        pt1_bowler = (bowler_x, bowler_y)
+        pt2_bowler = (bowler_x + bowler_w, bowler_y + bowler_h)
+        cv2.rectangle(frame, pt1_bowler, pt2_bowler, (255, 0, 255), 3)
+        cv2.putText(frame, "BOWLER", (bowler_x, max(10, bowler_y - 10)), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 0, 255), 2)
+        logger.info(f"Bowler ROI: ({bowler_x}, {bowler_y}) to ({bowler_x + bowler_w}, {bowler_y + bowler_h})")
+
     # Draw frame dimensions text at bottom
     cv2.putText(frame, f"Frame: {width}x{height}", (10, height - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
 
@@ -1122,6 +1329,8 @@ def visualize_roi(video_path: str, config: ScoreboardConfig, timestamp: float = 
     logger.info(f"   Blue box (OVERS):  ({overs_x}, {overs_y}) {overs_w}x{overs_h}")
     if config.batsman_roi_x > 0 or config.batsman_roi_y > 0:
         logger.info(f"   Yellow box (BATSMAN): ({batsman_x}, {batsman_y}) {batsman_w}x{batsman_h}")
+    if config.bowler_roi_x > 0 or config.bowler_roi_y > 0:
+        logger.info(f"   Magenta box (BOWLER): ({config.bowler_roi_x}, {config.bowler_roi_y}) {config.bowler_roi_width}x{config.bowler_roi_height}")
     return output_path
 
 
@@ -1679,6 +1888,11 @@ def parse_args():
     parser.add_argument('--batsman-roi-y', type=int, help='Y coordinate of batsman name region')
     parser.add_argument('--batsman-roi-width', type=int, help='Width of batsman name region')
     parser.add_argument('--batsman-roi-height', type=int, help='Height of batsman name region')
+    # Bowler name ROI (for bowler spell tracking)
+    parser.add_argument('--bowler-roi-x', type=int, help='X coordinate of bowler name region')
+    parser.add_argument('--bowler-roi-y', type=int, help='Y coordinate of bowler name region')
+    parser.add_argument('--bowler-roi-width', type=int, help='Width of bowler name region')
+    parser.add_argument('--bowler-roi-height', type=int, help='Height of bowler name region')
 
     parser.add_argument('--before', type=float, default=PADDING_BEFORE, help=f'Seconds before event (default: {PADDING_BEFORE})')
     parser.add_argument('--after', type=float, default=PADDING_AFTER, help=f'Seconds after event (default: {PADDING_AFTER})')
@@ -1732,6 +1946,15 @@ def apply_roi_overrides(config: ScoreboardConfig, args):
         config.batsman_roi_width = args.batsman_roi_width
     if args.batsman_roi_height is not None:
         config.batsman_roi_height = args.batsman_roi_height
+    # Bowler name ROI
+    if hasattr(args, 'bowler_roi_x') and args.bowler_roi_x is not None:
+        config.bowler_roi_x = args.bowler_roi_x
+    if hasattr(args, 'bowler_roi_y') and args.bowler_roi_y is not None:
+        config.bowler_roi_y = args.bowler_roi_y
+    if hasattr(args, 'bowler_roi_width') and args.bowler_roi_width is not None:
+        config.bowler_roi_width = args.bowler_roi_width
+    if hasattr(args, 'bowler_roi_height') and args.bowler_roi_height is not None:
+        config.bowler_roi_height = args.bowler_roi_height
 
 
 def main():

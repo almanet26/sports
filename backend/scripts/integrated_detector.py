@@ -50,51 +50,53 @@ def normalize_player_name(name: str) -> str:
     return re.sub(r'[^A-Z0-9]', '', name.upper())
 
 
+def _levenshtein(a: str, b: str) -> int:
+    """Standard DP Levenshtein distance — O(m*n), no off-by-one bugs."""
+    m, n = len(a), len(b)
+    dp = list(range(n + 1))
+    for i in range(1, m + 1):
+        prev, dp[0] = dp[0], i
+        for j in range(1, n + 1):
+            temp = dp[j]
+            dp[j] = prev if a[i-1] == b[j-1] else 1 + min(prev, dp[j], dp[j-1])
+            prev = temp
+    return dp[n]
+
+
 def fuzzy_match_player(ocr_name: str, target: str) -> bool:
-    """Fuzzy player name matching: substring + normalized comparison.
-    
-    Returns True if the names are close enough to be the same player.
-    Uses normalized forms to handle OCR artifacts like spaces, asterisks, dots.
-    
+    """Fuzzy player name matching: exact → substring → Levenshtein.
+
     Strategies (in order):
         1. Exact normalized match:    'MAHESH RAM*' == 'MAHESHRAM'
         2. Substring containment:     'MAHESHRAM' in 'MAHESHRAMSINGH'
-        3. Levenshtein-lite:          edit distance <= 2 for short names
+        3. Levenshtein with length-scaled tolerance:
+              names < 6 chars  → max 1 edit  (COX vs MEHTA = 4 edits → reject)
+              names >= 6 chars → max 2 edits  (FLITWICK vs FLITWIC = 1 edit → accept)
     """
     norm_ocr = normalize_player_name(ocr_name)
     norm_target = normalize_player_name(target)
-    
+
     if not norm_ocr or not norm_target:
         return False
-    
+
     # Strategy 1: Exact normalized match
     if norm_ocr == norm_target:
         return True
-    
+
     # Strategy 2: Substring containment (either direction)
     if norm_target in norm_ocr or norm_ocr in norm_target:
         return True
-    
-    # Strategy 3: Simple edit distance for short names (handles 1-2 char OCR errors)
-    if abs(len(norm_ocr) - len(norm_target)) <= 2:
-        # Quick Levenshtein check — allow up to 2 edits
-        mismatches = 0
-        shorter = min(norm_ocr, norm_target, key=len)
-        longer = max(norm_ocr, norm_target, key=len)
-        j = 0
-        for i in range(len(shorter)):
-            if j >= len(longer):
-                mismatches += len(shorter) - i
-                break
-            if shorter[i] != longer[j]:
-                mismatches += 1
-                if len(longer) > len(shorter):
-                    j += 1  # Skip one char in longer string (insertion)
-            j += 1
-        mismatches += len(longer) - j  # Remaining chars in longer string
-        if mismatches <= 2:
+
+    # Strategy 3: Levenshtein with strict length-scaled tolerance
+    len_diff = abs(len(norm_ocr) - len(norm_target))
+    min_len = min(len(norm_ocr), len(norm_target))
+    # Allow max 1 edit for very short names (<5 chars), 2 edits for longer names
+    max_edits = 1 if min_len < 5 else 2
+    if len_diff <= max_edits:
+        dist = _levenshtein(norm_ocr, norm_target)
+        if dist <= max_edits:
             return True
-    
+
     return False
 
 
@@ -356,12 +358,16 @@ class ClipPadding:
     boundary_post: float = 10.0
     
     # Delivery events (dot balls, singles) - tighter cuts
-    delivery_pre: float = 8.0
+    delivery_pre: float = 10.0
     delivery_post: float = 5.0
     
     # Wicket events - longer post-roll for celebration
     wicket_pre: float = 10.0
     wicket_post: float = 15.0
+    
+    # Bowler delivery events - captures run-up and delivery completion
+    bowler_delivery_pre: float = 12.0
+    bowler_delivery_post: float = 5.0
     
     def get_padding(self, event_type: str) -> Tuple[float, float]:
         """Return (pre_padding, post_padding) for given event type."""
@@ -370,6 +376,8 @@ class ClipPadding:
             return (self.boundary_pre, self.boundary_post)
         elif event_type == 'WICKET':
             return (self.wicket_pre, self.wicket_post)
+        elif event_type == 'BOWLER_DELIVERY':
+            return (self.bowler_delivery_pre, self.bowler_delivery_post)
         else:  # DELIVERY, PLAYED_SHOT, etc.
             return (self.delivery_pre, self.delivery_post)
 
@@ -454,6 +462,16 @@ class IntegratedDetector:
         
         # Per-player delivery tracking
         self.player_deliveries: Dict[str, List[Dict]] = {}  # {player: [delivery_events]}
+        
+        # BOWLER SPELL TRACKING
+        self.prev_overs: Optional[Tuple[int, int]] = None  # (overs, balls) from last frame
+        self.current_bowler: str = "Unknown"  # Memory state: last known bowler name
+        self.current_bowler_ts: float = -1.0  # Timestamp when current_bowler was last confirmed by OCR
+        self.target_bowler: Optional[str] = None  # CLI target for --target-bowler filtering
+        self.bowler_delivery_events: List[Dict] = []  # All deliveries attributed to target bowler
+        # Memory TTL: how long to trust last-known bowler when OCR fails on a delivery frame
+        # Cricket overs = ~2-4 min broadcast. 120s HARD cutoff prevents stale attribution.
+        self.BOWLER_MEMORY_TTL: float = 120.0
     
     def _save_failure_snapshot(self, frame: np.ndarray, timestamp: float) -> None:
         """Save cropped ROI snapshot when OCR detection fails.
@@ -648,6 +666,11 @@ class IntegratedDetector:
         if self.config.track_deliveries and current_batsmen[0]:
             delivery_event = self._detect_delivery(current_batsmen, timestamp)
 
+        # === PHASE 2.5: BOWLER SPELL TRACKING (Overs-Based Delivery Detection) ===
+        bowler_delivery = None
+        if self.target_bowler:
+            bowler_delivery = self._detect_bowler_delivery(frame, timestamp)
+
         # === PHASE 3: SCORE-BASED EVENT DETECTION (4s, 6s, Wickets) ===
         ocr_event, _, ocr_confidence = self._process_ocr(frame, timestamp)
         
@@ -800,6 +823,118 @@ class IntegratedDetector:
         if current_batsmen[0]:
             self._lkv_batsmen = current_batsmen
             self._lkv_timestamp = timestamp
+        
+        return None
+
+    def _detect_bowler_delivery(self, frame: np.ndarray, timestamp: float) -> Optional[Dict]:
+        """
+        Detect deliveries bowled by the target bowler via overs increment.
+        
+        Trigger Logic:
+        - Read current overs from OCR
+        - If current_overs > self.prev_overs → a delivery was bowled
+        - Read bowler name from frame; if fuzzy_match to self.target_bowler → log BOWLER_DELIVERY
+        - Memory Fallback: if bowler OCR fails on overs-change frame, use self.current_bowler
+        
+        Handles:
+        - Normal increment: 14.1 → 14.2
+        - Over boundary: 14.5 → 15.0
+        - Wide/no-ball: overs stay same (no trigger — those don't count as legal deliveries)
+        
+        Args:
+            frame: Current video frame
+            timestamp: Current video timestamp
+            
+        Returns:
+            BOWLER_DELIVERY event dict if target bowler delivered, None otherwise
+        """
+        # Read current overs from frame
+        overs_roi = self.ocr_reader.extract_overs_roi(frame)
+        current_overs = self.ocr_reader.read_overs(overs_roi) if overs_roi is not None else None
+        
+        if current_overs is None:
+            return None
+        
+        # Convert overs tuple to comparable float: (14, 2) → 14.2
+        def overs_to_float(ov: Tuple[int, int]) -> float:
+            return ov[0] + ov[1] / 10.0
+        
+        current_overs_f = overs_to_float(current_overs)
+        
+        # Check if overs advanced (delivery bowled)
+        delivery_detected = False
+        if self.prev_overs is not None:
+            prev_overs_f = overs_to_float(self.prev_overs)
+            
+            # Overs must increase (handles 14.2→14.3 and 14.5→15.0)
+            # Guard against wild OCR jumps (>2 overs at once is suspicious)
+            overs_diff = current_overs_f - prev_overs_f
+            if 0 < overs_diff <= 2.0:
+                delivery_detected = True
+                logger.info(f"   🎳 Overs advanced: {self.prev_overs[0]}.{self.prev_overs[1]} → "
+                            f"{current_overs[0]}.{current_overs[1]} at {timestamp:.1f}s")
+            else:
+                logger.debug(f"   ⏱ Overs unchanged: {current_overs[0]}.{current_overs[1]} at {timestamp:.1f}s")
+        
+        # Always update prev_overs for next frame comparison
+        self.prev_overs = current_overs
+        
+        if not delivery_detected:
+            # Even when no delivery, opportunistically read bowler name for memory state
+            bowler_name = self.ocr_reader.read_bowler_name(
+                frame, timestamp, debug_dir=self.config.debug_ocr_dir
+            )
+            if bowler_name != 'Unknown':
+                self.current_bowler = bowler_name
+                self.current_bowler_ts = timestamp
+            return None
+        
+        # === DELIVERY DETECTED: Attribute to bowler ===
+        
+        # Read bowler name from frame
+        bowler_name = self.ocr_reader.read_bowler_name(
+            frame, timestamp, debug_dir=self.config.debug_ocr_dir
+        )
+        
+        if bowler_name != 'Unknown':
+            # Fresh OCR read — update memory
+            self.current_bowler = bowler_name
+            self.current_bowler_ts = timestamp
+        else:
+            # OCR failed — check if memory is still fresh enough to trust
+            memory_age = timestamp - self.current_bowler_ts
+            if self.current_bowler != 'Unknown' and memory_age <= self.BOWLER_MEMORY_TTL:
+                bowler_name = self.current_bowler
+                logger.debug(f"   🔄 Bowler OCR failed, using memory ({memory_age:.0f}s old): {bowler_name}")
+            else:
+                # Memory is stale (>120s) or never set — skip this delivery entirely
+                logger.info(f"   ⏭️ Delivery at {timestamp:.1f}s skipped: bowler OCR failed & "
+                           f"memory stale ({memory_age:.0f}s since last confirmed read)")
+                return None
+        
+        # Check if this bowler matches our target
+        is_target = False
+        if self.target_bowler and bowler_name != 'Unknown':
+            is_target = fuzzy_match_player(bowler_name, self.target_bowler)
+        
+        # Log every delivery for visibility
+        match_symbol = "✅" if is_target else "⬜"
+        logger.info(f"   {match_symbol} Delivery at {timestamp:.1f}s | "
+                   f"Overs: {current_overs[0]}.{current_overs[1]} | "
+                   f"Bowler: {bowler_name} | Target: {self.target_bowler} | "
+                   f"Match: {is_target}")
+        
+        if is_target:
+            event = {
+                'type': 'BOWLER_DELIVERY',
+                'timestamp': timestamp,
+                'bowler': bowler_name,
+                'overs': f"{current_overs[0]}.{current_overs[1]}",
+                'description': f"Delivery by {bowler_name} at {current_overs[0]}.{current_overs[1]} overs",
+                'attribution': 'overs_delta'
+            }
+            self.bowler_delivery_events.append(event)
+            return event
         
         return None
     
@@ -1602,6 +1737,79 @@ class IntegratedDetector:
         
         return innings_videos
     
+    def generate_bowler_spell_reel(self, video_path: str, output_dir: str = None) -> Optional[str]:
+        """
+        Generate a supercut reel of every delivery bowled by the target bowler.
+        
+        Uses bowler_delivery_events collected during process_video to extract
+        clips with bowler-specific padding (8s before, 5s after each delivery).
+        
+        Args:
+            video_path: Path to source video
+            output_dir: Output directory for the reel
+        
+        Returns:
+            Path to generated reel file, or None if no deliveries found
+        """
+        if not self.bowler_delivery_events:
+            logger.warning(f"⚠️ No deliveries found for target bowler: {self.target_bowler}")
+            return None
+        
+        output_dir = output_dir or self.config.player_reels_dir
+        Path(output_dir).mkdir(parents=True, exist_ok=True)
+        
+        video_stem = Path(video_path).stem
+        
+        # Get video duration for clamping
+        video = cv2.VideoCapture(video_path)
+        video_duration = video.get(cv2.CAP_PROP_FRAME_COUNT) / video.get(cv2.CAP_PROP_FPS)
+        video.release()
+        
+        # Sort deliveries chronologically
+        sorted_deliveries = sorted(self.bowler_delivery_events, key=lambda d: d.get('timestamp', 0))
+        
+        logger.info(f"\n🎳 Generating Bowler Spell Reel for {self.target_bowler}...")
+        logger.info(f"   {len(sorted_deliveries)} deliveries found")
+        logger.info(f"   Source: {video_path} ({video_duration:.1f}s)")
+        
+        # Use bowler-specific padding from ClipPadding
+        pre_pad, post_pad = self.config.clip_padding.get_padding('BOWLER_DELIVERY')
+        
+        # Build segments with padding
+        segments = []
+        for delivery in sorted_deliveries:
+            ts = delivery.get('timestamp', 0)
+            start = max(0, ts - pre_pad)
+            end = min(video_duration, ts + post_pad)
+            segments.append((start, end))
+        
+        # Merge overlapping segments
+        merged_segments = self._merge_overlapping_segments(segments, merge_tolerance=0.5)
+        
+        total_duration = sum(e - s for s, e in merged_segments)
+        logger.info(f"   → {len(segments)} clips → {len(merged_segments)} segments after merging")
+        logger.info(f"   → Estimated reel duration: {total_duration:.1f}s")
+        
+        # Generate output path
+        safe_name = re.sub(r'[^\w]', '', (self.target_bowler or 'Unknown').replace(' ', '_'))
+        output_path = str(Path(output_dir) / f"{video_stem}_{safe_name}_BowlerSpell.mp4")
+        
+        # Use FFmpeg to stitch
+        result = self._ffmpeg_extract_and_concat(
+            video_path=video_path,
+            segments=merged_segments,
+            output_path=output_path,
+            player_name=self.target_bowler or 'Unknown'
+        )
+        
+        if result:
+            file_size = Path(output_path).stat().st_size / (1024 * 1024)
+            logger.info(f"   ✅ Bowler spell reel: {output_path} ({file_size:.1f} MB)")
+            return output_path
+        else:
+            logger.error(f"   ❌ Failed to create bowler spell reel")
+            return None
+    
     def _merge_overlapping_segments(self, segments: List[Tuple[float, float]], 
                                     merge_tolerance: float = 1.0) -> List[Tuple[float, float]]:
         """
@@ -1844,6 +2052,18 @@ def parse_args():
     parser.add_argument('--min-deliveries', type=int, default=1,
                         help='Minimum deliveries required to generate ball-by-ball video (default: 1)')
     
+    # Bowler spell tracking options
+    parser.add_argument('--bowler-spell', action='store_true',
+                        help='Generate highlight reel of every delivery bowled by --target-bowler')
+    parser.add_argument('--target-bowler', type=str, default=None,
+                        help='Target bowler name for spell reel (e.g., "BOULT", "BUMRAH")')
+    
+    # Bowler ROI overrides
+    parser.add_argument('--bowler-roi-x', type=int, help='X coordinate of bowler name region')
+    parser.add_argument('--bowler-roi-y', type=int, help='Y coordinate of bowler name region')
+    parser.add_argument('--bowler-roi-width', type=int, help='Width of bowler name region')
+    parser.add_argument('--bowler-roi-height', type=int, help='Height of bowler name region')
+    
     # General options
     parser.add_argument('--start-time', type=float, default=0.0,
                         help='Start processing from this timestamp')
@@ -1870,12 +2090,12 @@ def main():
     sb_config = ScoreboardConfig(args.config)
     sb_config.use_gpu = args.gpu
     
-    # Optimize mode selection: use OCR-only for ball-by-ball tracking (faster)
+    # Optimize mode selection: use OCR-only for ball-by-ball or bowler-spell tracking (faster)
     mode = args.mode
-    if args.ball_by_ball and mode == 'full':
-        mode = 'ocr'  # Skip expensive CV operations for ball-by-ball
+    if (args.ball_by_ball or args.bowler_spell) and mode == 'full':
+        mode = 'ocr'  # Skip expensive CV operations for ball-by-ball / bowler spell
         if not args.quiet:
-            logger.info("💡 Ball-by-ball mode: Using OCR-only for faster processing")
+            logger.info("💡 OCR-only mode: Skipping CV operations for faster processing")
     
     config = IntegratedConfig(
         scoreboard_config=sb_config, 
@@ -1890,7 +2110,36 @@ def main():
     config._target_player = args.target_player
     detector = IntegratedDetector(config)
     
+    # Apply bowler ROI overrides if provided
+    if args.bowler_roi_x is not None:
+        sb_config.bowler_roi_x = args.bowler_roi_x
+    if args.bowler_roi_y is not None:
+        sb_config.bowler_roi_y = args.bowler_roi_y
+    if args.bowler_roi_width is not None:
+        sb_config.bowler_roi_width = args.bowler_roi_width
+    if args.bowler_roi_height is not None:
+        sb_config.bowler_roi_height = args.bowler_roi_height
+    
+    # Set target bowler on detector if --bowler-spell or --target-bowler provided
+    if args.target_bowler:
+        detector.target_bowler = args.target_bowler.upper()
+        logger.info(f"🎳 Target bowler: {detector.target_bowler}")
+        logger.info(f"🎳 Effective Bowler ROI: ({sb_config.bowler_roi_x}, {sb_config.bowler_roi_y}) "
+                    f"{sb_config.bowler_roi_width}x{sb_config.bowler_roi_height}")
+    elif args.bowler_spell:
+        logger.error("❌ --bowler-spell requires --target-bowler to be specified")
+        return
+    
+    # Bowler-spell mode: no need for continuous batsman striker tracking
+    # Overs/bowler detection runs independently via process_frame Phase 2.5
+    # Use 3s default interval for bowler-spell (overs change every ~20s, 1s wastes CPU)
+    if args.bowler_spell and not (args.full_innings or args.ball_by_ball or args.all_player_reels):
+        if args.sample_interval == 1.0:
+            config.sample_interval = 3.0
+            logger.info("🎳 Bowler-spell mode: using 3s sample interval (override with --sample-interval)")
+
     # Process video with continuous tracking if full innings or ball-by-ball requested
+    # Bowler-spell alone does NOT need continuous striker tracking
     continuous_tracking = args.full_innings or args.all_player_reels or args.ball_by_ball
     detector.process_video(
         args.video_path, 
@@ -1930,6 +2179,7 @@ def main():
     reels = {}
     innings_videos = {}
     ball_by_ball_videos = {}
+    bowler_spell_reel = None
     
     # Generate boundary highlight reels
     if args.all_player_reels:
@@ -1969,6 +2219,21 @@ def main():
             min_deliveries=args.min_deliveries
         )
     
+    # Generate bowler spell reel
+    if args.bowler_spell and args.target_bowler:
+        bowler_spell_reel = detector.generate_bowler_spell_reel(args.video_path)
+    
+    # Display bowler spell summary
+    if args.target_bowler:
+        n_deliveries = len(detector.bowler_delivery_events)
+        logger.info(f"\n🎳 Bowler Spell Summary for {detector.target_bowler}:")
+        logger.info(f"   Deliveries matched: {n_deliveries}")
+        if n_deliveries > 0:
+            first_ts = detector.bowler_delivery_events[0].get('timestamp', 0)
+            last_ts = detector.bowler_delivery_events[-1].get('timestamp', 0)
+            logger.info(f"   First delivery: {first_ts:.1f}s")
+            logger.info(f"   Last delivery: {last_ts:.1f}s")
+    
     # Generate summary report
     if args.report or args.all_player_reels:
         detector.generate_summary_report(args.video_path, reels)
@@ -2003,6 +2268,15 @@ def main():
             logger.warning("   These occur when scores/balls are misread (e.g., '15' read as '155').")
             logger.warning("   The system automatically resets and recovers, but some deliveries may be skipped.")
             logger.warning("   💡 Tip: Use --debug-ocr to save failed ROI images for ROI adjustment.")
+    
+    # Print bowler spell reel summary
+    if bowler_spell_reel:
+        logger.info("\n" + "=" * 70)
+        logger.info("🎳 BOWLER SPELL REEL")
+        logger.info("=" * 70)
+        file_size = Path(bowler_spell_reel).stat().st_size / (1024 * 1024)
+        logger.info(f"   {detector.target_bowler}: {bowler_spell_reel} ({file_size:.1f} MB)")
+        logger.info(f"   Deliveries: {len(detector.bowler_delivery_events)}")
     
     logger.info("\n" + "=" * 70)
     logger.info("🏏 PROCESSING COMPLETE")

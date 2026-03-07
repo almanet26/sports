@@ -1,19 +1,26 @@
 import * as React from "react";
 import { cn } from "../../lib/utils";
+import { useThemeStore } from "../../store/themeStore";
 
 const Card = React.forwardRef<
   HTMLDivElement,
   React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div
-    ref={ref}
-    className={cn(
-      "rounded-lg border border-slate-800 bg-slate-900/50 backdrop-blur-sm text-slate-100 shadow-lg",
-      className
-    )}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  const { theme } = useThemeStore();
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        "rounded-lg border shadow-lg",
+        theme === 'dark'
+          ? "border-slate-800 bg-slate-900/50 backdrop-blur-sm text-slate-100"
+          : "border-gray-300 bg-white text-gray-900",
+        className
+      )}
+      {...props}
+    />
+  );
+});
 Card.displayName = "Card";
 
 const CardHeader = React.forwardRef<
@@ -31,25 +38,39 @@ CardHeader.displayName = "CardHeader";
 const CardTitle = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLHeadingElement>
->(({ className, ...props }, ref) => (
-  <h3
-    ref={ref}
-    className={cn("font-semibold leading-none tracking-tight text-white", className)}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  const { theme } = useThemeStore();
+  return (
+    <h3
+      ref={ref}
+      className={cn(
+        "font-semibold leading-none tracking-tight",
+        theme === 'dark' ? 'text-white' : 'text-gray-900',
+        className
+      )}
+      {...props}
+    />
+  );
+});
 CardTitle.displayName = "CardTitle";
 
 const CardDescription = React.forwardRef<
   HTMLParagraphElement,
   React.HTMLAttributes<HTMLParagraphElement>
->(({ className, ...props }, ref) => (
-  <p
-    ref={ref}
-    className={cn("text-sm text-slate-400", className)}
-    {...props}
-  />
-));
+>(({ className, ...props }, ref) => {
+  const { theme } = useThemeStore();
+  return (
+    <p
+      ref={ref}
+      className={cn(
+        "text-sm",
+        theme === 'dark' ? 'text-slate-400' : 'text-gray-600',
+        className
+      )}
+      {...props}
+    />
+  );
+});
 CardDescription.displayName = "CardDescription";
 
 const CardContent = React.forwardRef<

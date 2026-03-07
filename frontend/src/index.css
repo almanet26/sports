@@ -61,6 +61,13 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
+.light-theme .glass {
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid #d1d5db;
+}
+
 .glass-dark {
   background: rgba(0, 0, 0, 0.4);
   backdrop-filter: blur(20px);
@@ -118,4 +125,36 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   outline: none;
+}
+
+/* Light theme text colors */
+.light-theme .text-white\/60 {
+  color: rgb(75 85 99) !important;
+}
+
+.light-theme .text-white\/70 {
+  color: rgb(55 65 81) !important;
+}
+
+.light-theme .text-white\/40 {
+  color: rgb(156 163 175) !important;
+}
+
+.light-theme .text-white\/50 {
+  color: rgb(107 114 128) !important;
+}
+
+.light-theme .text-white {
+  color: rgb(17 24 39) !important;
+}
+
+/* Light theme borders */
+.light-theme .border-white\/10,
+.light-theme .border-white\/20 {
+  border-color: rgb(209 213 219) !important;
+}
+
+/* Light theme backgrounds */
+.light-theme .bg-white\/10 {
+  background-color: rgb(243 244 246) !important;
 }

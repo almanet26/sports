@@ -1,9 +1,11 @@
 import cv2
 import numpy as np
 import os
+import re
 import subprocess
 import time
 import logging
+import urllib.parse
 import pandas as pd
 from google import genai
 from dotenv import load_dotenv
@@ -91,6 +93,196 @@ METRIC_LABELS = {
     "hip_center_y": "Body Height Level",
     "timestamp": "Time (Seconds)"
 }
+
+# ==========================================
+# UPGRADED GEMINI PROMPT 
+# ==========================================
+BOWLING_ANALYSIS_PROMPT = """
+You are a professional elite cricket bowling coach and biomechanics analyst.
+Analyze this fast bowler's technique using the provided biomechanical metrics.
+
+IMPORTANT: MediaPipe tracks the BODY only, NOT the ball.
+Your analysis must focus on body mechanics, joint angles, and movement patterns.
+
+METRICS SUMMARY:
+{metrics_summary}
+
+REQUIRED STRUCTURE (use this exact format):
+
+**OVERALL ASSESSMENT**
+Provide a 2-3 sentence executive summary of the bowler's action quality.
+
+**PHASE-BY-PHASE TECHNICAL ANALYSIS**
+
+**1. Run-Up & Approach**
+- Rhythm and momentum assessment
+- Body alignment during approach
+
+**2. Back Foot Contact & Loading Phase**
+- Hip-shoulder separation at back foot
+- Weight loading pattern
+
+**3. Delivery Stride & Front Foot Landing**
+- Stride length and alignment
+- Front leg brace angle
+
+**4. Release Point & Arm Mechanics**
+- Elbow extension angle analysis (legal action check)
+- Release height consistency
+
+**5. Follow-Through & Energy Transfer**
+- Deceleration pattern
+- Balance at completion
+
+**WEAKNESSES**
+For EACH weakness identified, provide EXACTLY this format:
+- [Weakness Name] (Rating: X/10). [Timestamp: X.XXs]. [Detailed explanation]
+
+**SPECIFIC CORRECTIONS & DRILLS**
+- **Drill 1**: [Name] - [Detailed instructions]
+- **Drill 2**: [Name] - [Detailed instructions]
+- **Drill 3**: [Name] - [Detailed instructions]
+
+**PERFORMANCE SUMMARY**
+- **Primary Strength**: [Specific strength]
+- **Critical Weakness**: [Specific weakness]
+- **Top Priority Fix**: [Single most important correction]
+
+**RECOMMENDED TUTORIALS**
+Provide a search intent for EVERY weakness identified above.
+1. Search Intent: [3-5 word YouTube search query for fixing weakness #1 - MUST include 'bowling']
+   Why this video: [One line explanation]
+... (Repeat for ALL weaknesses)
+
+**CRITICAL MANDATE**: For EVERY weakness listed, you MUST provide a [Timestamp: X.XXs] where the error is visible.
+Do NOT generate any YouTube URLs. Only provide the exact text search phrase.
+
+FORMATTING RULES:
+- Use ** for bold headings and emphasis
+- Use - for bullet points
+- Keep each point actionable and specific
+- Reference actual metrics when relevant
+- Avoid vague advice
+
+Tone: Direct, professional, encouraging but honest.
+"""
+
+
+# ==========================================
+# YOUTUBE HELPERS
+# ==========================================
+def _build_youtube_url(query: str) -> str:
+    """Build a YouTube search URL from a plain-text query string.
+
+    We NEVER ask Gemini for URLs (hallucination risk). Gemini provides
+    a short search phrase and we construct the link deterministically.
+    """
+    encoded = urllib.parse.quote_plus(query.strip())
+    return f"https://www.youtube.com/results?search_query={encoded}"
+
+
+def extract_bowling_flaws(report_text: str) -> list[dict]:
+    """Parse the WEAKNESSES section from Gemini's markdown report.
+
+    Expected format per line:
+      - [Weakness Name] (Rating: X/10). [Timestamp: X.XXs]. [Description]
+
+    Returns:
+        List of dicts: [{"flaw_name": str, "rating": int|None, "timestamp": str|None, "description": str}, ...]
+    """
+    flaws: list[dict] = []
+
+    match = re.search(r'\*\*WEAKNESSES\*\*\s*\n(.*?)(?=\n\*\*[A-Z]|\Z)', report_text, re.DOTALL)
+    if not match:
+        return flaws
+
+    section = match.group(1)
+
+    for line in section.strip().split('\n'):
+        line = line.strip()
+        if not line.startswith('-'):
+            continue
+        line = line.lstrip('- ').strip()
+
+        # Extract rating
+        rating_match = re.search(r'\(Rating:\s*(\d+)/10\)', line)
+        rating = int(rating_match.group(1)) if rating_match else None
+
+        # Extract timestamp
+        ts_match = re.search(r'\[Timestamp:\s*([\d.]+)s\]', line)
+        timestamp = ts_match.group(1) if ts_match else None
+
+        # Extract flaw name (text before first parenthesis or bracket)
+        name_match = re.match(r'^([^(\[]+)', line)
+        flaw_name = name_match.group(1).strip().rstrip('.') if name_match else line[:50]
+        flaw_name = flaw_name.replace('**', '').replace('*', '').strip()
+
+        # Description is everything after the timestamp bracket (or rating bracket)
+        desc = line
+        if ts_match:
+            desc = line[ts_match.end():].strip().lstrip('. ')
+        elif rating_match:
+            desc = line[rating_match.end():].strip().lstrip('. ')
+        desc = desc.replace('**', '').replace('*', '').strip()
+
+        flaws.append({
+            "flaw_name": flaw_name,
+            "rating": rating,
+            "timestamp": timestamp,
+            "description": desc if desc else flaw_name,
+        })
+
+    return flaws
+
+
+def extract_bowling_drills(report_text: str) -> list[dict]:
+    """Parse Gemini's markdown report and extract drill recommendations.
+
+    Looks for the RECOMMENDED TUTORIALS section, extracts Search Intent + Why lines,
+    and builds structured drill objects with YouTube search links.
+
+    Returns:
+        List of dicts: [{"query": str, "title": str, "link": str, "reason": str}, ...]
+    """
+    drills: list[dict] = []
+
+    if "**RECOMMENDED TUTORIAL" not in report_text:
+        return drills
+
+    try:
+        if "**RECOMMENDED TUTORIALS**" in report_text:
+            parts = report_text.split("**RECOMMENDED TUTORIALS**")
+        else:
+            parts = report_text.split("**RECOMMENDED TUTORIAL**")
+
+        if len(parts) < 2:
+            return drills
+
+        tutorial_content = "".join(parts[1:])
+        search_intents = re.findall(r"Search Intent:\s*(.*)", tutorial_content)
+        whys = re.findall(r"Why this video:\s*(.*)", tutorial_content)
+
+        for i, intent in enumerate(search_intents):
+            clean_intent = intent.strip().strip('*_`[]()')
+            clean_intent = clean_intent.replace('**', '').replace('*', '').strip()
+
+            why = whys[i].strip() if i < len(whys) else "To improve your technique."
+            why = why.replace('**', '').replace('*', '').strip()
+
+            full_query = f"{clean_intent} cricket bowling tutorial"
+            link = _build_youtube_url(full_query)
+
+            drills.append({
+                "query": clean_intent,
+                "title": f"Bowling Tutorial: {clean_intent}",
+                "link": link,
+                "reason": why,
+            })
+    except Exception as e:
+        logger.warning("Failed to extract bowling drill recommendations: %s", e)
+
+    return drills
+
 
 def parse_and_render_markdown(pdf, text, base_font_size=11):
     """

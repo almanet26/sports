@@ -12,6 +12,9 @@ import {
   History,
   ChevronRight,
   Activity,
+  ExternalLink,
+  Target,
+  Youtube,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,6 +30,20 @@ interface Feedback {
   full_text: string;
 }
 
+interface DetectedBowlingFlaw {
+  flaw_name: string;
+  description: string;
+  rating?: number;
+  timestamp?: string;
+}
+
+interface BowlingDrillRecommendation {
+  query: string;
+  title: string;
+  link: string;
+  reason: string;
+}
+
 interface AnalysisResult {
   id: string;
   player_id: string;
@@ -36,6 +53,8 @@ interface AnalysisResult {
   annotated_video_url: string | null;
   report_url: string | null;
   created_at: string;
+  detected_flaws?: DetectedBowlingFlaw[];
+  drill_recommendations?: BowlingDrillRecommendation[];
 }
 
 interface AnalysisSummary {
@@ -349,52 +368,150 @@ const BowlingAnalysis: React.FC = () => {
             )}
 
             {/* AI Feedback */}
+            {/* Detected Flaws */}
+            {result.detected_flaws && result.detected_flaws.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Target className="h-5 w-5 text-red-400" />
+                    Detected Flaws
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {result.detected_flaws.map((flaw, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-red-500/20 bg-red-500/5 p-4"
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-red-300">
+                          {flaw.flaw_name}
+                        </span>
+                        <div className="flex items-center gap-3 text-xs">
+                          {flaw.rating != null && (
+                            <span className="text-slate-400">
+                              Severity: {flaw.rating}/10
+                            </span>
+                          )}
+                          {flaw.timestamp && (
+                            <span className="text-amber-400">
+                              @ {flaw.timestamp}s
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="text-sm text-slate-300 leading-relaxed">
+                        {flaw.description}
+                      </p>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Recommended Video Drills */}
+            {result.drill_recommendations && result.drill_recommendations.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Youtube className="h-5 w-5 text-red-500" />
+                    Recommended Video Drills
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {result.drill_recommendations.map((drill, idx) => (
+                    <div
+                      key={idx}
+                      className="rounded-lg border border-slate-700 bg-slate-800/50 p-4"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-white text-sm">
+                            {drill.title}
+                          </p>
+                          <p className="text-xs text-slate-400 mt-1">
+                            {drill.reason}
+                          </p>
+                        </div>
+                        <a
+                          href={drill.link}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="shrink-0 inline-flex items-center gap-1.5 rounded-md bg-red-600 hover:bg-red-700 text-white text-xs font-medium px-3 py-1.5 transition-colors"
+                        >
+                          Watch Drill
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {/* AI Feedback */}
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">AI Coaching Feedback</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {result.feedback.full_text.split('\n\n').map((paragraph, idx) => {
-                    // Check if paragraph is a heading (starts with ** or #)
-                    const isHeading = paragraph.trim().startsWith('**') || paragraph.trim().startsWith('#');
+                  {result.feedback.full_text.split("\n\n").map((paragraph, idx) => {
+                    // First strip all markdown before checking patterns
+                    let cleanText = paragraph.trim();
                     
-                    // Clean up markdown symbols for display
-                    const cleanText = paragraph
-                      .replace(/\*\*/g, '')
-                      .replace(/#{1,6}\s/g, '')
-                      .trim();
+                    // Check if it's a markdown heading (starts with #)
+                    const isMarkdownHeading = cleanText.startsWith("#");
                     
-                    if (isHeading) {
+                    // Check if it's a bold heading (entire line wrapped in **)
+                    const isBoldHeading = /^\*\*[^*]+\*\*$/.test(cleanText);
+                    
+                    // Remove markdown symbols
+                    cleanText = cleanText
+                      .replace(/#{1,6}\s/g, "") // Remove heading markers
+                      .replace(/\*\*/g, "");      // Remove bold markers
+                    
+                    cleanText = cleanText.trim();
+
+                    if (isMarkdownHeading || isBoldHeading) {
                       return (
-                        <h3 key={idx} className="text-lg font-bold text-emerald-400 mt-4">
+                        <h3
+                          key={idx}
+                          className="text-lg font-bold text-slate-100 mt-4"
+                        >
                           {cleanText}
                         </h3>
                       );
                     }
-                    
-                    if (cleanText.startsWith('*') || cleanText.startsWith('-')) {
-                      // Bullet point
+
+                    if (cleanText.startsWith("*") || cleanText.startsWith("-")) {
                       return (
-                        <div key={idx} className="pl-4 text-slate-300 leading-relaxed">
-                          <span className="text-emerald-400 mr-2">•</span>
-                          {cleanText.replace(/^[*-]\s*/, '')}
+                        <div
+                          key={idx}
+                          className="pl-4 text-slate-300 leading-relaxed"
+                        >
+                          <span className="text-slate-400 mr-2">•</span>
+                          {cleanText.replace(/^[*-]\s*/, "")}
                         </div>
                       );
                     }
-                    
-                    if (cleanText.includes(':')) {
-                      // Label: Value format
-                      const [label, ...valueParts] = cleanText.split(':');
-                      const value = valueParts.join(':');
+
+                    if (cleanText.includes(":")) {
+                      const [label, ...valueParts] = cleanText.split(":");
+                      const value = valueParts.join(":");
                       return (
-                        <p key={idx} className="text-slate-300 leading-relaxed">
-                          <span className="font-semibold text-slate-100">{label}:</span>
+                        <p
+                          key={idx}
+                          className="text-slate-300 leading-relaxed"
+                        >
+                          <span className="font-semibold text-slate-100">
+                            {label}:
+                          </span>
                           {value}
                         </p>
                       );
                     }
-                    
+
                     return (
                       <p key={idx} className="text-slate-300 leading-relaxed">
                         {cleanText}

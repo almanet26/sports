@@ -28,6 +28,8 @@ from schemas.batting import (
     BattingBiometricsResponse,
     BattingFeedbackResponse,
     BattingPhaseInfo,
+    DrillRecommendation,
+    DetectedFlaw,
 )
 from utils.auth import get_current_user
 from scripts.batting_engine import (
@@ -35,6 +37,9 @@ from scripts.batting_engine import (
     BattingGeminiManager,
     create_batting_pdf,
     BATTING_MEDIAPIPE_AVAILABLE,
+    BATTING_ANALYSIS_PROMPT,
+    extract_drill_recommendations,
+    extract_detected_flaws,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,49 +117,15 @@ async def analyze_batting(
         annotated_video_url = f"/static/batting_videos/{video_filename}"
 
         # AI Feedback 
-        prompt = (
-            "You are a professional elite cricket batting coach and biomechanics analyst.\n"
-            "Analyze this batter's technique using the provided biomechanical metrics.\n\n"
-            "IMPORTANT: MediaPipe tracks the BODY only, NOT the bat or ball.\n"
-            "Your analysis must focus on body mechanics, balance, and movement patterns.\n\n"
-            f"METRICS SUMMARY:\n{display_df.describe().to_string()}\n\n"
-            f"PHASE DETECTION:\n{phase_info}\n\n"
-            "REQUIRED STRUCTURE (use this exact format):\n\n"
-            "**OVERALL ASSESSMENT**\n"
-            "Provide a 2-3 sentence executive summary of the batter's technique.\n\n"
-            "**PHASE-BY-PHASE TECHNICAL ANALYSIS**\n\n"
-            "**1. Stance & Setup**\n"
-            "- Head position and balance assessment\n"
-            "- Base width and weight distribution\n\n"
-            "**2. Trigger Movement & Stride**\n"
-            "- Stride length and timing\n"
-            "- Weight transfer pattern\n\n"
-            "**3. Downswing & Shot Execution**\n"
-            "- Shoulder rotation analysis\n"
-            "- Front knee position at contact\n\n"
-            "**4. Impact Zone**\n"
-            "- Head alignment at impact (within base?)\n"
-            "- Balance and stability\n\n"
-            "**5. Follow-Through**\n"
-            "- Completion of shot\n"
-            "- Balance maintenance\n\n"
-            "**SPECIFIC CORRECTIONS & DRILLS**\n"
-            "- **Drill 1**: [Name] - [Detailed instructions]\n"
-            "- **Drill 2**: [Name] - [Detailed instructions]\n"
-            "- **Drill 3**: [Name] - [Detailed instructions]\n\n"
-            "**PERFORMANCE SUMMARY**\n"
-            "- **Primary Strength**: [Specific strength]\n"
-            "- **Critical Weakness**: [Specific weakness]\n"
-            "- **Top Priority Fix**: [Single most important correction]\n\n"
-            "FORMATTING RULES:\n"
-            "- Use ** for bold headings and emphasis\n"
-            "- Use - for bullet points\n"
-            "- Keep each point actionable and specific\n"
-            "- Reference actual metrics when relevant\n"
-            "- Avoid vague advice\n\n"
-            "Tone: Direct, professional, encouraging but honest."
+        prompt = BATTING_ANALYSIS_PROMPT.format(
+            metrics_summary=display_df.describe().to_string(),
+            phase_info=phase_info,
         )
         feedback_text = gemini.call_gemini(prompt, str(temp_video_path))
+
+        # Extract structured data from AI response
+        drill_recs = extract_drill_recommendations(feedback_text)
+        detected_flaws = extract_detected_flaws(feedback_text)
 
         # PDF Report
         pdf_bytes = create_batting_pdf(feedback_text, display_df, images, phase_info)
@@ -210,6 +181,24 @@ async def analyze_batting(
             annotated_video_url=annotated_video_url,
             report_url=report_url,
             created_at=analysis.created_at,
+            detected_flaws=[
+                DetectedFlaw(
+                    flaw_name=f.get("flaw_name", ""),
+                    description=f.get("description", ""),
+                    rating=f.get("rating"),
+                    timestamp=f.get("timestamp"),
+                )
+                for f in detected_flaws
+            ],
+            drill_recommendations=[
+                DrillRecommendation(
+                    query=d["query"],
+                    title=d["title"],
+                    link=d["link"],
+                    reason=d["reason"],
+                )
+                for d in drill_recs
+            ],
         )
 
     except HTTPException:
@@ -263,6 +252,11 @@ def get_batting_analysis(
     if analysis.player_id != current_user.id:
         raise HTTPException(status_code=403, detail="Access denied.")
 
+    # Re-extract structured data from saved feedback text
+    saved_feedback = analysis.ai_feedback or ""
+    drill_recs = extract_drill_recommendations(saved_feedback)
+    detected_flaws = extract_detected_flaws(saved_feedback)
+
     return BattingAnalysisResponse(
         id=analysis.id,
         player_id=analysis.player_id,
@@ -276,10 +270,28 @@ def get_batting_analysis(
         ),
         feedback=BattingFeedbackResponse(
             summary="Batting analysis complete.",
-            full_text=analysis.ai_feedback or "",
+            full_text=saved_feedback,
         ),
         phases=BattingPhaseInfo(**analysis.phase_info) if analysis.phase_info else None,
         annotated_video_url=None,  # Not stored in DB
         report_url=analysis.report_url,
         created_at=analysis.created_at,
+        detected_flaws=[
+            DetectedFlaw(
+                flaw_name=f.get("flaw_name", ""),
+                description=f.get("description", ""),
+                rating=f.get("rating"),
+                timestamp=f.get("timestamp"),
+            )
+            for f in detected_flaws
+        ],
+        drill_recommendations=[
+            DrillRecommendation(
+                query=d["query"],
+                title=d["title"],
+                link=d["link"],
+                reason=d["reason"],
+            )
+            for d in drill_recs
+        ],
     )

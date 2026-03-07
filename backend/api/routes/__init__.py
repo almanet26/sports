@@ -14,7 +14,7 @@ from . import auth, videos, jobs, requests
 try:
     from . import bowling
     BOWLING_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     print(f"Warning: Bowling analysis feature disabled due to import error: {e}")
     bowling = None
     BOWLING_AVAILABLE = False
@@ -22,7 +22,7 @@ except ImportError as e:
 try:
     from . import batting
     BATTING_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     print(f"Warning: Batting analysis feature disabled due to import error: {e}")
     batting = None
     BATTING_AVAILABLE = False
@@ -30,7 +30,7 @@ except ImportError as e:
 try:
     from . import submissions
     SUBMISSIONS_AVAILABLE = True
-except ImportError as e:
+except Exception as e:
     print(f"Warning: Submissions feature disabled due to import error: {e}")
     submissions = None
     SUBMISSIONS_AVAILABLE = False
