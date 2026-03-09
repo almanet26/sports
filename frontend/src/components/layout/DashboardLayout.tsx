@@ -22,7 +22,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/stats", icon: "fas fa-chart-bar", label: "Stats" },
+    { to: "/player/1", icon: "fas fa-chart-bar", label: "Stats" },
     { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
     { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
     { to: "/settings", icon: "fas fa-cog", label: "Settings" },

@@ -406,5 +406,11 @@ export const submissionsApi = {
   getById: (submissionId: string) =>
     api.get<SubmissionDetail>(`/submissions/${submissionId}`),
 };
+// Player Statistics API
+export const playerStatsApi = {
+  /** Get player statistics */
+  getByPlayerId: (playerId: string) =>
+    api.get(`/player-stats/${playerId}`),
+};
 
 export default api;
