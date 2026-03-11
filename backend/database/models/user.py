@@ -25,6 +25,15 @@ class User(Base):
     team = Column(String, nullable=True)
     stripe_customer_id = Column(String, nullable=True)
     
+    # Subscription field (BASIC, SILVER, GOLD)
+    subscription_plan = Column(String, default='BASIC', nullable=False)
+    
+    # Coach verification status (pending, verified, rejected)
+    coach_status = Column(String, default='pending', nullable=True)
+    coach_document_url = Column(String, nullable=True)
+    verification_document_type = Column(String, nullable=True)
+    verification_approved_at = Column(DateTime(timezone=True), nullable=True)
+    
     # Authentication fields
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)

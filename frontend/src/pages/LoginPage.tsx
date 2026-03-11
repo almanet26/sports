@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
+import { useTheme } from '../components/providers/ThemeProvider';
 
 interface LoginFormData {
   email: string;
@@ -12,6 +13,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const login = useAuthStore((state) => state.login);
+  const { isDark } = useTheme();
   
   const [formData, setFormData] = useState<LoginFormData>({
     email: '',
@@ -19,9 +21,17 @@ export default function LoginPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   
   // Get success message from registration
   const successMessage = location.state?.message;
+  const inputClass = isDark
+    ? 'bg-white/5 border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10'
+    : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:bg-white';
+  const labelClass = isDark ? 'text-white/80' : 'text-slate-700';
+  const helperClass = isDark ? 'text-white/60' : 'text-slate-600';
+  const iconClass = isDark ? 'text-white/30' : 'text-slate-400';
+  const linkSubtleClass = isDark ? 'text-white/50 hover:text-white/70' : 'text-slate-500 hover:text-slate-700';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +53,12 @@ export default function LoginPage() {
         navigate('/');
       }
     } catch (err: unknown) {
+      const error = err as any;
+      // Check if it's a coach pending verification error
+      if (error?.response?.status === 403 && error?.response?.data?.detail?.includes('pending')) {
+        navigate('/coach-pending');
+        return;
+      }
       setError(err instanceof Error ? err.message : 'An error occurred during login');
     } finally {
       setLoading(false);
@@ -50,7 +66,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white flex items-center justify-center px-4 relative overflow-hidden">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 via-blue-50 to-slate-200 px-4 text-slate-900 dark:from-[#070A14] dark:via-[#0A0F1C] dark:to-[#0D1117] dark:text-white">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
@@ -86,7 +102,7 @@ export default function LoginPage() {
         className="relative w-full max-w-md"
       >
         {/* Main card */}
-        <div className="glass rounded-3xl p-8 shadow-2xl border border-white/20">
+        <div className="glass rounded-3xl border border-slate-200 p-8 shadow-2xl dark:border-white/20">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -98,7 +114,7 @@ export default function LoginPage() {
               <i className="fas fa-cricket-bat-ball text-white text-2xl"></i>
             </div>
             <h1 className="text-2xl font-bold gradient-text mb-2">Welcome Back</h1>
-            <p className="text-white/60 text-sm">Sign in to your SportVision AI account</p>
+            <p className={`text-sm ${helperClass}`}>Sign in to your SportVision AI account</p>
           </motion.div>
 
           {/* Success Message */}
@@ -135,7 +151,7 @@ export default function LoginPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 Email Address
               </label>
               <div className="relative">
@@ -144,11 +160,11 @@ export default function LoginPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="Enter your email"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
                   required
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-envelope text-white/30"></i>
+                  <i className={`fas fa-envelope ${iconClass}`}></i>
                 </div>
               </div>
             </motion.div>
@@ -158,21 +174,25 @@ export default function LoginPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 Password
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className={`w-full rounded-xl border px-4 py-3 pr-12 transition-all duration-300 focus:outline-none ${inputClass}`}
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-lock text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className={`absolute inset-y-0 right-0 flex items-center pr-3 transition-colors ${isDark ? 'text-white/40 hover:text-white/70' : 'text-slate-400 hover:text-slate-700'}`}
+                >
+                  <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
               </div>
             </motion.div>
 
@@ -204,7 +224,7 @@ export default function LoginPage() {
             transition={{ delay: 0.6 }}
             className="mt-8 text-center space-y-4"
           >
-            <p className="text-sm text-white/60">
+            <p className={`text-sm ${helperClass}`}>
               Don't have an account?{" "}
               <Link
                 to="/register"
@@ -216,7 +236,7 @@ export default function LoginPage() {
             
             <Link
               to="/"
-              className="inline-flex items-center text-xs text-white/50 hover:text-white/70 transition-colors"
+              className={`inline-flex items-center text-xs transition-colors ${linkSubtleClass}`}
             >
               <span className="mr-1">←</span>
               Back to Home

@@ -285,6 +285,44 @@ export const requestsApi = {
     }),
 };
 
+export interface AdminCoachRecord {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  team?: string;
+  coach_status: string;
+  coach_document_url?: string;
+  document_url?: string;
+  verification_document_type?: string;
+  verification_approved_at?: string;
+  created_at?: string;
+}
+
+export const adminCoachesApi = {
+  pending: () => api.get<{ coaches: AdminCoachRecord[]; total: number }>('/admin/coaches/pending'),
+  approve: (coachId: string) => api.post(`/admin/coaches/${coachId}/approve`),
+  reject: (coachId: string) => api.post(`/admin/coaches/${coachId}/reject`),
+  verified: (params?: { search?: string; page?: number; perPage?: number }) =>
+    api.get<{
+      coaches: AdminCoachRecord[];
+      total: number;
+      page: number;
+      per_page: number;
+      total_pages: number;
+    }>('/admin/coaches/verified', {
+      params: {
+        search: params?.search,
+        page: params?.page ?? 1,
+        per_page: params?.perPage ?? 10,
+      },
+    }),
+  downloadDocument: (coachId: string) =>
+    api.get(`/admin/coaches/${coachId}/document`, { responseType: 'blob' }),
+  removeVerification: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/remove-verification`),
+};
+
 // Bowling Analysis endpoints
 export const bowlingApi = {
   /** Upload video and run biomechanics analysis */

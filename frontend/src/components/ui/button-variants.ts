@@ -10,11 +10,11 @@ export const buttonVariants = cva(
         destructive:
           "bg-red-500 text-white hover:bg-red-600 active:bg-red-700",
         outline:
-          "border border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white",
+          "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50 hover:text-gray-900 dark:border-slate-700 dark:bg-transparent dark:text-slate-200 dark:hover:bg-slate-800 dark:hover:text-white",
         secondary:
-          "bg-slate-700 text-white hover:bg-slate-600 active:bg-slate-800",
+          "bg-gray-100 text-gray-900 hover:bg-gray-200 active:bg-gray-300 dark:bg-slate-700 dark:text-white dark:hover:bg-slate-600 dark:active:bg-slate-800",
         ghost:
-          "text-slate-300 hover:bg-slate-800 hover:text-white",
+          "text-gray-600 hover:bg-gray-100 hover:text-gray-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white",
         link:
           "text-emerald-500 underline-offset-4 hover:underline",
       },

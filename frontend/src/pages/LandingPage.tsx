@@ -1,7 +1,7 @@
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
-import { useThemeStore } from '../store/themeStore';
+import { useTheme } from '../components/providers/ThemeProvider';
 
 const fadeUp = {
   hidden: { opacity: 0, y: 18 },
@@ -181,11 +181,7 @@ function StepCard({ idx, icon, title, desc }: StepCardProps) {
 }
 
 export default function LandingPage() {
-  const { theme } = useThemeStore();
-
-  useEffect(() => {
-    document.body.className = theme === 'light' ? 'light-theme' : '';
-  }, [theme]);
+  const { theme } = useTheme();
   const sports = useMemo(
     () => [
       { id: 'cricket', name: 'Cricket', icon: '🏏', highlight: 'Cover Drive', tip: 'Earlier bat lift for better timing' },
@@ -274,7 +270,7 @@ export default function LandingPage() {
     <div className={`min-h-screen overflow-x-hidden relative ${
       theme === 'dark'
         ? 'bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white'
-        : 'bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-900'
+        : 'bg-gradient-to-br from-slate-100 via-blue-50 to-slate-200 text-gray-900'
     }`}>
       {/* Background Glow Effects */}
       <motion.div
@@ -451,7 +447,7 @@ export default function LandingPage() {
                 </Link>
               </div>
 
-              <p className="mt-3 text-xs text-white/45">AI-powered sports analysis platform for athletes and coaches</p>
+              <p className="mt-3 text-xs text-white/45">Cricket specialist is ready and many more games are coming soon</p>
 
               <div className="mt-8 grid grid-cols-3 gap-4">
                 <Stat label="Clips Organized" value="120+" />

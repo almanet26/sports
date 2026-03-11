@@ -21,6 +21,32 @@ from database.models import (
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+
+def ensure_user_columns():
+    """Backfill lightweight user columns for existing local databases."""
+    required_columns = {
+        "verification_document_type": "ALTER TABLE users ADD COLUMN verification_document_type VARCHAR",
+        "verification_approved_at": "ALTER TABLE users ADD COLUMN verification_approved_at DATETIME",
+    }
+
+    with engine.begin() as connection:
+        existing = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(users)")).fetchall()
+        } if str(engine.url).startswith("sqlite") else {
+            row[0]
+            for row in connection.execute(text("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name = 'users'
+            """)).fetchall()
+        }
+
+        for column_name, statement in required_columns.items():
+            if column_name not in existing:
+                connection.execute(text(statement))
+                logger.info("Added missing users.%s column", column_name)
+
 # Ensure storage directories exist (skip on Cloud Run — ephemeral, uses /tmp/)
 _CLOUD_RUN = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
 if not _CLOUD_RUN:
@@ -35,6 +61,7 @@ if not _CLOUD_RUN:
         "storage/submissions",
         "storage/submission_videos",
         "storage/temp_frames",
+        "storage/coach_documents",
     ]
     for dir_path in STORAGE_DIRS:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -55,6 +82,7 @@ async def lifespan(app: FastAPI):
         # Create tables if they don't exist (dev mode)
         logger.info("Ensuring database tables exist...")
         Base.metadata.create_all(bind=engine)
+        ensure_user_columns()
         logger.info("Database tables ready.")
         
         db.close()
@@ -125,6 +153,7 @@ if not _CLOUD_RUN:
     app.mount("/static/submissions", StaticFiles(directory="storage/submissions"), name="submissions")
     app.mount("/static/submission_videos", StaticFiles(directory="storage/submission_videos"), name="submission_videos")
     app.mount("/static/temp_frames", StaticFiles(directory="storage/temp_frames"), name="temp_frames")
+    app.mount("/static/coach_documents", StaticFiles(directory="storage/coach_documents"), name="coach_documents")
 
 
 # Health Check Endpoints 
@@ -159,10 +188,13 @@ def db_health_check():
 
 
 # Include API Routers 
-from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE
+from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
+
+# Admin routes
+app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
 
 # Video management routes
 app.include_router(videos.router, prefix="/api/v1", tags=["videos"])

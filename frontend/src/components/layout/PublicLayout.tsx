@@ -13,8 +13,7 @@ export const PublicLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] relative overflow-hidden">
-      {/* Background decorations */}
+    <div className="min-h-screen relative overflow-hidden bg-gradient-to-br from-slate-100 via-white to-slate-100 text-gray-900 dark:from-[#070A14] dark:via-[#0A0F1C] dark:to-[#0D1117] dark:text-white">
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <motion.div
           animate={{ rotate: 360 }}
@@ -28,26 +27,23 @@ export const PublicLayout: React.FC = () => {
         />
       </div>
 
-      {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b glass border-white/10">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 glass dark:border-white/10">
         <div className="px-4 mx-auto max-w-7xl sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            {/* Logo */}
             <Link to="/" className="flex items-center gap-3">
               <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600">
                 <i className="text-white fas fa-cricket-bat-ball"></i>
               </div>
               <div className="hidden sm:block">
-                <span className="text-lg font-bold text-white">SportVision</span>
-                <p className="text-xs text-white/50">AI Analytics</p>
+                <span className="text-lg font-bold text-gray-900 dark:text-white">SportVision</span>
+                <p className="text-xs text-gray-500 dark:text-white/50">AI Analytics</p>
               </div>
             </Link>
 
-            {/* Navigation */}
             <nav className="flex items-center gap-2 sm:gap-4">
               <Link
                 to="/library"
-                className="px-3 py-2 text-sm transition-colors text-white/70 hover:text-white"
+                className="px-3 py-2 text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-white/70 dark:hover:text-white"
               >
                 <i className="mr-2 fas fa-video"></i>
                 <span className="hidden sm:inline">Library</span>
@@ -56,8 +52,8 @@ export const PublicLayout: React.FC = () => {
               {isAuthenticated && user ? (
                 <>
                   <Link
-                    to={user.role === 'ADMIN' ? '/admin' : user.role === 'COACH' ? '/coach' : '/player'}
-                    className="px-3 py-2 text-sm transition-colors text-white/70 hover:text-white"
+                    to={user.role === "ADMIN" ? "/admin" : user.role === "COACH" ? "/coach" : "/player"}
+                    className="px-3 py-2 text-sm text-gray-600 transition-colors hover:text-gray-900 dark:text-white/70 dark:hover:text-white"
                   >
                     <i className="mr-2 fas fa-tachometer-alt"></i>
                     <span className="hidden sm:inline">Dashboard</span>
@@ -66,7 +62,7 @@ export const PublicLayout: React.FC = () => {
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
                     onClick={handleLogout}
-                    className="px-4 py-2 text-sm transition-all rounded-xl text-white/70 hover:text-red-400 hover:bg-red-500/10"
+                    className="px-4 py-2 text-sm rounded-xl text-gray-600 transition-all hover:bg-red-50 hover:text-red-600 dark:text-white/70 dark:hover:bg-red-500/10 dark:hover:text-red-400"
                   >
                     <i className="fas fa-sign-out-alt"></i>
                   </motion.button>
@@ -75,7 +71,7 @@ export const PublicLayout: React.FC = () => {
                 <>
                   <Link
                     to="/login"
-                    className="px-4 py-2 text-sm transition-all rounded-xl text-white/70 hover:text-white hover:bg-white/10"
+                    className="px-4 py-2 text-sm rounded-xl text-gray-700 transition-all hover:bg-gray-100 hover:text-gray-900 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
                   >
                     Login
                   </Link>
@@ -94,22 +90,20 @@ export const PublicLayout: React.FC = () => {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="relative z-10 px-4 pt-24 pb-8 mx-auto sm:px-6 lg:px-8 max-w-7xl">
         <Outlet />
       </main>
 
-      {/* Guest Banner */}
       {!isAuthenticated && (
         <motion.div
           initial={{ y: 100, opacity: 0 }}
           animate={{ y: 0, opacity: 1 }}
           transition={{ delay: 1 }}
-          className="fixed bottom-0 left-0 right-0 z-40 border-t glass border-white/10"
+          className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 glass dark:border-white/10"
         >
           <div className="flex flex-col items-center justify-between gap-3 px-4 py-3 mx-auto max-w-7xl sm:flex-row">
-            <p className="text-sm text-center text-white/70 sm:text-left">
-              <i className="mr-2 text-blue-400 fas fa-info-circle"></i>
+            <p className="text-sm text-center text-gray-600 sm:text-left dark:text-white/70">
+              <i className="mr-2 text-blue-500 fas fa-info-circle dark:text-blue-400"></i>
               You're browsing as a guest. Sign in for full access to all features.
             </p>
             <div className="flex items-center gap-2">
@@ -121,7 +115,7 @@ export const PublicLayout: React.FC = () => {
               </Link>
               <Link
                 to="/register"
-                className="px-4 py-2 text-sm transition-all border rounded-lg border-white/20 text-white/70 hover:text-white hover:bg-white/10"
+                className="px-4 py-2 text-sm transition-all border rounded-lg border-gray-200 text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:border-white/20 dark:text-white/70 dark:hover:bg-white/10 dark:hover:text-white"
               >
                 Register
               </Link>

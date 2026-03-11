@@ -2,7 +2,7 @@ import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
-import { useThemeStore } from "../../store/themeStore";
+import { useTheme } from "../providers/ThemeProvider";
 
 // Navigation items configuration
 interface NavItem {
@@ -20,6 +20,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
+    { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/stats", icon: "fas fa-chart-bar", label: "Stats" },
@@ -38,6 +39,8 @@ const dashboardItems: Record<string, NavItem[]> = {
   ADMIN: [
     { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
     { to: "/admin/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
+    { to: "/admin/coaches", icon: "fas fa-user-check", label: "Coach Approvals" },
+    { to: "/admin/verified-coaches", icon: "fas fa-user-shield", label: "Verified Coaches" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/settings", icon: "fas fa-cog", label: "Settings" },
@@ -50,13 +53,9 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const { user, logout } = useAuthStore();
-  const { theme, toggleTheme } = useThemeStore();
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
-
-  React.useEffect(() => {
-    document.body.className = theme === 'light' ? 'light-theme' : '';
-  }, [theme]);
 
   const handleLogout = () => {
     logout();
@@ -96,7 +95,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     <div className={`min-h-screen relative overflow-hidden ${
       theme === 'dark' 
         ? 'bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white'
-        : 'bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-900'
+        : 'bg-gradient-to-br from-slate-100 via-blue-50 to-slate-200 text-gray-900'
     }`}>
       {/* Background decorations */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -113,18 +112,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       </div>
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass border-b border-white/10">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-gray-200 glass lg:hidden dark:border-white/10">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
               <i className="fas fa-cricket-bat-ball text-white"></i>
             </div>
-            <span className="font-bold text-xl text-white">SportVision</span>
+            <span className="font-bold text-xl text-gray-900 dark:text-white">SportVision</span>
           </div>
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="w-10 h-10 rounded-xl glass border border-white/20 flex items-center justify-center text-white hover:bg-white/10 transition-all"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-200 text-gray-700 transition-all hover:bg-gray-100 dark:border-white/20 dark:text-white dark:hover:bg-white/10"
           >
             <i className={`fas ${sidebarOpen ? 'fa-times' : 'fa-bars'}`}></i>
           </motion.button>
@@ -135,7 +134,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       <aside className={`hidden lg:block fixed top-0 left-0 z-40 h-screen w-72 border-r ${
         theme === 'dark' 
           ? 'glass border-white/10' 
-          : 'bg-white border-gray-200 shadow-xl'
+          : 'bg-white/80 backdrop-blur-xl border-slate-200 shadow-xl'
       }`}>
           <div className="h-full flex flex-col">
             {/* Logo */}
@@ -164,7 +163,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 className={`rounded-2xl p-4 border cursor-pointer ${
                   theme === 'dark' 
                     ? 'glass border-white/10' 
-                    : 'bg-gray-50 border-gray-200'
+                    : 'bg-white/70 border-slate-200'
                 }`}
               >
                 <div className="flex items-center gap-3">
@@ -310,29 +309,29 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               animate={{ x: 0 }}
               exit={{ x: -288 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 z-40 h-screen w-72 glass border-r border-white/10 lg:hidden"
+              className="fixed top-0 left-0 z-40 h-screen w-72 border-r border-gray-200 glass lg:hidden dark:border-white/10"
             >
               <div className="h-full flex flex-col">
                 {/* Mobile Logo */}
-                <div className="flex items-center gap-3 p-6 border-b border-white/10">
+                <div className="flex items-center gap-3 border-b border-gray-200 p-6 dark:border-white/10">
                   <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center">
                     <i className="fas fa-cricket-bat-ball text-white"></i>
                   </div>
                   <div>
-                    <span className="font-bold text-lg text-white">SportVision</span>
-                    <p className="text-xs text-white/50">AI Analytics</p>
+                    <span className="font-bold text-lg text-gray-900 dark:text-white">SportVision</span>
+                    <p className="text-xs text-gray-500 dark:text-white/50">AI Analytics</p>
                   </div>
                 </div>
 
                 {/* User Info */}
-                <div className="p-4 border-b border-white/10">
-                  <div className="glass rounded-2xl p-4 border border-white/10">
+                <div className="border-b border-gray-200 p-4 dark:border-white/10">
+                  <div className="glass rounded-2xl border border-gray-200 p-4 dark:border-white/10">
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                         {user?.email?.charAt(0).toUpperCase() || "U"}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
+                        <p className="text-sm font-medium text-gray-900 truncate dark:text-white">
                           {user?.email || "User"}
                         </p>
                         <div className="mt-1">
@@ -353,8 +352,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                       onClick={() => setSidebarOpen(false)}
                       className={({ isActive }) =>
                         `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive
-                          ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border border-white/20"
-                          : "text-white/60 hover:text-white hover:bg-white/5"
+                          ? "border border-blue-200 bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-700 dark:border-white/20 dark:from-blue-500/20 dark:to-purple-500/20 dark:text-white"
+                          : "text-gray-600 hover:text-gray-900 hover:bg-gray-100 dark:text-white/60 dark:hover:text-white dark:hover:bg-white/5"
                         }`
                       }
                     >
@@ -362,9 +361,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         <>
                           <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isActive
                             ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                            : 'bg-white/10'
+                            : 'bg-gray-200 dark:bg-white/10'
                             }`}>
-                            <i className={`${item.icon} text-sm ${isActive ? 'text-white' : 'text-white/60'}`}></i>
+                            <i className={`${item.icon} text-sm ${isActive ? 'text-white' : 'text-gray-600 dark:text-white/60'}`}></i>
                           </div>
                           <span className="font-medium">{item.label}</span>
                         </>
@@ -374,7 +373,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 </nav>
 
                 {/* Theme Toggle */}
-                <div className="p-4 border-t border-white/10">
+                <div className="p-4 border-t border-gray-200 dark:border-white/10">
                   <button
                     onClick={toggleTheme}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
@@ -393,12 +392,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 </div>
 
                 {/* Logout */}
-                <div className="p-4 border-t border-white/10">
+                <div className="p-4 border-t border-gray-200 dark:border-white/10">
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300"
+                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:text-red-600 hover:bg-red-50 transition-all duration-300 dark:text-white/60 dark:hover:text-red-400 dark:hover:bg-red-500/10"
                   >
-                    <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center">
+                    <div className="w-9 h-9 rounded-lg bg-gray-200 dark:bg-white/10 flex items-center justify-center">
                       <i className="fas fa-sign-out-alt text-sm"></i>
                     </div>
                     <span className="font-medium">Log out</span>

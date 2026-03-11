@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../lib/api';
+import { useTheme } from '../components/providers/ThemeProvider';
 
 interface RegisterFormData {
   name: string;
@@ -9,14 +10,17 @@ interface RegisterFormData {
   password: string;
   confirmPassword: string;
   role: 'PLAYER' | 'COACH';
+  documentType?: 'AADHAAR_CARD' | 'CV_RESUME' | 'DEGREE_CERTIFICATE';
   phone?: string;
   jerseyNumber?: number;
   team?: string;
   profileBio?: string;
+  verificationFile?: File;
 }
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const { isDark } = useTheme();
   const [formData, setFormData] = useState<RegisterFormData>({
     name: '',
     email: '',
@@ -26,6 +30,15 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
+  const inputClass = isDark
+    ? 'bg-white/5 border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10'
+    : 'bg-slate-50 border-slate-200 text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:bg-white';
+  const labelClass = isDark ? 'text-white/80' : 'text-slate-700';
+  const helperClass = isDark ? 'text-white/60' : 'text-slate-600';
+  const subtleClass = isDark ? 'text-white/40' : 'text-slate-400';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,16 +68,34 @@ export default function RegisterPage() {
       return;
     }
 
+    if (formData.role === 'COACH') {
+      if (!formData.documentType) {
+        setError('Please select a verification document type');
+        return;
+      }
+
+      if (!formData.verificationFile) {
+        setError('Please upload your verification document');
+        return;
+      }
+    }
+
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/register', {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        role: formData.role,
-        phone: formData.phone || undefined,
-        team: formData.team || undefined,
+      // Create FormData for file upload
+      const submitData = new FormData();
+      submitData.append('name', formData.name);
+      submitData.append('email', formData.email);
+      submitData.append('password', formData.password);
+      submitData.append('role', formData.role);
+      if (formData.phone) submitData.append('phone', formData.phone);
+      if (formData.team) submitData.append('team', formData.team);
+      if (formData.documentType) submitData.append('document_type', formData.documentType);
+      if (formData.verificationFile) submitData.append('coach_document', formData.verificationFile);
+
+      const response = await api.post('/auth/register', submitData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       console.log('Registration successful:', response.data);
@@ -90,7 +121,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white flex items-center justify-center px-4 py-8 relative overflow-hidden">
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-gradient-to-br from-slate-100 via-blue-50 to-slate-200 px-4 py-8 text-slate-900 dark:from-[#070A14] dark:via-[#0A0F1C] dark:to-[#0D1117] dark:text-white">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
@@ -126,7 +157,7 @@ export default function RegisterPage() {
         className="relative w-full max-w-md"
       >
         {/* Main card */}
-        <div className="glass rounded-3xl p-8 shadow-2xl border border-white/20">
+        <div className="glass rounded-3xl border border-slate-200 p-8 shadow-2xl dark:border-white/20">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -138,7 +169,7 @@ export default function RegisterPage() {
               <i className="fas fa-user-plus text-white text-2xl"></i>
             </div>
             <h1 className="text-2xl font-bold gradient-text mb-2">Create Account</h1>
-            <p className="text-white/60 text-sm">Join SportVision AI and start improving</p>
+            <p className={`text-sm ${helperClass}`}>Join SportVision AI and start improving</p>
           </motion.div>
 
           {/* Error Message */}
@@ -162,7 +193,7 @@ export default function RegisterPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.3 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 Full Name
               </label>
               <div className="relative">
@@ -171,11 +202,11 @@ export default function RegisterPage() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="Enter your full name"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
                   required
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-user text-white/30"></i>
+                  <i className={`fas fa-user ${subtleClass}`}></i>
                 </div>
               </div>
             </motion.div>
@@ -186,7 +217,7 @@ export default function RegisterPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.4 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 Email Address
               </label>
               <div className="relative">
@@ -195,11 +226,11 @@ export default function RegisterPage() {
                   value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="Enter your email"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
                   required
                 />
                 <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-envelope text-white/30"></i>
+                  <i className={`fas fa-envelope ${subtleClass}`}></i>
                 </div>
               </div>
             </motion.div>
@@ -210,7 +241,7 @@ export default function RegisterPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.5 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 I am a
               </label>
               <div className="grid grid-cols-2 gap-3">
@@ -218,10 +249,20 @@ export default function RegisterPage() {
                   type="button"
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  onClick={() => setFormData({ ...formData, role: 'PLAYER' })}
+                  onClick={() => {
+                    setUploadedFileName('');
+                    setFormData({
+                      ...formData,
+                      role: 'PLAYER',
+                      documentType: undefined,
+                      verificationFile: undefined,
+                    });
+                  }}
                   className={`px-4 py-3 rounded-xl border transition-all duration-300 ${formData.role === 'PLAYER'
                     ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-transparent text-white'
-                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
+                    : isDark
+                      ? 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
                     }`}
 
                 >
@@ -235,7 +276,9 @@ export default function RegisterPage() {
                   onClick={() => setFormData({ ...formData, role: 'COACH' })}
                   className={`px-4 py-3 rounded-xl border transition-all duration-300 ${formData.role === 'COACH'
                     ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-transparent text-white'
-                    : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
+                    : isDark
+                      ? 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
+                      : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
                     }`}
                 >
                   <i className="fas fa-chalkboard-teacher mr-2"></i>
@@ -250,21 +293,25 @@ export default function RegisterPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.6 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 Password
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="Min 8 characters"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className={`w-full rounded-xl border px-4 py-3 pr-12 transition-all duration-300 focus:outline-none ${inputClass}`}
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-lock text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className={`absolute inset-y-0 right-0 flex items-center pr-3 transition-colors ${isDark ? 'text-white/40 hover:text-white/70' : 'text-slate-400 hover:text-slate-700'}`}
+                >
+                  <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
               </div>
             </motion.div>
 
@@ -274,23 +321,133 @@ export default function RegisterPage() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: 0.7 }}
             >
-              <label className="block text-sm font-medium text-white/80 mb-2">
+              <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                 Confirm Password
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className={`w-full rounded-xl border px-4 py-3 pr-12 transition-all duration-300 focus:outline-none ${inputClass}`}
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-shield-alt text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className={`absolute inset-y-0 right-0 flex items-center pr-3 transition-colors ${isDark ? 'text-white/40 hover:text-white/70' : 'text-slate-400 hover:text-slate-700'}`}
+                >
+                  <i className={`fas ${showConfirmPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
               </div>
             </motion.div>
+
+            {/* Conditional Fields for Coach */}
+            {formData.role === 'COACH' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
+                    Verification Document Type *
+                  </label>
+                  <select
+                    value={formData.documentType || ''}
+                    onChange={(e) => {
+                      setUploadedFileName('');
+                      setFormData({
+                        ...formData,
+                        documentType: e.target.value as RegisterFormData['documentType'],
+                        verificationFile: undefined,
+                      });
+                    }}
+                    className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass} ${isDark ? 'bg-slate-800 text-white' : 'bg-white text-slate-900'}`}
+                    required={formData.role === 'COACH'}
+                  >
+                    <option value="" className="bg-white text-slate-900">Select Document</option>
+                    <option value="AADHAAR_CARD" className="bg-white text-slate-900">Aadhaar Card</option>
+                    <option value="CV_RESUME" className="bg-white text-slate-900">CV / Resume</option>
+                    <option value="DEGREE_CERTIFICATE" className="bg-white text-slate-900">Degree Certificate</option>
+                  </select>
+                </div>
+
+                {formData.documentType && (
+                  <div>
+                    <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
+                    Verification Document *
+                    </label>
+                    <div className="relative">
+                      <input
+                        type="file"
+                        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setFormData({ ...formData, verificationFile: file });
+                            setUploadedFileName(file.name);
+                          } else {
+                            setFormData({ ...formData, verificationFile: undefined });
+                            setUploadedFileName('');
+                          }
+                        }}
+                        className="hidden"
+                        id="coach-document"
+                        required={formData.role === 'COACH'}
+                      />
+                      <label
+                        htmlFor="coach-document"
+                        className={`flex w-full cursor-pointer items-center gap-3 rounded-xl border px-4 py-3 transition-all duration-300 ${
+                          isDark
+                            ? 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
+                            : 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-white hover:border-slate-300'
+                        }`}
+                      >
+                        <i className={`fas fa-upload ${subtleClass}`}></i>
+                        <span className="flex-1">
+                          {uploadedFileName || 'Upload document'}
+                        </span>
+                        {uploadedFileName && (
+                          <i className="fas fa-check-circle text-green-400"></i>
+                        )}
+                      </label>
+                    </div>
+                    <p className={`mt-1 text-xs ${subtleClass}`}>
+                      Accepted formats: PDF, JPG, PNG, DOC, DOCX
+                    </p>
+                  </div>
+                )}
+
+                <div>
+                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.phone || ''}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
+                    placeholder="+1234567890"
+                  />
+                </div>
+
+                <div>
+                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
+                    Team/Organization
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.team || ''}
+                    onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+                    className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
+                    placeholder="Team name"
+                  />
+                </div>
+              </motion.div>
+            )}
 
             {/* Conditional Fields for Player */}
             {formData.role === 'PLAYER' && (
@@ -301,7 +458,7 @@ export default function RegisterPage() {
                 className="grid grid-cols-2 gap-3"
               >
                 <div>
-                  <label className="block text-sm font-medium text-white/80 mb-2">
+                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                     Jersey #
                   </label>
                   <input
@@ -310,19 +467,19 @@ export default function RegisterPage() {
                     onChange={(e) =>
                       setFormData({ ...formData, jerseyNumber: parseInt(e.target.value) || undefined })
                     }
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                    className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
                     placeholder="7"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-white/80 mb-2">
+                  <label className={`mb-2 block text-sm font-medium ${labelClass}`}>
                     Team
                   </label>
                   <input
                     type="text"
                     value={formData.team || ''}
                     onChange={(e) => setFormData({ ...formData, team: e.target.value })}
-                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                    className={`w-full rounded-xl border px-4 py-3 transition-all duration-300 focus:outline-none ${inputClass}`}
                     placeholder="Team name"
                   />
                 </div>
@@ -358,7 +515,7 @@ export default function RegisterPage() {
             transition={{ delay: 0.9 }}
             className="mt-8 text-center space-y-4"
           >
-            <p className="text-sm text-white/60">
+            <p className={`text-sm ${helperClass}`}>
               Already have an account?{" "}
               <Link
                 to="/login"
@@ -370,7 +527,7 @@ export default function RegisterPage() {
 
             <Link
               to="/"
-              className="inline-flex items-center text-xs text-white/50 hover:text-white/70 transition-colors"
+              className={`inline-flex items-center text-xs transition-colors ${isDark ? 'text-white/50 hover:text-white/70' : 'text-slate-500 hover:text-slate-700'}`}
             >
               <span className="mr-1">←</span>
               Back to Home
