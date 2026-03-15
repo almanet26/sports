@@ -1,4 +1,4 @@
-# 🏏 Cricket Highlight Generator (Offline OCR)
+# 🏏 cricketVision (Offline OCR)
 
 **100% Offline Computer Vision pipeline** that detects FOURs, SIXs, and WICKETs from cricket match videos using OCR on the scoreboard overlay — **No External APIs Used for now**.
 

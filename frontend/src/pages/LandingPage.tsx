@@ -17,7 +17,7 @@ import coachReviewIcon from '../gallery/icons/Coach Review.jpeg';
 import reviewTimelineIcon from '../gallery/icons/Review Timeline .jpeg';
 import getInsightsIcon from '../gallery/icons/Get insights .jpeg';
 
-const translations = {
+const translations: Record<string, Record<string, string>> = {
   en: {
     features: 'FEATURES',
     pricing: 'PRICING',
@@ -319,7 +319,7 @@ export default function LandingPage() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  const handleNewsletterSubmit = (e) => {
+  const handleNewsletterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (email.trim()) {
       alert('Thanks for subscribing! Check your email for updates.');
@@ -327,7 +327,7 @@ export default function LandingPage() {
     }
   };
 
-  const chatResponses = {
+  const chatResponses: Record<string, Record<string, string>> = {
     en: {
       pricing: 'We offer pay-as-you-go pricing. Start with 20 free credits, then pay only for what you use. No subscriptions!',
       features: 'cricketVision offers Action Detection, Technique Analysis, Smart Recommendations, Performance Metrics, and Auto Highlight Generation.',
@@ -375,9 +375,9 @@ export default function LandingPage() {
     }
   };
 
-  const getBotResponse = (userMessage) => {
+  const getBotResponse = (userMessage: string) => {
     const msg = userMessage.toLowerCase();
-    const responses = chatResponses[language];
+    const responses = chatResponses[language] || chatResponses['en'];
 
     if (msg.includes('price') || msg.includes('cost') || msg.includes('pricing')) {
       return responses.pricing;
@@ -420,7 +420,7 @@ export default function LandingPage() {
     }, 500);
   };
 
-  const handleKeyPress = (e) => {
+  const handleKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
@@ -451,7 +451,7 @@ export default function LandingPage() {
                 <motion.div key={i} whileHover={{ y: -2 }}>
                   <a
                     href={item === 'FAQ' ? '#faq' : item === 'Features' ? '#features' : item === 'Testimonials' ? '#testimonials' : item === 'Pricing' ? '#pricing' : '#'}
-                    onClick={(e) => {
+                    onClick={(e: React.MouseEvent) => {
                       if (item === 'FAQ' || item === 'Features' || item === 'Testimonials' || item === 'Pricing') {
                         e.preventDefault();
                         const element = document.getElementById(item.toLowerCase());

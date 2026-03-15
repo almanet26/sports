@@ -1,4 +1,4 @@
-# Cricket Highlight Platform
+# cricketVision
 
 A full-stack web application that analyzes cricket videos, detects highlight events (4s, 6s, wickets) using OCR, and generates supercut reels.
 
@@ -80,7 +80,7 @@ npm run dev
 
 ```
 sports/
-├── backend/                          # FastAPI backend
+├── backend/                          # FastAPI backend (cricketVision)
 │   ├── main.py                       # Application entry point
 │   ├── requirements.txt              # Python dependencies
 │   ├── .env.example                  # Environment template
@@ -96,7 +96,7 @@ sports/
 │   ├── utils/                        # Helper functions
 │   └── storage/                      # Video storage (local)
 │
-├── frontend/                         # React + Vite
+├── frontend/                         # React + Vite (cricketVision)
 │   ├── src/
 │   │   ├── main.tsx                  # React entry point
 │   │   ├── App.tsx                   # Main component

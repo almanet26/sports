@@ -44,7 +44,7 @@ if not _CLOUD_RUN:
 async def lifespan(app: FastAPI):
     """Application lifespan handler - startup and shutdown events."""
     try:
-        logger.info("Starting Cricket Highlight Platform API...")
+        logger.info("Starting cricketVision API...")
         
         # Check database connection
         logger.info("Checking database connection...")
@@ -64,13 +64,13 @@ async def lifespan(app: FastAPI):
     
     yield
     
-    logger.info("Shutting down Cricket Highlight Platform API...")
+    logger.info("Shutting down cricketVision API...")
 
 
 app = FastAPI(
-    title="Cricket Highlight Platform API",
+    title="cricketVision API",
     description="""
-## Cricket Highlight Generator - SaaS Platform
+## cricketVision - Cricket Highlight Generator
 
 A platform for automated cricket highlight generation using OCR-based event detection.
 """,
@@ -132,7 +132,7 @@ if not _CLOUD_RUN:
 def read_root():
     """Root endpoint - API info."""
     return {
-        "name": "Cricket Highlight Platform API",
+        "name": "cricketVision API",
         "version": "2.0.0",
         "docs": "/docs",
         "health": "/api/v1/health",
@@ -142,7 +142,7 @@ def read_root():
 @app.get("/api/v1/health", tags=["health"])
 def health_check():
     """Health check endpoint."""
-    return {"status": "ok", "service": "cricket-highlight-api"}
+    return {"status": "ok", "service": "cricketVision-api"}
 
 
 @app.get("/api/v1/db-health", tags=["health"])

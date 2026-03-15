@@ -1,0 +1,40 @@
+[33m30e1b00[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/feature/password-visibility-toggle[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat: Add password visibility toggle with eye icon
+[33md7a55e9[m Merge pull request #10 from almanet26/feat/deployment
+[33ma5a0ac5[m fix: implement parsing for detected flaws and drill recommendations in batting and bowling analysis components
+[33m28c62cd[m fix: update GCS URL handling to use deterministic signed URLs and fix absolute path resolution in resolveMediaUrl
+[33ma546591[m fix: enhance Dockerfile for OpenCV dependencies, implement GCS client for submissions, and update video upload logic
+[33m64e804f[m fix: add CORS configuration for Google Cloud Storage
+[33m5dbb248[m feat: implement Cloud Tasks integration for video processing, enhance submission detail fetching, and update Batting/Bowling analysis components
+[33m6a62221[m feat: enhance password validation in registration process and update cloud build configuration
+[33maaf36b3[m feat: implement VideoUploader component for direct Cloud Storage uploads and enhance Gemini API call with retry logic
+[33m7e560bc[m feat: implement video processing worker and Cloud Tasks integration, update storage paths for Cloud Run compatibility
+[33m79b141b[m feat: enhance cloud storage and worker integration, update database connection settings, and remove Render configuration
+[33md458575[m feat: setup cloud infrastructure, deployment configuration and ignore files for Cloud Run setup
+[33m81bdf32[m Merge pull request #8 from almanet26/theme-fixes
+[33m92e69d7[m[33m ([m[1;31morigin/theme-fixes[m[33m)[m Fix dark boxes in LandingPage - add theme support to StepCard and TestimonialCard components
+[33m4aa573a[m Fix light/dark theme support across all pages - Add theme class to body element - Update Card components with theme support - Add CSS overrides for light theme visibility - Fix border visibility in light mode
+[33m8f1b34e[m fix: remove stray backend. prefix import in main.py (Render deploy fix)
+[33m973d027[m feat: enhance bowling analysis with structured flaw detection and drill recommendations
+[33m2ee84ac[m feat: add detected flaws and drill recommendations to BowlingAnalysis component
+[33m5a89119[m Merge pull request #7 from almanet26/feature/player-statistics-api
+[33m35373bf[m feat: enhance batting analysis with structured drill recommendations and detected flaws
+[33m30e1b00[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/feature/password-visibility-toggle[m[33m, [m[1;31morigin/HEAD[m[33m)[m feat: Add password visibility toggle with eye icon
+[33md7a55e9[m Merge pull request #10 from almanet26/feat/deployment
+[33ma5a0ac5[m fix: implement parsing for detected flaws and drill recommendations in batting and bowling analysis components
+[33m28c62cd[m fix: update GCS URL handling to use deterministic signed URLs and fix absolute path resolution in resolveMediaUrl
+[33ma546591[m fix: enhance Dockerfile for OpenCV dependencies, implement GCS client for submissions, and update video upload logic
+[33m64e804f[m fix: add CORS configuration for Google Cloud Storage
+[33m5dbb248[m feat: implement Cloud Tasks integration for video processing, enhance submission detail fetching, and update Batting/Bowling analysis components
+[33m6a62221[m feat: enhance password validation in registration process and update cloud build configuration
+[33maaf36b3[m feat: implement VideoUploader component for direct Cloud Storage uploads and enhance Gemini API call with retry logic
+[33m7e560bc[m feat: implement video processing worker and Cloud Tasks integration, update storage paths for Cloud Run compatibility
+[33m79b141b[m feat: enhance cloud storage and worker integration, update database connection settings, and remove Render configuration
+[33md458575[m feat: setup cloud infrastructure, deployment configuration and ignore files for Cloud Run setup
+[33m81bdf32[m Merge pull request #8 from almanet26/theme-fixes
+[33m92e69d7[m[33m ([m[1;31morigin/theme-fixes[m[33m)[m Fix dark boxes in LandingPage - add theme support to StepCard and TestimonialCard components
+[33m4aa573a[m Fix light/dark theme support across all pages - Add theme class to body element - Update Card components with theme support - Add CSS overrides for light theme visibility - Fix border visibility in light mode
+[33m8f1b34e[m fix: remove stray backend. prefix import in main.py (Render deploy fix)
+[33m973d027[m feat: enhance bowling analysis with structured flaw detection and drill recommendations
+[33m2ee84ac[m feat: add detected flaws and drill recommendations to BowlingAnalysis component
+[33m5a89119[m Merge pull request #7 from almanet26/feature/player-statistics-api
+[33m35373bf[m feat: enhance batting analysis with structured drill recommendations and detected flaws
