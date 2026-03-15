@@ -1,0 +1,13 @@
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="300" fill="#1a3a6b"/>
+  <rect x="100" y="200" width="200" height="20" fill="#90EE90"/>
+  <circle cx="200" cy="80" r="25" fill="#f5deb3"/>
+  <rect x="190" y="110" width="20" height="70" fill="#654321"/>
+  <rect x="160" y="130" width="80" height="15" fill="#8B4513" transform="rotate(-30 200 137)"/>
+  <circle cx="200" cy="160" r="12" fill="#cc0000"/>
+  <path d="M 200 172 Q 190 190 180 210" stroke="#333" stroke-width="3" fill="none"/>
+  <path d="M 200 172 Q 210 190 220 210" stroke="#333" stroke-width="3" fill="none"/>
+  <circle cx="180" cy="210" r="8" fill="#333"/>
+  <circle cx="220" cy="210" r="8" fill="#333"/>
+  <text x="200" y="280" font-size="24" font-weight="bold" fill="#fff" text-anchor="middle">Bowling Precision</text>
+</svg>

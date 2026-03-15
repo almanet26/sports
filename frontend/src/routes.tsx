@@ -10,6 +10,11 @@ import { DashboardLayout } from './components/layout/DashboardLayout';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import LandingPage from './pages/LandingPage';
+import FeaturesPage from './pages/FeaturesPage';
+import FeaturesDetailPage from './pages/FeaturesDetailPage';
+import DemoPage from './pages/DemoPage';
+import TestimonialsPage from './pages/TestimonialsPage';
+import ArticlesPage from './pages/ArticlesPage';
 import PlayerDashboard from './pages/PlayerDashboard';
 import CoachDashboard from './pages/CoachDashboard';
 import AdminDashboard from './pages/AdminDashboard';
@@ -135,6 +140,11 @@ export default function AppRouter() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
+        <Route path="/features" element={<FeaturesPage />} />
+        <Route path="/features-detail" element={<FeaturesDetailPage />} />
+        <Route path="/demo" element={<DemoPage />} />
+        <Route path="/articles" element={<ArticlesPage />} />
+        <Route path="/testimonials" element={<TestimonialsPage />} />
 
         {/* Guest only */}
         <Route element={<GuestRoute />}>

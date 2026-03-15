@@ -1,0 +1,78 @@
+<svg viewBox="0 0 600 400" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sky gradient background -->
+  <defs>
+    <linearGradient id="skyGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#87CEEB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#E0F6FF;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grassGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#2d5016;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1a3a0a;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <rect width="600" height="400" fill="url(#skyGradient)"/>
+  
+  <!-- Ground -->
+  <rect y="280" width="600" height="120" fill="url(#grassGradient)"/>
+  
+  <!-- Pitch line -->
+  <line x1="0" y1="300" x2="600" y2="300" stroke="#fff" stroke-width="2" opacity="0.5"/>
+  
+  <!-- Batsman body -->
+  <circle cx="300" cy="180" r="30" fill="#f5deb3"/>
+  
+  <!-- Batsman head -->
+  <circle cx="300" cy="140" r="25" fill="#f5deb3"/>
+  
+  <!-- Helmet -->
+  <ellipse cx="300" cy="130" rx="28" ry="30" fill="#1a1a1a" opacity="0.8"/>
+  <rect x="285" y="155" width="30" height="15" fill="#1a1a1a" opacity="0.6"/>
+  
+  <!-- Face -->
+  <circle cx="295" cy="140" r="4" fill="#000"/>
+  <circle cx="305" cy="140" r="4" fill="#000"/>
+  
+  <!-- Torso -->
+  <rect x="280" y="165" width="40" height="50" fill="#fff" rx="5"/>
+  
+  <!-- Arms -->
+  <rect x="250" y="170" width="30" height="15" fill="#f5deb3" rx="7" transform="rotate(-45 265 177)"/>
+  <rect x="320" y="170" width="35" height="15" fill="#f5deb3" rx="7" transform="rotate(60 337 177)"/>
+  
+  <!-- Cricket bat -->
+  <rect x="330" y="100" width="15" height="120" fill="#8B4513" rx="7" transform="rotate(35 337 160)"/>
+  <rect x="332" y="95" width="11" height="15" fill="#654321" rx="5" transform="rotate(35 337 102)"/>
+  
+  <!-- Legs -->
+  <rect x="285" y="215" width="12" height="60" fill="#1a1a1a" rx="6"/>
+  <rect x="303" y="215" width="12" height="60" fill="#1a1a1a" rx="6"/>
+  
+  <!-- Shoes -->
+  <ellipse cx="291" cy="280" rx="8" ry="6" fill="#000"/>
+  <ellipse cx="309" cy="280" rx="8" ry="6" fill="#000"/>
+  
+  <!-- Cricket ball in air -->
+  <circle cx="450" cy="120" r="8" fill="#cc0000"/>
+  <line x1="450" y1="115" x2="450" y2="125" stroke="#000" stroke-width="1"/>
+  <line x1="445" y1="120" x2="455" y2="120" stroke="#000" stroke-width="1"/>
+  
+  <!-- Motion lines -->
+  <line x1="420" y1="110" x2="440" y2="115" stroke="#cc0000" stroke-width="2" opacity="0.5"/>
+  <line x1="420" y1="125" x2="440" y2="120" stroke="#cc0000" stroke-width="2" opacity="0.5"/>
+  
+  <!-- Stumps in background -->
+  <rect x="100" y="250" width="4" height="50" fill="#8B4513"/>
+  <rect x="110" y="250" width="4" height="50" fill="#8B4513"/>
+  <rect x="120" y="250" width="4" height="50" fill="#8B4513"/>
+  <line x1="98" y1="250" x2="122" y2="250" stroke="#8B4513" stroke-width="2"/>
+  <line x1="98" y1="260" x2="122" y2="260" stroke="#8B4513" stroke-width="2"/>
+  
+  <!-- Crowd in background -->
+  <circle cx="80" cy="200" r="15" fill="#ff6b6b" opacity="0.6"/>
+  <circle cx="120" cy="190" r="15" fill="#4ecdc4" opacity="0.6"/>
+  <circle cx="150" cy="200" r="15" fill="#ffe66d" opacity="0.6"/>
+  <circle cx="500" cy="210" r="15" fill="#95e1d3" opacity="0.6"/>
+  <circle cx="540" cy="200" r="15" fill="#f38181" opacity="0.6"/>
+  <circle cx="570" cy="210" r="15" fill="#aa96da" opacity="0.6"/>
+</svg>

@@ -1,0 +1,14 @@
+<svg viewBox="0 0 400 300" xmlns="http://www.w3.org/2000/svg">
+  <rect width="400" height="300" fill="#2d5016"/>
+  <rect x="100" y="200" width="200" height="20" fill="#90EE90"/>
+  <circle cx="200" cy="100" r="25" fill="#f5deb3"/>
+  <rect x="190" y="130" width="20" height="60" fill="#654321"/>
+  <rect x="160" y="140" width="80" height="15" fill="#8B4513" transform="rotate(45 200 147)"/>
+  <circle cx="200" cy="160" r="10" fill="#cc0000"/>
+  <path d="M 200 170 L 180 200" stroke="#333" stroke-width="3"/>
+  <path d="M 200 170 L 220 200" stroke="#333" stroke-width="3"/>
+  <circle cx="180" cy="200" r="8" fill="#333"/>
+  <circle cx="220" cy="200" r="8" fill="#333"/>
+  <path d="M 150 80 Q 160 60 180 70" stroke="#FFD700" stroke-width="2" fill="none"/>
+  <text x="200" y="280" font-size="24" font-weight="bold" fill="#fff" text-anchor="middle">Fielding Excellence</text>
+</svg>
