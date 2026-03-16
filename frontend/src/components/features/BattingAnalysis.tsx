@@ -105,21 +105,83 @@ function parseDetectedFlaws(text: string): DetectedFlaw[] {
 }
 
 function parseDrillRecommendations(text: string): DrillRecommendation[] {
-  const match = text.match(/\*\*RECOMMENDED TUTORIALS\*\*([\s\S]*?)(?=\*\*CRITICAL MANDATE|CRITICAL MANDATE|$)/i);
+  const match = text.match(/\*\*RECOMMENDED TUTORIALS\*\*([\s\S]*)/i);
   if (!match) return [];
+  const section = match[1];
+  const clean = (v: string) => v.replace(/\*\*/g, "").trim();
   const results: DrillRecommendation[] = [];
-  for (const entry of match[1].split(/\n\d+\.\s+/)) {
+
+  // Prefer direct Title/Link/Why blocks (robust to wrapped lines in title/why text).
+  const lines = section.split("\n");
+  let curTitle = "";
+  let curLink = "";
+  let curWhy = "";
+  let activeField: "title" | "why" | null = null;
+
+  const flush = () => {
+    const title = clean(curTitle);
+    const link = curLink.trim();
+    const reason = clean(curWhy);
+    if (title && link) {
+      results.push({ query: title, title, link, reason });
+    }
+    curTitle = "";
+    curLink = "";
+    curWhy = "";
+    activeField = null;
+  };
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+
+    const titleMatch = line.match(/^\d+\.\s*(?:\*\*)?Title(?:\*\*)?:\s*(.*)$/i) || line.match(/^(?:\*\*)?Title(?:\*\*)?:\s*(.*)$/i);
+    if (titleMatch) {
+      if (curTitle || curLink || curWhy) flush();
+      curTitle = titleMatch[1] ?? "";
+      activeField = "title";
+      continue;
+    }
+
+    const linkMatch = line.match(/^(?:\*\*)?Link(?:\*\*)?:\s*(https?:\/\/\S+)/i);
+    if (linkMatch) {
+      curLink = linkMatch[1] ?? "";
+      activeField = null;
+      continue;
+    }
+
+    const whyMatch = line.match(/^(?:\*\*)?Why(?:\s*this\s*video)?(?:\*\*)?:\s*(.*)$/i);
+    if (whyMatch) {
+      curWhy = whyMatch[1] ?? "";
+      activeField = "why";
+      continue;
+    }
+
+    // Continuation lines for wrapped title/why blocks.
+    if (activeField === "title") {
+      curTitle += ` ${line}`;
+    } else if (activeField === "why") {
+      curWhy += ` ${line}`;
+    }
+  }
+  if (curTitle || curLink || curWhy) flush();
+
+  if (results.length > 0) return results;
+
+  // Fallback to Search Intent format.
+  for (const entry of section.split(/\n\d+\.\s+/)) {
     const queryMatch = entry.match(/Search Intent:\s*(.+)/i);
-    const whyMatch = entry.match(/Why this video:\s*(.+)/i);
+    const whyMatch = entry.match(/Why(?: this video)?:\s*(.+)/i);
     if (!queryMatch) continue;
-    const query = queryMatch[1].trim();
+    const query = clean(queryMatch[1]);
     results.push({
       query,
       title: query,
       link: `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`,
-      reason: whyMatch?.[1]?.trim() ?? "",
+      reason: clean(whyMatch?.[1] ?? ""),
     });
   }
+
   return results;
 }
 
@@ -141,8 +203,22 @@ function mapSubmissionToBattingResult(sub: SubmissionDetail): BattingResult {
   const phases = (sub.phase_info ?? {}) as Record<string, number | null>;
 
   const fullText = sub.ai_draft_text ?? sub.coach_final_text ?? "";
-  const detectedFlaws = parseDetectedFlaws(fullText);
-  const drillRecs = parseDrillRecommendations(fullText);
+  const detectedFlaws = (sub.detected_flaws && sub.detected_flaws.length > 0)
+    ? sub.detected_flaws.map((f) => ({
+        flaw_name: f.flaw_name,
+        description: f.description,
+        rating: f.rating ?? null,
+        timestamp: f.timestamp ?? null,
+      }))
+    : parseDetectedFlaws(fullText);
+  const drillRecs = (sub.drill_recommendations && sub.drill_recommendations.length > 0)
+    ? sub.drill_recommendations.map((d) => ({
+        query: d.query,
+        title: d.title,
+        link: d.link,
+        reason: d.reason,
+      }))
+    : parseDrillRecommendations(fullText);
   const cleanedText = stripParsedSections(fullText);
 
   return {

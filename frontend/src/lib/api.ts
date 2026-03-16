@@ -364,6 +364,18 @@ export interface SubmissionDetail extends SubmissionSummary {
   key_frame_url?: string;
   ai_draft_text?: string;
   coach_final_text?: string;
+  detected_flaws?: Array<{
+    flaw_name: string;
+    description: string;
+    rating?: number;
+    timestamp?: string;
+  }>;
+  drill_recommendations?: Array<{
+    query: string;
+    title: string;
+    link: string;
+    reason: string;
+  }>;
 }
 
 export interface CoachListItem {
@@ -514,5 +526,47 @@ export async function pollSubmissionResult(
   }
   throw new Error('Processing timed out. Your results will appear in History when ready.');
 }
+// Plans API (Admin)
+export const plansApi = {
+  // Create new plan
+  create: (data: {
+    name: string;
+    monthly_price: number;
+    yearly_price: number;
+    features: string;
+  }) => api.post('/plans', data),
+
+  // Get all plans
+  list: () => api.get('/plans'),
+
+  // Update plan
+  update: (
+    planId: number,
+    data: {
+      name: string;
+      monthly_price: number;
+      yearly_price: number;
+      features: string;
+    }
+  ) => api.put(`/plans/${planId}`, data),
+
+  // Delete plan
+  delete: (planId: number) => api.delete(`/plans/${planId}`),
+};
+// Subscription API
+export const subscriptionApi = {
+
+  // Subscribe user to a plan
+  subscribe: (userId: string, planId: number) =>
+    api.post("/subscriptions/subscribe", {
+      user_id: userId,
+      plan_id: planId
+    }),
+
+  // Get subscription of a user
+  getUserSubscription: (userId: string) =>
+    api.get(`/subscriptions/user/${userId}`)
+
+};
 
 export default api;

@@ -154,6 +154,13 @@ export default function AdminDashboard() {
 
           <div className="flex gap-3">
             <Link
+              to="/admin/coaches"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-300 text-sm font-semibold flex items-center gap-2"
+            >
+              <i className="fas fa-user-check"></i>
+              Coach Verification
+            </Link>
+            <Link
               to="/admin/upload"
               className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transition-all duration-300 text-sm font-semibold flex items-center gap-2"
             >

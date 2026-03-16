@@ -16,7 +16,10 @@ Shared:
 """
 
 import logging
+import importlib
 import os
+import re
+import shutil
 import tempfile
 import uuid
 from pathlib import Path
@@ -53,7 +56,15 @@ from utils.auth import get_current_user
 
 # Engine imports
 try:
-    from scripts.bowling_engine import CricketPoseAnalyzer, GeminiManager, create_pdf, MEDIAPIPE_AVAILABLE, BOWLING_ANALYSIS_PROMPT
+    from scripts.bowling_engine import (
+        CricketPoseAnalyzer,
+        GeminiManager,
+        create_pdf,
+        MEDIAPIPE_AVAILABLE,
+        BOWLING_ANALYSIS_PROMPT,
+        extract_bowling_flaws,
+        extract_bowling_drills,
+    )
     BOWLING_ENGINE_AVAILABLE = True
 except ImportError:
     BOWLING_ENGINE_AVAILABLE = False
@@ -65,6 +76,9 @@ try:
         BattingGeminiManager,
         create_batting_pdf,
         BATTING_MEDIAPIPE_AVAILABLE,
+        BATTING_ANALYSIS_PROMPT,
+        extract_detected_flaws,
+        extract_drill_recommendations,
     )
     BATTING_ENGINE_AVAILABLE = True
 except ImportError:
@@ -111,6 +125,28 @@ _bowling_gemini = GeminiManager() if BOWLING_ENGINE_AVAILABLE else None
 _batting_analyzer = BattingPoseAnalyzer() if BATTING_ENGINE_AVAILABLE and BATTING_MEDIAPIPE_AVAILABLE else None
 _batting_gemini = BattingGeminiManager() if BATTING_ENGINE_AVAILABLE else None
 
+_videos_search_cls = None
+try:
+    _yt_module = importlib.import_module("youtubesearchpython")
+    _videos_search_cls = getattr(_yt_module, "VideosSearch", None)
+except Exception:
+    _videos_search_cls = None
+
+if _videos_search_cls is None:
+    logger.warning("Tutorial resolver init — youtubesearchpython unavailable; will rely on yt-dlp/search fallback")
+else:
+    logger.info("Tutorial resolver init — youtubesearchpython VideosSearch available")
+
+
+def _is_specific_youtube_link(url: str) -> bool:
+    """Return True if URL looks like a concrete YouTube video URL."""
+    u = (url or "").strip().lower()
+    return (
+        "youtube.com/watch?v=" in u
+        or "youtu.be/" in u
+        or "youtube.com/shorts/" in u
+    )
+
 
 #  HELPERS
 def _gcs_to_signed_url(gs_uri: str | None) -> str | None:
@@ -147,6 +183,14 @@ def _to_summary(sub: VideoSubmission) -> SubmissionSummary:
 
 
 def _to_detail(sub: VideoSubmission) -> SubmissionDetail:
+    source_text = sub.coach_final_text or sub.ai_draft_text or ""
+    if sub.analysis_type == "BOWLING":
+        flaws = extract_bowling_flaws(source_text) if BOWLING_ENGINE_AVAILABLE else []
+        drills = extract_bowling_drills(source_text) if BOWLING_ENGINE_AVAILABLE else []
+    else:
+        flaws = extract_detected_flaws(source_text) if BATTING_ENGINE_AVAILABLE else []
+        drills = extract_drill_recommendations(source_text) if BATTING_ENGINE_AVAILABLE else []
+
     return SubmissionDetail(
         id=sub.id,
         player_id=sub.player_id,
@@ -163,6 +207,8 @@ def _to_detail(sub: VideoSubmission) -> SubmissionDetail:
         key_frame_url=_gcs_to_signed_url(sub.key_frame_url),
         ai_draft_text=sub.ai_draft_text,
         coach_final_text=sub.coach_final_text,
+        detected_flaws=flaws,
+        drill_recommendations=drills,
         pdf_report_url=_gcs_to_signed_url(sub.pdf_report_url),
         created_at=sub.created_at,
         analyzed_at=sub.analyzed_at,
@@ -183,6 +229,226 @@ def _save_key_frame(video_path: str, submission_id: str, frame_idx: int | None) 
     out_path = TEMP_FRAMES_DIR / f"{submission_id}.jpg"
     cv2.imwrite(str(out_path), frame)
     return f"/static/temp_frames/{submission_id}.jpg"
+
+
+def _append_tutorial_links(ai_text: str, drills: list[dict]) -> str:
+    """Rewrite tutorial section with concrete Title/Link/Why blocks (app.py-style)."""
+    if not drills:
+        return ai_text
+
+    lines = ["**RECOMMENDED TUTORIALS**"]
+    for idx, drill in enumerate(drills, start=1):
+        title = str(drill.get("title", "Tutorial")).strip() or "Tutorial"
+        link = str(drill.get("link", "")).strip()
+        reason = str(drill.get("reason", "To improve the identified weakness.")).strip()
+        if not link:
+            continue
+        lines.append(f"{idx}. Title: {title}")
+        lines.append(f"   Link: {link}")
+        lines.append(f"   Why: {reason}")
+        lines.append("")
+
+    if len(lines) <= 1:
+        return ai_text
+
+    tutorials_block = "\n".join(lines).rstrip()
+
+    # Replace existing tutorial section if present, otherwise append at end.
+    if "**RECOMMENDED TUTORIAL" in ai_text.upper():
+        parts = re.split(r"\*\*RECOMMENDED TUTORIALS?\*\*", ai_text, flags=re.IGNORECASE)
+        base_report = parts[0].rstrip()
+        return f"{base_report}\n\n{tutorials_block}"
+
+    return f"{ai_text.rstrip()}\n\n{tutorials_block}"
+
+
+def _post_process_report_with_video_links(report_text: str, discipline: str) -> tuple[str, list[dict]]:
+    """App.py-style conversion of Search Intent lines into specific YouTube Title/Link entries."""
+    marker = "**RECOMMENDED TUTORIAL"
+    if marker not in report_text.upper():
+        return report_text, []
+
+    try:
+        if "**RECOMMENDED TUTORIALS**" in report_text:
+            parts = report_text.split("**RECOMMENDED TUTORIALS**")
+            header = "**RECOMMENDED TUTORIALS**"
+        else:
+            parts = re.split(r"\*\*RECOMMENDED TUTORIALS?\*\*", report_text, flags=re.IGNORECASE)
+            header = "**RECOMMENDED TUTORIALS**"
+
+        base_report = parts[0].rstrip()
+        tutorial_content = "".join(parts[1:])
+
+        search_intents = re.findall(r"Search Intent:\s*(.*)", tutorial_content, flags=re.IGNORECASE)
+        whys = re.findall(r"Why this video:\s*(.*)", tutorial_content, flags=re.IGNORECASE)
+
+        drills: list[dict] = []
+        specific_count = 0
+        search_count = 0
+        for i, raw_intent in enumerate(search_intents):
+            intent = raw_intent.strip().strip("*_`[]() ")
+            why = whys[i].strip() if i < len(whys) else "To improve your technique."
+
+            title = f"{discipline.title()} Tutorial: {intent}"
+            link = ""
+            source = "none"
+
+            logger.info(
+                "Tutorial resolver start — discipline=%s idx=%s intent=%s",
+                discipline,
+                i + 1,
+                intent,
+            )
+
+            try:
+                if "youtube.com" in intent.lower() or "youtu.be" in intent.lower():
+                    urls = re.findall(r"(https?://[^\s]+)", intent)
+                    link = urls[0] if urls else intent
+                    title = f"Specific Tutorial: {intent.split('http')[0].strip() or 'Video'}"
+                    source = "intent-url"
+                else:
+                    full_query = f"{intent} cricket {discipline.upper()} tutorial"
+                    if _videos_search_cls is not None:
+                        try:
+                            result = _videos_search_cls(full_query, limit=1).result().get("result", [])
+                            if result:
+                                title = str(result[0].get("title", title)).strip()
+                                link = str(result[0].get("link", "")).strip()
+                                source = "videossearch"
+                                logger.info(
+                                    "Tutorial resolver videossearch hit — discipline=%s idx=%s has_link=%s",
+                                    discipline,
+                                    i + 1,
+                                    bool(link),
+                                )
+                            else:
+                                logger.info(
+                                    "Tutorial resolver videossearch empty — discipline=%s idx=%s query=%s",
+                                    discipline,
+                                    i + 1,
+                                    full_query,
+                                )
+                        except Exception as vs_err:
+                            logger.warning(
+                                "Tutorial resolver videossearch failed — discipline=%s idx=%s err=%s",
+                                discipline,
+                                i + 1,
+                                vs_err,
+                            )
+                    else:
+                        logger.info(
+                            "Tutorial resolver videossearch unavailable — discipline=%s idx=%s",
+                            discipline,
+                            i + 1,
+                        )
+
+                    # Fallback: yt-dlp live search for concrete watch URL.
+                    if not link:
+                        try:
+                            yt_dlp = importlib.import_module("yt_dlp")
+                            with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+                                info = ydl.extract_info(f"ytsearch1:{full_query}", download=False)
+                                entries = (info or {}).get("entries") or []
+                                if entries:
+                                    entry = entries[0] or {}
+                                    title = str(entry.get("title") or title).strip()
+                                    link = str(entry.get("webpage_url") or entry.get("url") or "").strip()
+                                    if link and not link.startswith("http"):
+                                        link = f"https://www.youtube.com/watch?v={link}"
+                                    source = "yt-dlp"
+                                    logger.info(
+                                        "Tutorial resolver yt-dlp hit — discipline=%s idx=%s has_link=%s",
+                                        discipline,
+                                        i + 1,
+                                        bool(link),
+                                    )
+                                else:
+                                    logger.info(
+                                        "Tutorial resolver yt-dlp empty — discipline=%s idx=%s query=%s",
+                                        discipline,
+                                        i + 1,
+                                        full_query,
+                                    )
+                        except Exception as e:
+                            logger.warning(
+                                "Tutorial resolver yt-dlp failed — discipline=%s idx=%s err=%s",
+                                discipline,
+                                i + 1,
+                                e,
+                            )
+
+                    if not link:
+                        logger.warning(
+                            "Tutorial resolver no direct result — discipline=%s idx=%s query=%s",
+                            discipline,
+                            i + 1,
+                            full_query,
+                        )
+                        raise RuntimeError("No direct result")
+            except Exception as resolve_err:
+                query_encoded = intent.replace(" ", "+") + f"+cricket+{discipline.lower()}+tutorial"
+                link = f"https://www.youtube.com/results?search_query={query_encoded}"
+                source = "search-fallback"
+                logger.warning(
+                    "Tutorial resolver fallback engaged — discipline=%s idx=%s err=%s",
+                    discipline,
+                    i + 1,
+                    resolve_err,
+                )
+
+            if _is_specific_youtube_link(link):
+                specific_count += 1
+            else:
+                search_count += 1
+
+            logger.info(
+                "Tutorial resolver result — discipline=%s idx=%s source=%s specific=%s link=%s",
+                discipline,
+                i + 1,
+                source,
+                _is_specific_youtube_link(link),
+                link,
+            )
+
+            drills.append(
+                {
+                    "query": intent,
+                    "title": title,
+                    "link": link,
+                    "reason": why,
+                }
+            )
+
+        # If model ignored Search Intent format, keep any existing parsed drills.
+        if not drills:
+            if discipline == "bowling" and BOWLING_ENGINE_AVAILABLE:
+                drills = extract_bowling_drills(report_text)
+            elif BATTING_ENGINE_AVAILABLE:
+                drills = extract_drill_recommendations(report_text)
+
+        if not drills:
+            return report_text, []
+
+        logger.info(
+            "Tutorial resolver summary — discipline=%s total=%s specific=%s search_links=%s",
+            discipline,
+            len(drills),
+            specific_count,
+            search_count,
+        )
+
+        new_section_lines = [header]
+        for idx, d in enumerate(drills, start=1):
+            new_section_lines.append(f"{idx}. **Title**: {d['title']}")
+            new_section_lines.append(f"   **Link**: {d['link']}")
+            new_section_lines.append(f"   **Why**: {d['reason']}")
+            new_section_lines.append("")
+
+        rewritten = f"{base_report}\n\n" + "\n".join(new_section_lines).rstrip()
+        return rewritten, drills
+    except Exception as e:
+        logger.debug("Tutorial post-processing failed (%s): %s", discipline, e)
+        return report_text, []
 
 
 #  SHARED: List Coaches
@@ -550,33 +816,19 @@ def _run_batting_analysis(
     impact_frame = phase_info.get("impact")
     key_frame_url = _save_key_frame(str(final_annotated), submission_id, impact_frame)
 
-    # AI feedback
-    prompt = (
-        "You are a professional elite cricket batting coach and biomechanics analyst.\n"
-        "Analyze this batter's technique using the provided biomechanical metrics.\n\n"
-        f"METRICS SUMMARY:\n{display_df.describe().to_string()}\n\n"
-        "PHASE DETECTION:\n"
-        f"  Stance End: Frame {phase_info.get('stance_end')}\n"
-        f"  Stride Peak: Frame {phase_info.get('stride_peak')}\n"
-        f"  Impact: Frame {phase_info.get('impact')}\n"
-        f"  Follow-Through: Frame {phase_info.get('followthrough_start')}\n\n"
-        "REQUIRED STRUCTURE:\n\n"
-        "**OVERALL ASSESSMENT**\n"
-        "2-3 sentence executive summary.\n\n"
-        "**PHASE-BY-PHASE ANALYSIS**\n\n"
-        "**1. Initial Stance & Setup**\n**2. Trigger/Stride Phase**\n"
-        "**3. Downswing & Weight Transfer**\n**4. Impact Zone**\n"
-        "**5. Follow-Through**\n\n"
-        "**SPECIFIC CORRECTIONS & DRILLS**\n"
-        "**PERFORMANCE SUMMARY**\n\n"
-        "Tone: Direct, professional, encouraging but honest."
+    # AI feedback (full prompt includes WEAKNESSES + RECOMMENDED TUTORIALS section)
+    prompt = BATTING_ANALYSIS_PROMPT.format(
+        metrics_summary=display_df.describe().to_string(),
+        phase_info=phase_info,
     )
     ai_text = _batting_gemini.call_gemini(prompt, video_path) if _batting_gemini else "AI feedback unavailable."
+    ai_text, _ = _post_process_report_with_video_links(ai_text, "batting")
 
     # Pack biometrics for JSON storage
     biometrics = {
         "records": raw_df.to_dict(orient="records") if not raw_df.empty else [],
-        "summary": display_df.describe().T.to_dict() if not display_df.empty else {},
+        # Keep metric-first shape: summary["Metric Name"]["mean"]
+        "summary": display_df.describe().T.to_dict(orient="index") if not display_df.empty else {},
     }
 
     return biometrics, annotated_url, ai_text, phase_info, key_frame_url
@@ -615,10 +867,12 @@ def _run_bowling_analysis(
         metrics_summary=display_df.describe().to_string()
     )
     ai_text = _bowling_gemini.call_gemini(prompt, video_path) if _bowling_gemini else "AI feedback unavailable."
+    ai_text, _ = _post_process_report_with_video_links(ai_text, "bowling")
 
     biometrics = {
         "records": raw_df.to_dict(orient="records") if not raw_df.empty else [],
-        "summary": display_df.describe().T.to_dict() if not display_df.empty else {},
+        # Keep metric-first shape: summary["Metric Name"]["mean"]
+        "summary": display_df.describe().T.to_dict(orient="index") if not display_df.empty else {},
     }
 
     return biometrics, annotated_url, ai_text, {}, key_frame_url

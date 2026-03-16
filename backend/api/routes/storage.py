@@ -15,12 +15,15 @@ Environment Variables Required:
 
 import logging
 import os
+import threading
 import uuid
+import urllib.parse
 from datetime import timedelta
+from pathlib import Path
 
 import google.auth
 import google.auth.transport.requests
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -67,6 +70,10 @@ _ALLOWED_CONTENT_TYPES = frozenset(
 # Signed URL validity
 _SIGNED_URL_EXPIRY = timedelta(minutes=15)
 
+# Local upload root (used for automatic fallback in local/dev)
+LOCAL_UPLOAD_ROOT = Path("storage/uploads")
+LOCAL_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+
 
 # Response schemas (kept local — tiny & endpoint-specific)
 class SignedUrlResponse(BaseModel):
@@ -81,9 +88,125 @@ class ConfirmUploadResponse(BaseModel):
     blob_name: str
 
 
+def _build_local_upload_url(request: Request, blob_name: str) -> str:
+    """Build a local PUT URL for direct upload to FastAPI when GCS signing is unavailable."""
+    encoded_blob = urllib.parse.quote(blob_name, safe="/")
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/v1/storage/local-upload/{encoded_blob}"
+
+
+def _build_submission(
+    db: Session,
+    current_user: User,
+    filename: str,
+    analysis_type: str,
+    blob_name: str,
+) -> VideoSubmission:
+    """Create a submission row for either cloud or local upload flows."""
+    submission = VideoSubmission(
+        player_id=current_user.id,
+        coach_id=current_user.id,
+        original_filename=filename,
+        video_url=blob_name,
+        analysis_type=analysis_type,
+        status=SubmissionStatus.PENDING,
+    )
+    db.add(submission)
+    db.commit()
+    db.refresh(submission)
+    return submission
+
+
+def _resolve_local_upload_path(blob_name: str) -> Path:
+    """Resolve and validate local upload path under storage/uploads."""
+    candidate = (LOCAL_UPLOAD_ROOT / blob_name).resolve()
+    root_resolved = LOCAL_UPLOAD_ROOT.resolve()
+    if root_resolved not in candidate.parents and candidate != root_resolved:
+        raise HTTPException(status_code=400, detail="Invalid upload path.")
+    return candidate
+
+
+def _process_submission_locally(submission_id: str) -> None:
+    """Background local processor for local-upload fallback flow."""
+    from database.config import get_background_db
+    from database.crud.submission import save_analysis_results
+
+    db = get_background_db()
+    try:
+        sub = db.query(VideoSubmission).filter(VideoSubmission.id == submission_id).first()
+        if sub is None:
+            logger.error("Local worker: submission not found: %s", submission_id)
+            return
+
+        local_video = _resolve_local_upload_path(sub.video_url)
+        if not local_video.exists():
+            raise FileNotFoundError(f"Local worker: video not found at {local_video}")
+
+        # Import lazily to avoid route import cycles at module import time.
+        from api.routes.submissions import _run_batting_analysis, _run_bowling_analysis
+
+        if sub.analysis_type == "BOWLING":
+            raw_biometrics, annotated_url, ai_draft, phase_info, key_frame_url = _run_bowling_analysis(
+                str(local_video),
+                sub.id,
+            )
+        else:
+            raw_biometrics, annotated_url, ai_draft, phase_info, key_frame_url = _run_batting_analysis(
+                str(local_video),
+                sub.id,
+            )
+
+        save_analysis_results(
+            db,
+            sub,
+            raw_biometrics=raw_biometrics,
+            phase_info=phase_info or {},
+            ai_draft_text=ai_draft,
+            annotated_video_url=annotated_url,
+            key_frame_url=key_frame_url,
+        )
+
+        # Generate local PDF so player flow has an immediate downloadable report.
+        try:
+            import pandas as pd
+            from scripts.bowling_engine import create_pdf
+            from scripts.batting_engine import create_batting_pdf
+
+            metrics_df = pd.DataFrame(raw_biometrics.get("records", [])) if isinstance(raw_biometrics, dict) else pd.DataFrame()
+            if sub.analysis_type == "BOWLING":
+                pdf_bytes = create_pdf(ai_draft, metrics_df, {})
+            else:
+                pdf_bytes = create_batting_pdf(ai_draft, metrics_df, {}, phase_info=phase_info or {})
+
+            reports_dir = Path("storage/reports")
+            reports_dir.mkdir(parents=True, exist_ok=True)
+            report_filename = f"submission_report_{sub.id}.pdf"
+            report_path = reports_dir / report_filename
+            report_path.write_bytes(pdf_bytes)
+
+            sub.pdf_report_url = f"/static/reports/{report_filename}"
+            db.commit()
+        except Exception as pdf_exc:
+            logger.warning("Local worker: PDF generation skipped for %s: %s", sub.id, pdf_exc)
+
+        logger.info("Local worker finished — submission=%s → DRAFT_REVIEW", sub.id)
+    except Exception as exc:
+        logger.exception("Local worker failed for submission %s: %s", submission_id, exc)
+        try:
+            sub = db.query(VideoSubmission).filter(VideoSubmission.id == submission_id).first()
+            if sub and sub.status == SubmissionStatus.PROCESSING:
+                sub.status = SubmissionStatus.PENDING
+                db.commit()
+        except Exception:
+            logger.exception("Failed to rollback submission state for %s", submission_id)
+    finally:
+        db.close()
+
+
 # GET /upload-url
 @router.get("/upload-url", response_model=SignedUrlResponse)
 def generate_upload_url(
+    request: Request,
     filename: str = Query(..., min_length=1, description="Original file name"),
     content_type: str = Query(..., description="MIME type, e.g. video/mp4"),
     analysis_type: str = Query("BATTING", description="BATTING or BOWLING"),
@@ -95,13 +218,6 @@ def generate_upload_url(
     directly into GCS.  Also creates a ``video_submissions`` row in
     UPLOADING state so we can track the upload lifecycle.
     """
-    # guard 
-    if not GCS_AVAILABLE:
-        raise HTTPException(
-            status_code=503,
-            detail="Cloud storage is not configured on this server.",
-        )
-
     if content_type not in _ALLOWED_CONTENT_TYPES:
         raise HTTPException(
             status_code=400,
@@ -118,39 +234,50 @@ def generate_upload_url(
     safe_name = filename.replace(" ", "_")
     blob_name = f"raw_videos/{unique_id}_{safe_name}"
 
-    # generate V4 signed URL (Cloud Run-safe: uses ADC token, no JSON key needed) 
-    blob = _bucket.blob(blob_name)  # type: ignore[union-attr]
-    try:
-        _auth_request = google.auth.transport.requests.Request()
-        _credentials, _ = google.auth.default()
-        _credentials.refresh(_auth_request)
-        signed_url: str = blob.generate_signed_url(
-            version="v4",
-            expiration=_SIGNED_URL_EXPIRY,
-            method="PUT",
-            content_type=content_type,
-            service_account_email=_credentials.service_account_email,
-            access_token=_credentials.token,
-        )
-    except Exception as exc:
-        logger.error("Failed to generate signed URL: %s", exc)
-        raise HTTPException(status_code=500, detail="Could not generate upload URL.") from exc
+    signed_url: str
+    upload_mode = "LOCAL"
 
-    # database record (UPLOADING) 
-    submission = VideoSubmission(
-        player_id=current_user.id,
-        coach_id=current_user.id,           # placeholder — reassigned later
-        original_filename=filename,
-        video_url=blob_name,                 # GCS object path (not a local path)
+    # Prefer GCS signed URLs when possible; auto-fallback to local upload when unavailable.
+    if GCS_AVAILABLE:
+        blob = _bucket.blob(blob_name)  # type: ignore[union-attr]
+        try:
+            _auth_request = google.auth.transport.requests.Request()
+            _credentials, _ = google.auth.default()
+            _credentials.refresh(_auth_request)
+
+            service_account_email = getattr(_credentials, "service_account_email", None)
+            if not service_account_email:
+                raise RuntimeError("Current ADC credentials are not service-account credentials")
+
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=_SIGNED_URL_EXPIRY,
+                method="PUT",
+                content_type=content_type,
+                service_account_email=service_account_email,
+                access_token=_credentials.token,
+            )
+            upload_mode = "GCS"
+        except Exception as exc:
+            logger.warning(
+                "Failed to generate GCS signed URL, falling back to local upload: %s",
+                exc,
+            )
+            signed_url = _build_local_upload_url(request, blob_name)
+    else:
+        signed_url = _build_local_upload_url(request, blob_name)
+
+    submission = _build_submission(
+        db=db,
+        current_user=current_user,
+        filename=filename,
         analysis_type=analysis_type,
-        status=SubmissionStatus.PENDING,     # closest valid state
+        blob_name=blob_name,
     )
-    db.add(submission)
-    db.commit()
-    db.refresh(submission)
 
     logger.info(
-        "Signed URL generated — user=%s blob=%s submission=%s",
+        "Upload URL generated (%s) — user=%s blob=%s submission=%s",
+        upload_mode,
         current_user.id,
         blob_name,
         submission.id,
@@ -161,6 +288,34 @@ def generate_upload_url(
         blob_name=blob_name,
         submission_id=submission.id,
     )
+
+
+@router.put("/local-upload/{blob_path:path}")
+async def local_upload(blob_path: str, request: Request):
+    """Receive direct file bytes for local/dev upload fallback."""
+    relative = Path(blob_path)
+    if relative.is_absolute() or ".." in relative.parts:
+        raise HTTPException(status_code=400, detail="Invalid upload path.")
+
+    destination = (LOCAL_UPLOAD_ROOT / relative).resolve()
+    root_resolved = LOCAL_UPLOAD_ROOT.resolve()
+
+    if root_resolved not in destination.parents and destination != root_resolved:
+        raise HTTPException(status_code=400, detail="Invalid upload path.")
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    payload = await request.body()
+    if not payload:
+        raise HTTPException(status_code=400, detail="Empty upload body.")
+
+    try:
+        destination.write_bytes(payload)
+    except Exception as exc:
+        logger.error("Local upload write failed for %s: %s", destination, exc)
+        raise HTTPException(status_code=500, detail="Failed to save uploaded file.") from exc
+
+    logger.info("Local upload saved: %s (%d bytes)", destination, len(payload))
+    return {"ok": True, "blob_name": blob_path, "bytes": len(payload)}
 
 
 # POST /confirm-upload  (optional — frontend calls after PUT succeeds)
@@ -192,14 +347,27 @@ def confirm_upload(
             detail=f"Submission is already in '{sub.status.value}' state.",
         )
 
-    # Verify the blob actually exists in GCS
+    # Verify upload exists in whichever backend was used for this upload.
+    # In local fallback mode, GCS may be configured but actual bytes are local.
+    local_exists = False
+    try:
+        local_exists = _resolve_local_upload_path(sub.video_url).exists()
+    except HTTPException:
+        local_exists = False
+
+    gcs_exists = False
     if GCS_AVAILABLE:
-        blob = _bucket.blob(sub.video_url)  # type: ignore[union-attr]
-        if not blob.exists():
-            raise HTTPException(
-                status_code=400,
-                detail="Upload not found in cloud storage. Please retry the upload.",
-            )
+        try:
+            blob = _bucket.blob(sub.video_url)  # type: ignore[union-attr]
+            gcs_exists = bool(blob.exists())
+        except Exception as exc:
+            logger.warning("GCS existence check failed for %s: %s", sub.video_url, exc)
+
+    if not (local_exists or gcs_exists):
+        raise HTTPException(
+            status_code=400,
+            detail="Upload not found in storage. Please retry the upload.",
+        )
 
     db.commit()
     db.refresh(sub)
@@ -259,6 +427,34 @@ def start_processing(
         raise HTTPException(
             status_code=409,
             detail=f"Cannot process — current status is '{sub.status.value}'. Only PENDING submissions can be queued.",
+        )
+
+    # If uploaded to local fallback storage, process locally even when Cloud Tasks is configured.
+    local_video_exists = False
+    try:
+        local_video_exists = _resolve_local_upload_path(sub.video_url).exists()
+    except HTTPException:
+        local_video_exists = False
+
+    if local_video_exists:
+        sub.status = SubmissionStatus.PROCESSING
+        db.commit()
+
+        thread = threading.Thread(
+            target=_process_submission_locally,
+            args=(sub.id,),
+            daemon=True,
+        )
+        thread.start()
+
+        logger.info(
+            "Local processing started in background thread — submission=%s",
+            sub.id,
+        )
+        return StartProcessingResponse(
+            submission_id=sub.id,
+            status="PROCESSING",
+            task_name=None,
         )
 
     # Import Cloud Tasks utility

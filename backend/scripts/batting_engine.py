@@ -19,6 +19,7 @@ import re
 import subprocess
 import time
 import math
+import importlib
 import urllib.parse
 import pandas as pd
 from google import genai
@@ -27,6 +28,13 @@ from PIL import Image
 from fpdf import FPDF
 import io
 import logging
+
+VideosSearch = None
+try:
+    _yt_module = importlib.import_module("youtubesearchpython")
+    VideosSearch = getattr(_yt_module, "VideosSearch", None)
+except Exception:
+    VideosSearch = None
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +188,7 @@ Provide a search intent for EVERY weakness identified above.
 ... (Repeat for ALL weaknesses)
 
 **CRITICAL MANDATE**: For EVERY weakness listed, you MUST provide a [Timestamp: X.XXs] where the error is visible.
+Do NOT generate any YouTube URLs. Only provide the exact text search phrase.
 
 FORMATTING RULES:
 - Use ** for bold headings and emphasis
@@ -203,6 +212,89 @@ def generate_youtube_search_link(query: str) -> str:
     return f"https://www.youtube.com/results?search_query={encoded}"
 
 
+def _clean_tutorial_text(value: str) -> str:
+    """Normalize markdown/noisy AI text into plain query-friendly text."""
+    cleaned = re.sub(r"\*+", "", value or "")
+    cleaned = cleaned.strip().strip("[](){}\"'` ")
+    cleaned = re.sub(r"^\d+\.\s*", "", cleaned)
+    cleaned = re.sub(r"^(search\s*intent|title|query|link|why\s*this\s*video)\s*:\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned
+
+
+def _extract_first_url(value: str) -> str | None:
+    """Extract first HTTP URL from a line if present."""
+    match = re.search(r"https?://[^\s)]+", value or "")
+    return match.group(0) if match else None
+
+
+def _normalize_intent(intent: str, discipline: str) -> str:
+    """Ensure intent is concise and anchored to batting/bowling terminology."""
+    cleaned = _clean_tutorial_text(intent)
+    if not cleaned:
+        cleaned = f"{discipline} technique"
+    if discipline.lower() not in cleaned.lower():
+        cleaned = f"{cleaned} {discipline}".strip()
+    return cleaned
+
+
+def _resolve_youtube_recommendation(intent: str, discipline: str) -> tuple[str, str, str]:
+    """Return (query, title, link) using optional live search with deterministic fallback."""
+    def _is_specific_youtube_link(url: str) -> bool:
+        u = (url or "").lower()
+        return "youtube.com/watch?v=" in u or "youtu.be/" in u or "youtube.com/shorts/" in u
+
+    normalized_intent = _normalize_intent(intent, discipline)
+    full_query = f"{normalized_intent} cricket {discipline} tutorial"
+    fallback_title = f"{discipline.title()} Tutorial: {normalized_intent}"
+    fallback_link = generate_youtube_search_link(full_query)
+
+    logger.info("[BAT] tutorial resolver start query=%s", full_query)
+
+    if VideosSearch is None:
+        logger.warning("[BAT] tutorial resolver source=videossearch-unavailable specific=false link=%s", fallback_link)
+        return full_query, fallback_title, fallback_link
+
+    try:
+        result = VideosSearch(full_query, limit=1).result().get("result", [])
+        if result:
+            title = _clean_tutorial_text(result[0].get("title", "")) or fallback_title
+            link = _extract_first_url(result[0].get("link", "")) or fallback_link
+            logger.info(
+                "[BAT] tutorial resolver source=videossearch specific=%s link=%s",
+                _is_specific_youtube_link(link),
+                link,
+            )
+            return full_query, title, link
+    except Exception as e:
+        logger.debug("Live YouTube lookup failed for query '%s': %s", full_query, e)
+
+    # Fallback 2: yt-dlp ytsearch is often more reliable than parser libraries.
+    try:
+        yt_dlp = importlib.import_module("yt_dlp")
+        with yt_dlp.YoutubeDL({"quiet": True, "no_warnings": True, "skip_download": True}) as ydl:
+            info = ydl.extract_info(f"ytsearch1:{full_query}", download=False)
+            entries = (info or {}).get("entries") or []
+            if entries:
+                entry = entries[0] or {}
+                title = _clean_tutorial_text(str(entry.get("title", ""))) or fallback_title
+                link = str(entry.get("webpage_url") or entry.get("url") or "").strip()
+                if link and not link.startswith("http"):
+                    link = f"https://www.youtube.com/watch?v={link}"
+                if link:
+                    logger.info(
+                        "[BAT] tutorial resolver source=yt-dlp specific=%s link=%s",
+                        _is_specific_youtube_link(link),
+                        link,
+                    )
+                    return full_query, title, link
+    except Exception as e:
+        logger.debug("yt-dlp tutorial lookup failed for query '%s': %s", full_query, e)
+
+    logger.warning("[BAT] tutorial resolver source=search-fallback specific=false link=%s", fallback_link)
+    return full_query, fallback_title, fallback_link
+
+
 def extract_drill_recommendations(report_text: str) -> list[dict]:
     """Parse Gemini's markdown report and extract drill recommendations.
     
@@ -213,46 +305,82 @@ def extract_drill_recommendations(report_text: str) -> list[dict]:
         List of dicts: [{"query": str, "title": str, "link": str, "reason": str}, ...]
     """
     drills: list[dict] = []
-    
-    if "**RECOMMENDED TUTORIAL" not in report_text:
-        return drills
-    
+    seen_links: set[str] = set()
+
+    section_match = re.search(r"\*\*RECOMMENDED\s+TUTORIALS?\*\*(.*)", report_text, flags=re.IGNORECASE | re.DOTALL)
+    tutorial_content = section_match.group(1) if section_match else report_text
+
     try:
-        # Split at tutorials section
-        if "**RECOMMENDED TUTORIALS**" in report_text:
-            parts = report_text.split("**RECOMMENDED TUTORIALS**")
-        else:
-            parts = report_text.split("**RECOMMENDED TUTORIAL**")
-        
-        if len(parts) < 2:
-            return drills
-        
-        tutorial_content = "".join(parts[1:])
-        search_intents = re.findall(r"Search Intent:\s*(.*)", tutorial_content)
-        whys = re.findall(r"Why this video:\s*(.*)", tutorial_content)
-        
+        search_intents = re.findall(r"Search\s*Intent\s*:\s*(.+)", tutorial_content, flags=re.IGNORECASE)
+        whys = re.findall(r"Why\s*this\s*video\s*:\s*(.+)", tutorial_content, flags=re.IGNORECASE)
+
         for i, intent in enumerate(search_intents):
-            clean_intent = intent.strip().strip('*_`[]()')
-            # Also replace markdown in the middle
-            clean_intent = clean_intent.replace('**', '').replace('*', '').strip()
-            
-            why = whys[i].strip() if i < len(whys) else "To improve your technique."
-            # Strip markdown from reason text
-            why = why.replace('**', '').replace('*', '').strip()
-            
-            # Append 'cricket batting tutorial' for better search results
-            full_query = f"{clean_intent} cricket batting tutorial"
-            link = generate_youtube_search_link(full_query)
-            
-            drills.append({
-                "query": clean_intent,
-                "title": f"Batting Tutorial: {clean_intent}",
-                "link": link,
-                "reason": why,
-            })
+            why = _clean_tutorial_text(whys[i]) if i < len(whys) else "Targets the identified batting weakness."
+            query, title, link = _resolve_youtube_recommendation(intent, "batting")
+
+            if link in seen_links:
+                continue
+            seen_links.add(link)
+
+            drills.append(
+                {
+                    "query": query,
+                    "title": title,
+                    "link": link,
+                    "reason": why,
+                }
+            )
+
+        # Fallback: parse direct Title/Link blocks if model ignored Search Intent format.
+        if not drills:
+            titles = re.findall(r"(?:^|\n)\s*\d+\.\s*\*\*?Title\*\*?\s*:\s*(.+)", tutorial_content, flags=re.IGNORECASE)
+            links = re.findall(r"(?:^|\n)\s*\*\*?Link\*\*?\s*:\s*(.+)", tutorial_content, flags=re.IGNORECASE)
+            why_lines = re.findall(r"(?:^|\n)\s*\*\*?Why\*\*?\s*:\s*(.+)", tutorial_content, flags=re.IGNORECASE)
+
+            for i, raw_title in enumerate(titles):
+                title = _clean_tutorial_text(raw_title) or "Batting Tutorial"
+                reason = _clean_tutorial_text(why_lines[i]) if i < len(why_lines) else "Targets the identified batting weakness."
+                link = _extract_first_url(links[i]) if i < len(links) else None
+
+                if link is None:
+                    query, resolved_title, resolved_link = _resolve_youtube_recommendation(title, "batting")
+                    title = resolved_title
+                    link = resolved_link
+                else:
+                    query = f"{title} cricket batting tutorial"
+
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+
+                drills.append(
+                    {
+                        "query": query,
+                        "title": title,
+                        "link": link,
+                        "reason": reason,
+                    }
+                )
+
+        # Final safety net: generate drills from parsed weaknesses.
+        if not drills:
+            for flaw in extract_detected_flaws(report_text)[:4]:
+                intent = flaw.get("flaw_name", "batting technique")
+                query, title, link = _resolve_youtube_recommendation(intent, "batting")
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+                drills.append(
+                    {
+                        "query": query,
+                        "title": title,
+                        "link": link,
+                        "reason": f"Targets weakness: {intent}",
+                    }
+                )
     except Exception as e:
         logger.warning("Failed to extract drill recommendations: %s", e)
-    
+
     return drills
 
 

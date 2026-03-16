@@ -13,6 +13,7 @@ interface RegisterFormData {
   jerseyNumber?: number;
   team?: string;
   profileBio?: string;
+  coachDocument?: File;
 }
 
 export default function RegisterPage() {
@@ -26,6 +27,9 @@ export default function RegisterPage() {
   });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [uploadedFileName, setUploadedFileName] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,13 +62,18 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const response = await api.post('/auth/register', {
-        name: formData.name,
-        email: formData.email,
-        password: formData.password,
-        role: formData.role,
-        phone: formData.phone || undefined,
-        team: formData.team || undefined,
+      // Create FormData for file upload
+      const submitData = new FormData();
+      submitData.append('name', formData.name);
+      submitData.append('email', formData.email);
+      submitData.append('password', formData.password);
+      submitData.append('role', formData.role);
+      if (formData.phone) submitData.append('phone', formData.phone);
+      if (formData.team) submitData.append('team', formData.team);
+      if (formData.coachDocument) submitData.append('coach_document', formData.coachDocument);
+
+      const response = await api.post('/auth/register', submitData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
 
       console.log('Registration successful:', response.data);
@@ -255,16 +264,20 @@ export default function RegisterPage() {
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   value={formData.password}
                   onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   placeholder="Min 8 characters"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className="w-full px-4 py-3 pr-12 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-lock text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-white/40 hover:text-white/70 transition-colors"
+                >
+                  <i className={`fas ${showPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
               </div>
             </motion.div>
 
@@ -279,18 +292,95 @@ export default function RegisterPage() {
               </label>
               <div className="relative">
                 <input
-                  type="password"
+                  type={showConfirmPassword ? "text" : "password"}
                   value={formData.confirmPassword}
                   onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
                   placeholder="••••••••"
-                  className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                  className="w-full px-4 py-3 pr-12 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
                   required
                 />
-                <div className="absolute inset-y-0 right-0 flex items-center pr-3">
-                  <i className="fas fa-shield-alt text-white/30"></i>
-                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-white/40 hover:text-white/70 transition-colors"
+                >
+                  <i className={`fas ${showConfirmPassword ? 'fa-eye-slash' : 'fa-eye'}`}></i>
+                </button>
               </div>
             </motion.div>
+
+            {/* Conditional Fields for Coach */}
+            {formData.role === 'COACH' && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                className="space-y-4"
+              >
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-2">
+                    Verification Document *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setFormData({ ...formData, coachDocument: file });
+                          setUploadedFileName(file.name);
+                        }
+                      }}
+                      className="hidden"
+                      id="coach-document"
+                      required={formData.role === 'COACH'}
+                    />
+                    <label
+                      htmlFor="coach-document"
+                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer flex items-center gap-3"
+                    >
+                      <i className="fas fa-upload text-white/40"></i>
+                      <span className="flex-1">
+                        {uploadedFileName || 'Upload coaching certificate or ID'}
+                      </span>
+                      {uploadedFileName && (
+                        <i className="fas fa-check-circle text-green-400"></i>
+                      )}
+                    </label>
+                  </div>
+                  <p className="text-xs text-white/40 mt-1">
+                    Upload your coaching certificate, ID, or credentials (PDF, DOC, or Image)
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-2">
+                    Phone Number
+                  </label>
+                  <input
+                    type="tel"
+                    value={formData.phone || ''}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                    placeholder="+1234567890"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-white/80 mb-2">
+                    Team/Organization
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.team || ''}
+                    onChange={(e) => setFormData({ ...formData, team: e.target.value })}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
+                    placeholder="Team name"
+                  />
+                </div>
+              </motion.div>
+            )}
 
             {/* Conditional Fields for Player */}
             {formData.role === 'PLAYER' && (

@@ -4,7 +4,7 @@ Pydantic schemas for the Video Submission (B2B2C) pipeline.
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # Request Bodies 
@@ -65,6 +65,10 @@ class SubmissionDetail(BaseModel):
     # Text layers
     ai_draft_text: Optional[str] = None
     coach_final_text: Optional[str] = None
+
+    # Parsed coaching insights
+    detected_flaws: list[dict] = Field(default_factory=list)
+    drill_recommendations: list[dict] = Field(default_factory=list)
 
     # Published report
     pdf_report_url: Optional[str] = None

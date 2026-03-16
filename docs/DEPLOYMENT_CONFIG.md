@@ -1,234 +1,61 @@
-# Deployment Configuration Guide
+# GCP Deployment Steps (Detailed)
 
-## File Upload Limits by Environment
+This guide covers the exact steps taken to deploy the application on Google Cloud Platform. 
 
-### 1. Render Free Tier (Current)
-**Constraints:**
-- 512MB RAM
-- 30 second request timeout
-- Shared CPU
+## 1. Prerequisites Set Up
+Before triggering any automated pipelines, the following base infrastructure must be provisioned.
+1.  **GCP Project:** `sports-ai-489110`
+2.  **Enabled APIs:** 
+    *   Compute Engine API
+    *   Cloud Build API
+    *   Cloud Run Admin API
+    *   Artifact Registry API
+    *   Cloud Storage API
+    *   Secret Manager API
+    *   Cloud Tasks API
 
-**Recommended Config:**
+## 2. Infrastructure Provisioning
+
+### A. Cloud Storage (Video Buckets)
+Creates the storage locations for handling heavy raw uploads and final supercuts.
 ```bash
-MAX_UPLOAD_SIZE_MB=500  # Set in Render environment variables
+gcloud storage buckets create gs://sports-ai-storage --location=asia-south1
+# Apply CORS for frontend uploading
+gcloud storage buckets update gs://sports-ai-storage --cors-file=gcs-cors.json
 ```
 
-**Best Practices:**
-- ❌ **Direct file upload for videos >500MB will fail**
-- ✅ **Use YouTube URL upload for large videos**
-- ✅ **Videos up to 500MB: Direct upload**
-- ✅ **Videos >500MB: YouTube URL upload**
-
----
-
-### 2. Render Paid Tier ($7-25/mo)
-**Constraints:**
-- Up to 4GB RAM
-- 60 second timeout (configurable)
-- Dedicated CPU
-
-**Recommended Config:**
+### B. Secret Manager (Environment Variables)
+Store sensitive information natively.
 ```bash
-MAX_UPLOAD_SIZE_MB=2000  # 2GB safe limit
+gcloud secrets create DATABASE_URL --replication-policy="automatic"
+echo -n "postgresql://postgres.PROJECT_REF:PASSWORD@aws-1-ap-south-1.pooler.supabase.com:6543/postgres" | gcloud secrets versions add DATABASE_URL --data-file=-
 ```
+*(Repeat for `JWT_SECRET_KEY`, `REFRESH_SECRET_KEY`, etc.)*
 
-**Best Practices:**
-- ✅ **Videos up to 2GB: Direct upload**
-- ✅ **Videos >2GB: YouTube URL upload**
-
----
-
-### 3. Self-Hosted / VPS (Recommended for Large Files)
-**Constraints:**
-- Configurable resources
-- No hard timeout limits
-
-**Recommended Config:**
+### C. Cloud Tasks (For Async Video Processing)
+Creates the background queue.
 ```bash
-MAX_UPLOAD_SIZE_MB=10000  # 10GB for large cricket matches
+gcloud tasks queues create video-processing --location=asia-south1
 ```
 
-**Best Practices:**
-- ✅ **Videos up to 10GB: Direct upload**
-- ✅ **Videos >10GB: YouTube URL upload (supports up to 12GB)**
-- ⚠️ **Large files will take time to upload and process**
-1. **Nginx Configuration** (for large uploads):
-```nginx
-# /etc/nginx/nginx.conf
-client_max_body_size 10G;
-client_body_timeout 300s;
-proxy_read_timeout 600s;
-proxy_send_timeout 600s;
-```
+## 3. Automated CI/CD (Cloud Build)
+We use `cloudbuild.yaml` in the root directory to handle containerization and deployment automatically.
 
-2. **Systemd Service** (increase timeout):
-```ini
-# /etc/systemd/system/cricket-api.service
-[Service]
-TimeoutStartSec=600
-TimeoutStopSec=600
-```
-
-3. **Disk Space Monitoring**:
+**Triggering a Deployment:**
 ```bash
-# Ensure sufficient storage
-df -h /storage
-# Recommend: 500GB+ for production
+gcloud builds submit .   --config=cloudbuild.yaml   --project=sports-ai-489110   --substitutions=COMMIT_SHA=$(git rev-parse --short HEAD)
 ```
 
----
+**What the pipeline does:**
+1.  Authenticates Docker to GCP's Artifact Registry.
+2.  Builds the `backend/Dockerfile`, combining the Python API and FFmpeg/MediaPipe system dependencies.
+3.  Tags and pushes the container heavily utilizing cache layers to reduce build time.
+4.  Deploys logic directly to the `sports-backend` Cloud Run service instance.
 
-## Solution for Large Videos (4.9GB - 12GB)
-
-### Option 1: YouTube URL Upload (RECOMMENDED ⭐)
-**Why:** 
-- No upload time/size limits
-- Handles up to **12GB** videos
-- Leverages yt-dlp's robust download with resume capability
-- Works on any deployment tier
-- No bandwidth costs for upload
-
-**How:**
-1. Upload video to YouTube (Private/Unlisted)
-2. Copy video URL
-3. Use "YouTube URL" tab in upload form
-4. Paste URL and submit
-
-**Supported:**
-- ✅ Videos up to 12GB
-- ✅ Videos up to 8 hours duration
-- ✅ Works on Render free tier
-
----
-
-### Option 2: Self-Hosted Deployment
-**Requirements:**
-- VPS with 8GB+ RAM
-- Ubuntu 22.04 or similar
-- 500GB+ storage
-
-**Setup:**
-```bash
-# Install dependencies
-sudo apt update
-sudo apt install nginx python3.10 postgresql ffmpeg
-
-# Configure environment
-export MAX_UPLOAD_SIZE_MB=10000
-
-# Run backend
-cd backend
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-**Pros:**
-- Full control over limits
-- No external timeouts
-- Cost-effective for high volume
-
-**Cons:**
-- Requires server management
-- Upfront infrastructure cost
-
----
-
-### Option 3: Cloud Storage Direct Upload
-**Architecture:**
-- Frontend uploads directly to AWS S3/Azure Blob
-- Backend receives signed URL
-- Process video from cloud storage
-
-**Benefits:**
-- No backend upload bottleneck
-- Scalable to any file size
-- Parallel uploads
-
-**Implementation Required:**
-1. Add S3/Azure SDK to frontend
-2. Generate presigned upload URLs in backend
-3. Modify OCR task to read from cloud storage
-
-**Cost:** ~$0.02/GB storage + transfer fees
-
----
-
-## Current Status & Recommendations
-
-### ✅ What Works Now:
-- **YouTube URL upload:** Unlimited size (tested with 2hr+ videos)
-- **Direct upload:** Up to 5GB (configurable via `MAX_UPLOAD_SIZE_MB`)
-- **Streaming upload:** Memory-efficient for any size
-
-### ⚠️ Render Free Tier Limitations:
-- 30s timeout kills uploads >500MB
-- **Solution:** Set `MAX_UPLOAD_SIZE_MB=500` and rely on YouTube upload
-
-### 🎯 For Your 4.9GB Video:
-1. **Immediate:** Use YouTube URL upload (works today)
-2. **Short-term:** Upgrade to Render paid tier + set `MAX_UPLOAD_SIZE_MB=2000`
-3. **Long-term:** Self-host or implement S3 direct upload
-
----
-
-## Environment Variable Reference
-
-```bash
-# Backend Environment Variables
-DATABASE_URL=postgresql://user:pass@host:5432/db
-SECRET_KEY=your-secret-key-here
-JWT_SECRET_KEY=your-jwt-secret-key-here
-
-# Upload Configuration
-MAX_UPLOAD_SIZE_MB=5000        # Default: 5GB
-ALLOWED_ORIGINS=http://localhost:5173,https://yourdomain.com
-
-# Optional: Cloud Storage (future)
-# AWS_S3_BUCKET=cricket-videos
-# AWS_ACCESS_KEY_ID=...
-# AWS_SECRET_ACCESS_KEY=...
-```
-
----
-
-## Testing Different File Sizes
-
-```bash
-# Test 100MB video
-curl -X POST "http://localhost:8000/api/v1/videos/upload" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@test_100mb.mp4" \
-  -F "title=Small Test"
-
-# Test 2GB video (will fail on Render free)
-curl -X POST "http://localhost:8000/api/v1/videos/upload" \
-  -H "Authorization: Bearer $TOKEN" \
-  -F "file=@test_2gb.mp4" \
-  -F "title=Large Test"
-
-# Test YouTube URL (recommended for large files)
-curl -X POST "http://localhost:8000/api/v1/jobs/trigger" \
-  -H "Authorization: Bearer $TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "url": "https://youtube.com/watch?v=VIDEO_ID",
-    "title": "4.9GB Test Video",
-    "config": {
-      "padding_before": 15,
-      "padding_after": 5
-    }
-  }'
-```
-
----
-
-## Performance Benchmarks
-
-| File Size | Direct Upload (Render Free) | YouTube URL | Self-Hosted |
-|-----------|----------------------------|-------------|-------------|
-| 100MB     | ✅ ~30s                     | ✅ ~20s      | ✅ ~15s      |
-| 500MB     | ⚠️ ~2.5min (risky)          | ✅ ~1min     | ✅ ~45s      |
-| 1GB       | ❌ Timeout                  | ✅ ~2min     | ✅ ~1.5min   |
-| 5GB       | ❌ Timeout                  | ✅ ~8min     | ✅ ~5min     |
-| 12GB      | ❌ Timeout                  | ✅ ~20min    | ✅ ~12min    |
-
-**Conclusion:** For videos >500MB, **always use YouTube URL upload** on Render free tier. For self-hosted, direct uploads work up to 10GB.
+## 4. Frontend Deployment (Vercel)
+The React/Vite instance relies on Vercel for global Edge delivery.
+1. Connect Vercel to the GitHub repository.
+2. Select the `frontend` root directory.
+3. Add Environment Variable:
+   * `VITE_API_URL` = `https://sports-backend-xxxxx-el.a.run.app` (The Cloud Run URL)
+4. Trigger a production build.

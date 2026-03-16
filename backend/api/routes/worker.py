@@ -291,8 +291,10 @@ def _run_bowling(
 
     biometrics = {
         "records": raw_df.to_dict(orient="records") if not raw_df.empty else [],
-        "summary": display_df.describe().to_dict() if not display_df.empty else {},
+        "summary": display_df.describe().T.to_dict(orient="index") if not display_df.empty else {},
     }
+
+    return biometrics, annotated_url, ai_text, {}, key_frame_url
 
 def _run_batting(
     video_path: str, submission_id: str
@@ -352,8 +354,10 @@ def _run_batting(
 
     biometrics = {
         "records": raw_df.to_dict(orient="records") if not raw_df.empty else [],
-        "summary": display_df.describe().to_dict() if not display_df.empty else {},
+        "summary": display_df.describe().T.to_dict(orient="index") if not display_df.empty else {},
     }
+
+    return biometrics, annotated_url, ai_text, phase_info, key_frame_url
 
 
 # PDF generation + upload to GCS

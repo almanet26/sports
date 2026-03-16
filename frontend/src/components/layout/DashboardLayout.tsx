@@ -12,6 +12,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
+    { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/stats", icon: "fas fa-chart-bar", label: "Stats" },
@@ -27,13 +28,15 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/settings", icon: "fas fa-cog", label: "Settings" },
   ],
-  ADMIN: [
-    { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
-    { to: "/admin/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
-    { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
-  ],
+ ADMIN: [
+  { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
+  { to: "/admin/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
+  { to: "/admin/coaches", icon: "fas fa-user-check", label: "Coach Approvals" },
+  { to: "/admin/plans", icon: "fas fa-tags", label: "Plans" },
+  { to: "/library", icon: "fas fa-video", label: "Library" },
+  { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
+  { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+],
 };
 
 export const DashboardLayout: React.FC = () => {

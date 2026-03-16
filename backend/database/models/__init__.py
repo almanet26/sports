@@ -16,7 +16,7 @@ from database.models.video import (
 from database.models.bowling import BowlingAnalysis
 from database.models.batting import BattingAnalysis
 from database.models.submission import VideoSubmission, SubmissionStatus
-
+from database.models.subscription import Subscription
 __all__ = [
     # User models
     "User",
