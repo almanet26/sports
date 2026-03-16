@@ -4,6 +4,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 
+// Navigation items configuration
+interface NavItem {
+  to: string;
+  icon: string;
+  label: string;
+}
 
 // Role-specific dashboard items
 const dashboardItems: Record<string, NavItem[]> = {
