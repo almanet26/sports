@@ -4,14 +4,6 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 
-// Navigation items configuration
-interface NavItem {
-  to: string;
-  icon: string;
-  label: string;
-}
-
-console.log("DashboardLayout rendered");
 
 // Role-specific dashboard items
 const dashboardItems: Record<string, NavItem[]> = {
@@ -44,11 +36,7 @@ const dashboardItems: Record<string, NavItem[]> = {
   ],
 };
 
-interface DashboardLayoutProps {
-  children?: React.ReactNode;
-}
-
-export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
+export const DashboardLayout: React.FC = () => {
   const { user, logout } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
@@ -413,7 +401,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       {/* Main Content */}
       <main className="lg:ml-72 pt-16 lg:pt-0 min-h-screen relative z-10">
         <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-          {children || <Outlet />}
+          {<Outlet />}
         </div>
       </main>
     </div>

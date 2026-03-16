@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useState, useEffect } from 'react';
-import cricketBatting from '../gallery/download.jpg';
+import cricketBatting from '../gallery/WhatsApp Image 2026-03-16 at 2.05.37 PM.jpeg';
 import cricketFielding from '../gallery/WhatsApp Image 2026-03-15 at 5.49.32 PM.jpeg';
 import cricketAction from '../gallery/WhatsApp Image 2026-03-15 at 5.49.33 PM.jpeg';
+import appLogo from '../gallery/logo.png';
 import actionDetectionIcon from '../gallery/icons/action detection .jpeg';
 import techniqueAnalysisIcon from '../gallery/icons/Technique Analysis.jpeg';
 import smartRecommendationIcon from '../gallery/icons/Smart Recomendation  (2).jpeg';
@@ -28,21 +29,21 @@ const translations: Record<string, Record<string, string>> = {
     uploadYour: 'Upload.',
     cricketVideo: 'Get coached.',
     getCoach: 'Improve.',
-    description: 'cricketVision let\'s you create, edit and share clips from any online video (YouTube, Twitch, ...)',
+    description: 'CricIQ let\'s you create, edit and share clips from any online video (YouTube, Twitch, ...)',
     registerBtn: 'REGISTER NOW FOR FREE',
     watchDemo: '▶ WATCH DEMO',
-    heroDescription: 'cricketVision analyzes your bowling, batting and fielding videos to provide detailed performance insights, technique improvements, and match highlights- helping cricketers at all levels improve faster.',
+    heroDescription: 'CricIQ analyzes your bowling, batting and fielding videos to provide detailed performance insights, technique improvements, and match highlights- helping cricketers at all levels improve faster.',
     credits: '🎁 20 free credits when you sign up + 10 free credits every month',
     noSubs: 'No subscriptions • No commitments • Pay only when you need more',
     successStories: 'Success Stories',
     coachesImproving: 'Real Coaches, Real Results',
-    successDesc: 'See how coaches like you are transforming their teams with cricketVision',
+    successDesc: 'See how coaches like you are transforming their teams with CricIQ',
     limitedOffer: 'Limited Time Offer',
     joinNow: 'Join Now - Limited Spots',
     avgImprovement: 'Average Improvement',
     timesSaved: 'Hours Saved Per Week',
     coachesTransformed: 'Coaches Transformed',
-    createEdit: 'cricketVision let\'s you create, edit and share clips from any online video (YouTube, Twitch, ...)',
+    createEdit: 'CricIQ let\'s you create, edit and share clips from any online video (YouTube, Twitch, ...)',
     withEase: 'with ease. Perfect for scouting and analysis.',
     coaches: 'COACHES',
     clips: 'CLIPS',
@@ -71,7 +72,7 @@ const translations: Record<string, Record<string, string>> = {
     createAccount: 'Create an account, upload cricket match videos, and let our system automatically detect key moments and generate highlight reels.',
     createAccountBtn: 'CREATE ACCOUNT',
     signIn: 'SIGN IN',
-    copyright: '© 2024 cricketVision • Powered Cricket Highlight Generator'
+    copyright: '© 2024 CricIQ • Powered Cricket Highlight Generator'
   },
   es: {
     features: 'CARACTERÍSTICAS',
@@ -83,21 +84,21 @@ const translations: Record<string, Record<string, string>> = {
     uploadYour: 'Sube.',
     cricketVideo: 'Obtén entrenamiento.',
     getCoach: 'Mejora.',
-    description: 'cricketVision te permite crear, editar y compartir clips de cualquier video en línea (YouTube, Twitch, ...)',
+    description: 'CricIQ te permite crear, editar y compartir clips de cualquier video en línea (YouTube, Twitch, ...)',
     registerBtn: 'REGÍSTRATE GRATIS AHORA',
     watchDemo: '▶ VER DEMOSTRACIÓN',
-    heroDescription: 'cricketVision analiza tus videos de bowling, batting y fielding para proporcionar información detallada de rendimiento, mejoras de técnica y destacados de partidos, ayudando a jugadores de cricket de todos los niveles a mejorar más rápido.',
+    heroDescription: 'CricIQ analiza tus videos de bowling, batting y fielding para proporcionar información detallada de rendimiento, mejoras de técnica y destacados de partidos, ayudando a jugadores de cricket de todos los niveles a mejorar más rápido.',
     credits: '🎁 20 créditos gratis al registrarse + 10 créditos gratis cada mes',
     noSubs: 'Sin suscripciones • Sin compromisos • Paga solo cuando necesites más',
     successStories: 'Historias de Éxito',
     coachesImproving: 'Entrenadores Reales, Resultados Reales',
-    successDesc: 'Mira cómo entrenadores como tú están transformando sus equipos con cricketVision',
+    successDesc: 'Mira cómo entrenadores como tú están transformando sus equipos con CricIQ',
     limitedOffer: 'Oferta por Tiempo Limitado',
     joinNow: 'Únete Ahora - Lugares Limitados',
     avgImprovement: 'Mejora Promedio',
     timesSaved: 'Horas Ahorradas Por Semana',
     coachesTransformed: 'Entrenadores Transformados',
-    createEdit: 'cricketVision te permite crear, editar y compartir clips de cualquier video en línea (YouTube, Twitch, ...)',
+    createEdit: 'CricIQ te permite crear, editar y compartir clips de cualquier video en línea (YouTube, Twitch, ...)',
     withEase: 'con facilidad. Perfecto para scouting y análisis.',
     coaches: 'ENTRENADORES',
     clips: 'CLIPS',
@@ -126,7 +127,7 @@ const translations: Record<string, Record<string, string>> = {
     createAccount: 'Crea una cuenta, carga videos de partidos de cricket y deja que nuestro sistema detecte automáticamente momentos clave y genere carretes destacados',
     createAccountBtn: 'CREAR CUENTA',
     signIn: 'INICIAR SESIÓN',
-    copyright: '© 2024 cricketVision • Generador de Destacados de Cricket'
+    copyright: '© 2024 CricIQ • Generador de Destacados de Cricket'
   },
   fr: {
     features: 'CARACTÉRISTIQUES',
@@ -138,21 +139,21 @@ const translations: Record<string, Record<string, string>> = {
     uploadYour: 'Téléchargez.',
     cricketVideo: 'Obtenez un coaching.',
     getCoach: 'Améliorez-vous.',
-    description: 'cricketVision vous permet de créer, modifier et partager des clips à partir de n\'importe quelle vidéo en ligne (YouTube, Twitch, ...)',
+    description: 'CricIQ vous permet de créer, modifier et partager des clips à partir de n\'importe quelle vidéo en ligne (YouTube, Twitch, ...)',
     registerBtn: 'S\'INSCRIRE GRATUITEMENT MAINTENANT',
     watchDemo: '▶ REGARDER LA DÉMO',
-    heroDescription: 'cricketVision analyse vos vidéos de bowling, batting et fielding pour fournir des informations détaillées sur les performances, des améliorations techniques et des faits saillants de match, aidant les joueurs de cricket de tous les niveaux à s\'améliorer plus rapidement.',
+    heroDescription: 'CricIQ analyse vos vidéos de bowling, batting et fielding pour fournir des informations détaillées sur les performances, des améliorations techniques et des faits saillants de match, aidant les joueurs de cricket de tous les niveaux à s\'améliorer plus rapidement.',
     credits: '🎁 20 crédits gratuits à l\'inscription + 10 crédits gratuits chaque mois',
     noSubs: 'Pas d\'abonnements • Pas d\'engagements • Payez uniquement quand vous en avez besoin',
     successStories: 'Histoires de Succès',
     coachesImproving: 'Vrais Entraîneurs, Vrais Résultats',
-    successDesc: 'Découvrez comment des entraîneurs comme vous transforment leurs équipes avec cricketVision',
+    successDesc: 'Découvrez comment des entraîneurs comme vous transforment leurs équipes avec CricIQ',
     limitedOffer: 'Offre à Durée Limitée',
     joinNow: 'Rejoignez Maintenant - Places Limitées',
     avgImprovement: 'Amélioration Moyenne',
     timesSaved: 'Heures Économisées Par Semaine',
     coachesTransformed: 'Entraîneurs Transformés',
-    createEdit: 'cricketVision vous permet de créer, modifier et partager des clips à partir de n\'importe quelle vidéo en ligne (YouTube, Twitch, ...)',
+    createEdit: 'CricIQ vous permet de créer, modifier et partager des clips à partir de n\'importe quelle vidéo en ligne (YouTube, Twitch, ...)',
     withEase: 'facilement. Parfait pour le repérage et l\'analyse.',
     coaches: 'ENTRAÎNEURS',
     clips: 'CLIPS',
@@ -181,7 +182,7 @@ const translations: Record<string, Record<string, string>> = {
     createAccount: 'Créez un compte, téléchargez des vidéos de matchs de cricket et laissez notre système détecter automatiquement les moments clés et générer des bobines en vedette',
     createAccountBtn: 'CRÉER UN COMPTE',
     signIn: 'SE CONNECTER',
-    copyright: '© 2024 cricketVision • Générateur de Faits Saillants de Cricket'
+    copyright: '© 2024 CricIQ • Générateur de Faits Saillants de Cricket'
   },
   de: {
     features: 'FUNKTIONEN',
@@ -193,21 +194,21 @@ const translations: Record<string, Record<string, string>> = {
     uploadYour: 'Hochladen.',
     cricketVideo: 'Erhalten Sie Coaching.',
     getCoach: 'Verbessern Sie sich.',
-    description: 'cricketVision ermöglicht es Ihnen, Clips aus jedem Online-Video (YouTube, Twitch, ...) zu erstellen, zu bearbeiten und zu teilen',
+    description: 'CricIQ ermöglicht es Ihnen, Clips aus jedem Online-Video (YouTube, Twitch, ...) zu erstellen, zu bearbeiten und zu teilen',
     registerBtn: 'JETZT KOSTENLOS REGISTRIEREN',
     watchDemo: '▶ DEMO ANSEHEN',
-    heroDescription: 'cricketVision analysiert Ihre Bowling-, Batting- und Fielding-Videos, um detaillierte Leistungseinblicke, Technikverbesserungen und Match-Highlights bereitzustellen und Cricketspielern aller Niveaus zu helfen, schneller zu verbessern.',
+    heroDescription: 'CricIQ analysiert Ihre Bowling-, Batting- und Fielding-Videos, um detaillierte Leistungseinblicke, Technikverbesserungen und Match-Highlights bereitzustellen und Cricketspielern aller Niveaus zu helfen, schneller zu verbessern.',
     credits: '🎁 20 kostenlose Credits bei der Anmeldung + 10 kostenlose Credits jeden Monat',
     noSubs: 'Keine Abos • Keine Verpflichtungen • Zahlen Sie nur, wenn Sie mehr benötigen',
     successStories: 'Erfolgsgeschichten',
     coachesImproving: 'Echte Trainer, Echte Ergebnisse',
-    successDesc: 'Sehen Sie, wie Trainer wie Sie ihre Teams mit cricketVision transformieren',
+    successDesc: 'Sehen Sie, wie Trainer wie Sie ihre Teams mit CricIQ transformieren',
     limitedOffer: 'Zeitlich Begrenztes Angebot',
     joinNow: 'Jetzt Beitreten - Begrenzte Plätze',
     avgImprovement: 'Durchschnittliche Verbesserung',
     timesSaved: 'Stunden Pro Woche Gespart',
     coachesTransformed: 'Trainer Transformiert',
-    createEdit: 'cricketVision ermöglicht es Ihnen, Clips aus jedem Online-Video (YouTube, Twitch, ...) zu erstellen, zu bearbeiten und zu teilen',
+    createEdit: 'CricIQ ermöglicht es Ihnen, Clips aus jedem Online-Video (YouTube, Twitch, ...) zu erstellen, zu bearbeiten und zu teilen',
     withEase: 'mit Leichtigkeit. Perfekt zum Scouting und zur Analyse.',
     coaches: 'TRAINER',
     clips: 'CLIPS',
@@ -236,7 +237,7 @@ const translations: Record<string, Record<string, string>> = {
     createAccount: 'Erstellen Sie ein Konto, laden Sie Cricket-Match-Videos hoch und lassen Sie unser System automatisch wichtige Momente erkennen und Highlight-Reels generieren',
     createAccountBtn: 'KONTO ERSTELLEN',
     signIn: 'ANMELDEN',
-    copyright: '© 2024 cricketVision • Cricket-Highlight-Generator'
+    copyright: '© 2024 CricIQ • Cricket-Highlight-Generator'
   },
   hi: {
     features: 'विशेषताएं',
@@ -248,21 +249,21 @@ const translations: Record<string, Record<string, string>> = {
     uploadYour: 'अपलोड करें।',
     cricketVideo: 'कोचिंग प्राप्त करें।',
     getCoach: 'सुधार करें।',
-    description: 'cricketVision आपको किसी भी ऑनलाइन वीडियो (YouTube, Twitch, ...) से क्लिप बनाने, संपादित करने और साझा करने देता है',
+    description: 'CricIQ आपको किसी भी ऑनलाइन वीडियो (YouTube, Twitch, ...) से क्लिप बनाने, संपादित करने और साझा करने देता है',
     registerBtn: 'अभी मुफ्त में पंजीकरण करें',
     watchDemo: '▶ डेमो देखें',
-    heroDescription: 'cricketVision आपकी बॉलिंग, बैटिंग और फील्डिंग वीडियो का विश्लेषण करता है ताकि विस्तृत प्रदर्शन अंतर्दृष्टि, तकनीक सुधार और मैच हाइलाइट प्रदान किए जा सकें, जो सभी स्तरों के क्रिकेटरों को तेजी से सुधार करने में मदद करता है।',
+    heroDescription: 'CricIQ आपकी बॉलिंग, बैटिंग और फील्डिंग वीडियो का विश्लेषण करता है ताकि विस्तृत प्रदर्शन अंतर्दृष्टि, तकनीक सुधार और मैच हाइलाइट प्रदान किए जा सकें, जो सभी स्तरों के क्रिकेटरों को तेजी से सुधार करने में मदद करता है।',
     credits: '🎁 साइन अप करने पर 20 मुफ्त क्रेडिट + हर महीने 10 मुफ्त क्रेडिट',
     noSubs: 'कोई सदस्यता नहीं • कोई प्रतिबद्धता नहीं • केवल तभी भुगतान करें जब आपको अधिक की आवश्यकता हो',
     successStories: 'सफलता की कहानियां',
     coachesImproving: 'असली कोच, असली परिणाम',
-    successDesc: 'देखें कि आपके जैसे कोच cricketVision के साथ अपनी टीमों को कैसे बदल रहे हैं',
+    successDesc: 'देखें कि आपके जैसे कोच CricIQ के साथ अपनी टीमों को कैसे बदल रहे हैं',
     limitedOffer: 'सीमित समय का प्रस्ताव',
     joinNow: 'अभी शामिल हों - सीमित स्थान',
     avgImprovement: 'औसत सुधार',
     timesSaved: 'प्रति सप्ताह घंटे बचाए गए',
     coachesTransformed: 'कोच रूपांतरित',
-    createEdit: 'cricketVision आपको किसी भी ऑनलाइन वीडियो (YouTube, Twitch, ...) से क्लिप बनाने, संपादित करने और साझा करने देता है',
+    createEdit: 'CricIQ आपको किसी भी ऑनलाइन वीडियो (YouTube, Twitch, ...) से क्लिप बनाने, संपादित करने और साझा करने देता है',
     withEase: 'आसानी से। स्काउटिंग और विश्लेषण के लिए बिल्कुल सही।',
     coaches: 'कोच',
     clips: 'क्लिप',
@@ -291,7 +292,7 @@ const translations: Record<string, Record<string, string>> = {
     createAccount: 'एक खाता बनाएं, क्रिकेट मैच वीडियो अपलोड करें, और हमारे सिस्टम को स्वचालित रूप से मुख्य क्षणों का पता लगाने और हाइलाइट रील उत्पन्न करने दें।',
     createAccountBtn: 'खाता बनाएं',
     signIn: 'साइन इन करें',
-    copyright: '© 2024 cricketVision • क्रिकेट हाइलाइट जनरेटर'
+    copyright: '© 2024 CricIQ • क्रिकेट हाइलाइट जनरेटर'
   }
 };
 
@@ -330,16 +331,16 @@ export default function LandingPage() {
   const chatResponses: Record<string, Record<string, string>> = {
     en: {
       pricing: 'We offer pay-as-you-go pricing. Start with 20 free credits, then pay only for what you use. No subscriptions!',
-      features: 'cricketVision offers Action Detection, Technique Analysis, Smart Recommendations, Performance Metrics, and Auto Highlight Generation.',
+      features: 'CricIQ offers Action Detection, Technique Analysis, Smart Recommendations, Performance Metrics, and Auto Highlight Generation.',
       free: 'Yes! You get 20 free credits when you sign up, plus 10 free credits every month.',
-      support: 'Our support team is available 24/7. You can also email us at support@cricketvision.com',
+      support: 'Our support team is available 24/7. You can also email us at support@CricIQ.com',
       demo: 'You can watch our demo video by clicking the "Watch Demo" button on the page!',
       signup: 'Ready to get started? Click the "Register Now" button to create your free account!',
       default: 'Great question! Feel free to ask me about pricing, features, or how to get started. 😊'
     },
     es: {
       pricing: 'Ofrecemos precios de pago por uso. Comienza con 20 créditos gratis, luego paga solo por lo que uses. ¡Sin suscripciones!',
-      features: 'cricketVision ofrece Detección de Acciones, Análisis de Técnica, Recomendaciones Inteligentes, Métricas de Rendimiento y Generación Automática de Destacados.',
+      features: 'CricIQ ofrece Detección de Acciones, Análisis de Técnica, Recomendaciones Inteligentes, Métricas de Rendimiento y Generación Automática de Destacados.',
       free: '¡Sí! Obtienes 20 créditos gratis al registrarte, más 10 créditos gratis cada mes.',
       support: 'Nuestro equipo de soporte está disponible 24/7. ¡También puedes enviarnos un correo electrónico!',
       demo: '¡Puedes ver nuestro video de demostración haciendo clic en el botón "Ver Demostración" en la página!',
@@ -348,7 +349,7 @@ export default function LandingPage() {
     },
     fr: {
       pricing: 'Nous proposons une tarification à l\'usage. Commencez avec 20 crédits gratuits, puis payez uniquement ce que vous utilisez. Pas d\'abonnements!',
-      features: 'cricketVision offre la Détection d\'Actions, l\'Analyse de Technique, les Recommandations Intelligentes, les Métriques de Performance et la Génération Automatique de Faits Saillants.',
+      features: 'CricIQ offre la Détection d\'Actions, l\'Analyse de Technique, les Recommandations Intelligentes, les Métriques de Performance et la Génération Automatique de Faits Saillants.',
       free: 'Oui! Vous obtenez 20 crédits gratuits lors de l\'inscription, plus 10 crédits gratuits chaque mois.',
       support: 'Notre équipe d\'assistance est disponible 24h/24, 7j/7. Vous pouvez aussi nous envoyer un email!',
       demo: 'Vous pouvez regarder notre vidéo de démonstration en cliquant sur le bouton "Regarder la Démo" sur la page!',
@@ -357,7 +358,7 @@ export default function LandingPage() {
     },
     de: {
       pricing: 'Wir bieten Pay-as-you-go-Preise. Beginnen Sie mit 20 kostenlosen Credits und zahlen Sie dann nur für das, was Sie verwenden. Keine Abos!',
-      features: 'cricketVision bietet Aktionserkennung, Technikanalyse, intelligente Empfehlungen, Leistungsmetriken und automatische Highlight-Generierung.',
+      features: 'CricIQ bietet Aktionserkennung, Technikanalyse, intelligente Empfehlungen, Leistungsmetriken und automatische Highlight-Generierung.',
       free: 'Ja! Sie erhalten 20 kostenlose Credits bei der Anmeldung plus 10 kostenlose Credits jeden Monat.',
       support: 'Unser Support-Team ist 24/7 verfügbar. Sie können uns auch eine E-Mail senden!',
       demo: 'Sie können unser Demo-Video ansehen, indem Sie auf der Seite auf die Schaltfläche "Demo ansehen" klicken!',
@@ -366,7 +367,7 @@ export default function LandingPage() {
     },
     hi: {
       pricing: 'हम पे-एज-यू-गो मूल्य निर्धारण प्रदान करते हैं। 20 मुफ्त क्रेडिट के साथ शुरू करें, फिर केवल जो आप उपयोग करते हैं उसके लिए भुगतान करें। कोई सदस्यता नहीं!',
-      features: 'cricketVision एक्शन डिटेक्शन, तकनीक विश्लेषण, स्मार्ट सिफारिशें, प्रदर्शन मेट्रिक्स और ऑटो हाइलाइट जनरेशन प्रदान करता है।',
+      features: 'CricIQ एक्शन डिटेक्शन, तकनीक विश्लेषण, स्मार्ट सिफारिशें, प्रदर्शन मेट्रिक्स और ऑटो हाइलाइट जनरेशन प्रदान करता है।',
       free: 'हाँ! आपको साइन अप करने पर 20 मुफ्त क्रेडिट मिलते हैं, साथ ही हर महीने 10 मुफ्त क्रेडिट।',
       support: 'हमारी सहायता टीम 24/7 उपलब्ध है। आप हमें ईमेल भी कर सकते हैं!',
       demo: 'आप पृष्ठ पर "डेमो देखें" बटन पर क्लिक करके हमारा डेमो वीडियो देख सकते हैं!',
@@ -439,10 +440,10 @@ export default function LandingPage() {
           <div className="flex items-center justify-between h-16">
             <motion.div whileHover={{ scale: 1.05 }}>
               <Link to="/" className="flex items-center gap-2">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-300">
-                  <span className="text-white font-bold text-lg">🏏</span>
+                <div className="w-10 h-10 rounded-lg overflow-hidden hover:shadow-lg hover:shadow-purple-500/50 transition-all duration-300">
+                  <img src={appLogo} alt="CricIQ Logo" className="w-full h-full object-cover" />
                 </div>
-                <span className="text-xl font-bold text-white">cricketVision</span>
+                <span className="text-xl font-bold text-white">CricIQ</span>
               </Link>
             </motion.div>
 
@@ -611,7 +612,7 @@ export default function LandingPage() {
               viewport={{ once: true }}
             >
               <p className="text-lg text-gray-300">
-                <span className="font-semibold text-white">cricketVision</span> {t.createEdit}
+                <span className="font-semibold text-white">CricIQ</span> {t.createEdit}
               </p>
               <p className="text-lg text-gray-300 mt-2">
                 {t.withEase}
@@ -674,7 +675,7 @@ export default function LandingPage() {
               Do these problems sound familiar to you?
             </h2>
             <p className="text-lg text-gray-300 text-center mb-16">
-              You don't need the same tools used by professional teams. You need something effective, accessible, and that adapts to your pace. cricketVision is designed exactly for that: real coaches, with real budgets, who want real results.
+              You don't need the same tools used by professional teams. You need something effective, accessible, and that adapts to your pace. CricIQ is designed exactly for that: real coaches, with real budgets, who want real results.
             </p>
           </motion.div>
 
@@ -689,7 +690,7 @@ export default function LandingPage() {
               {
                 icon: expensiveToolsIcon,
                 title: 'Expensive tools?',
-                desc: 'Professional video analysis software costs thousands. cricketVision provides enterprise-level analysis at a fraction of the cost.'
+                desc: 'Professional video analysis software costs thousands. CricIQ provides enterprise-level analysis at a fraction of the cost.'
               },
               {
                 icon: complexToUseIcon,
@@ -809,7 +810,7 @@ export default function LandingPage() {
             className="text-center mb-16"
           >
             <h2 className="text-4xl md:text-5xl font-black text-white mb-6">
-              Why Choose cricketVision?
+              Why Choose CricIQ?
             </h2>
             <p className="text-xl text-gray-300 max-w-3xl mx-auto">
               We are built specifically for cricket coaches who want results without complexity.
@@ -911,7 +912,7 @@ export default function LandingPage() {
         <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
           <div className="bg-slate-800 rounded-lg max-w-2xl w-full">
             <div className="flex justify-between items-center p-6 border-b border-slate-700">
-              <h3 className="text-xl font-bold text-white">cricketVision Demo</h3>
+              <h3 className="text-xl font-bold text-white">CricIQ Demo</h3>
               <button 
                 onClick={() => setShowDemoModal(false)}
                 className="text-gray-400 hover:text-white text-2xl"
@@ -925,7 +926,7 @@ export default function LandingPage() {
                   width="100%"
                   height="100%"
                   src="https://www.youtube.com/embed/dQw4w9WgXcQ?autoplay=1"
-                  title="cricketVision Demo"
+                  title="CricIQ Demo"
                   frameBorder="0"
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                   allowFullScreen
@@ -944,7 +945,7 @@ export default function LandingPage() {
             Trusted by Real Coaches
           </h2>
           <p className="text-lg text-gray-300 text-center mb-16">
-            See how professional coaches across different sports use cricketVision to improve their teams
+            See how professional coaches across different sports use CricIQ to improve their teams
           </p>
 
           <div className="grid md:grid-cols-2 gap-8">
@@ -1046,7 +1047,7 @@ export default function LandingPage() {
                 team: 'Delhi Youth Academy',
                 improvement: '34%',
                 metric: 'Player Performance',
-                quote: 'cricketVision cut my analysis time by 80%. Now I focus on coaching, not editing.',
+                quote: 'CricIQ cut my analysis time by 80%. Now I focus on coaching, not editing.',
                 image: '🏐'
               },
               {
@@ -1244,7 +1245,7 @@ export default function LandingPage() {
             className="text-center mb-16"
           >
             <h2 className="text-4xl md:text-5xl font-black text-white mb-4">
-              Why cricketVision Wins
+              Why CricIQ Wins
             </h2>
             <p className="text-lg text-gray-300">
               See how we compare to other video analysis tools
@@ -1263,7 +1264,7 @@ export default function LandingPage() {
                 <tr className="border-b border-slate-600">
                   <th className="px-6 py-4 text-white font-bold">Feature</th>
                   <th className="px-6 py-4 text-center">
-                    <div className="text-white font-bold">cricketVision</div>
+                    <div className="text-white font-bold">CricIQ</div>
                     <div className="text-purple-400 text-sm">Our Platform</div>
                   </th>
                   <th className="px-6 py-4 text-center">
@@ -1378,11 +1379,11 @@ export default function LandingPage() {
           <div className="space-y-4">
             {[
               {
-                q: 'Is cricketVision really free to start?',
+                q: 'Is CricIQ really free to start?',
                 a: 'Yes! You get 20 free credits when you sign up, plus 10 free credits every month. No credit card required.'
               },
               {
-                q: 'Can I use cricketVision on mobile?',
+                q: 'Can I use CricIQ on mobile?',
                 a: 'Absolutely! Our platform is fully responsive and works on any device - phone, tablet, or desktop.'
               },
               {
@@ -1391,14 +1392,14 @@ export default function LandingPage() {
               },
               {
                 q: 'Do I need technical expertise to use it?',
-                a: 'No! cricketVision is designed for coaches, not tech experts. Our interface is intuitive and easy to learn.'
+                a: 'No! CricIQ is designed for coaches, not tech experts. Our interface is intuitive and easy to learn.'
               },
               {
                 q: 'Can I export my analysis?',
                 a: 'Yes! You can download reports, clips, and insights in multiple formats for sharing with your team.'
               },
               {
-                q: 'What sports does cricketVision support?',
+                q: 'What sports does CricIQ support?',
                 a: 'We specialize in cricket analysis (batting, bowling, fielding) but our platform is expanding to other sports.'
               }
             ].map((faq, i) => (
@@ -1427,10 +1428,10 @@ export default function LandingPage() {
             {/* Logo & CTA */}
             <div>
               <div className="flex items-center gap-2 mb-6">
-                <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                  <span className="text-white font-bold text-lg">🏏</span>
+                <div className="w-10 h-10 rounded-lg overflow-hidden">
+                  <img src={appLogo} alt="CricIQ Logo" className="w-full h-full object-cover" />
                 </div>
-                <span className="text-xl font-bold text-white">cricketVision</span>
+                <span className="text-xl font-bold text-white">CricIQ</span>
               </div>
               <Link to="/register" className="px-6 py-2 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white font-bold rounded transition inline-block">
                 REGISTER NOW FOR FREE
@@ -1487,7 +1488,7 @@ export default function LandingPage() {
                 <a href="#" className="hover:text-white transition">Terms of Service</a>
               </div>
               <div className="text-gray-400 text-sm">
-                Copyright © cricketVision 2024
+                Copyright © CricIQ 2024
               </div>
             </div>
           </div>
@@ -1523,7 +1524,7 @@ export default function LandingPage() {
             {/* Chat Header */}
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-4 rounded-t-lg flex justify-between items-center">
               <div>
-                <h3 className="text-white font-bold">cricketVision Assistant</h3>
+                <h3 className="text-white font-bold">CricIQ Assistant</h3>
                 <p className="text-blue-100 text-xs">Always here to help 🤖</p>
               </div>
               <button

@@ -388,59 +388,6 @@ export default function PlayerDashboard(){
         </motion.div >
 
         {/* Quick Actions & Requests */}
-        <motion.div>
-          {
-            loadingVideos ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="glass rounded-2xl p-4 border border-white/10 animate-pulse">
-                    <div className="h-4 bg-white/10 rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-white/10 rounded w-1/2"></div>
-                  </div>
-                ))}
-              </div>
-            ) : recentVideos.length === 0 ? (
-              <div className="text-center py-12">
-                <i className="fas fa-video text-4xl text-white/20 mb-4"></i>
-                <p className="text-white/60">No highlights available yet</p>
-                <p className="text-sm text-white/40 mt-1">Request a match to get started!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentVideos.slice(0, 4).map((video, i) => (
-                  <motion.div
-                    key={video.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                  >
-                    <Link
-                      to={`/video/${video.id}`}
-                      className="glass rounded-2xl p-4 border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center justify-between group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold">
-                          <i className="fas fa-play text-sm"></i>
-                        </div>
-                        <div>
-                          <p className="font-medium group-hover:text-blue-400 transition-colors">{video.title}</p>
-                          <p className="text-xs text-white/50">{video.teams || 'Cricket Match'}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs">
-                        <span className="text-blue-400">{video.total_fours} 4s</span>
-                        <span className="text-green-400">{video.total_sixes} 6s</span>
-                        <span className="text-red-400">{video.total_wickets} W</span>
-                      </div>
-                    </Link>
-                  </motion.div>
-                ))}
-              </div>
-            )
-          }
-        </motion.div >
-
-        {/* Quick Actions & Requests */}
         < motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
