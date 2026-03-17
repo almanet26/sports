@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import api from "../lib/api";
 
 export default function MatchesPage() {
-  const [matches, setMatches] = useState<any[]>([]);
+  const [matches, setMatches] = useState<{ id: number; team_a: string; team_b: string; match_date: string; venue: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

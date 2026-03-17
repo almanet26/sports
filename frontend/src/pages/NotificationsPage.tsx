@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import api from "../lib/api";
 
 export default function NotificationsPage() {
-  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifications, setNotifications] = useState<{ id: number; message: string }[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {

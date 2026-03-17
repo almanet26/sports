@@ -83,7 +83,7 @@ export default function FeaturesDetailPage() {
             Powerful Features
           </h1>
           <p className="text-xl text-gray-300 max-w-3xl mx-auto">
-            Discover all the advanced capabilities that make cricketVision the ultimate cricket analysis platform
+            Discover all the advanced capabilities that make CricIQ the ultimate cricket analysis platform
           </p>
         </motion.div>
 

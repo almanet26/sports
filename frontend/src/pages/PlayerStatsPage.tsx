@@ -3,7 +3,7 @@ import { motion } from "framer-motion";
 import api from "../lib/api";
 
 export default function PlayerStatsPage() {
-    const [stats, setStats] = useState<any>(null);
+    const [stats, setStats] = useState<{ matches: number; runs: number; wickets: number; strike_rate: number } | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {

@@ -7,7 +7,7 @@ export default function PlayerPerformance() {
   const navigate = useNavigate();
 
   // Mock player data (replace with API call later)
-  const playersData: Record<string, any> = {
+  const playersData: Record<string, { id: string; name: string; sport: string; level: string; progress: number; battingAvg: number; strikeRate: number; highScore: number; matches: number; runs: number; fours: number; sixes: number }> = {
     "1": {
       id: "1",
       name: "Alex Rodriguez",
