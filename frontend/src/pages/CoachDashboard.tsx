@@ -1,7 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useThemeStore } from "../store/themeStore";
+import { authService } from "../utils/auth";
 import {
   LineChart,
   Line,
@@ -21,6 +22,18 @@ import {
 
 export default function CoachDashboard() {
   const { theme } = useThemeStore();
+  const userProfile = authService.getUserProfile();
+  const [profileComplete, setProfileComplete] = useState(0);
+
+  useEffect(() => {
+    // Calculate profile completion percentage
+    let complete = 20; // Base 20% for having an account
+    if (userProfile?.profile_bio) complete += 20;
+    if (userProfile?.phone) complete += 15;
+    // Add more checks when backend fields are available
+    setProfileComplete(complete);
+  }, [userProfile]);
+
   const stats = useMemo(
     () => [
       { title: "My Athletes", value: "24", icon: "fas fa-running", color: "from-blue-500 to-cyan-500", change: "+3 this week" },
@@ -124,7 +137,7 @@ export default function CoachDashboard() {
 
           <div className="flex gap-3">
             <Link
-              to="/coach/upload"
+              to="/upload"
               className={`px-4 py-2 rounded-xl border transition-all duration-300 text-sm flex items-center gap-2 ${
                 theme === 'dark'
                   ? 'glass border-white/20 hover:bg-white/10'
@@ -449,7 +462,7 @@ export default function CoachDashboard() {
           {myAthletes.map((athlete, i) => (
             <Link
               key={i}
-              to={`/coach/player/${athlete.id}`}
+              to={`/coach/players`}
               className="block"
             >
               <motion.div

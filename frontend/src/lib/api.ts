@@ -122,6 +122,10 @@ export const authApi = {
     phone: string;
     team: string;
     profile_bio: string;
+    gender: string;
+    certifications: Array<{name: string; issuer: string; year: string}>;
+    specialization: string[];
+    coach_category: string;
   }>) => api.put('/auth/me', data),
 };
 

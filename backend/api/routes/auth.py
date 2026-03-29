@@ -188,17 +188,35 @@ def get_current_user_info(current_user: User = Depends(get_current_user)):
 @router.put("/me", response_model=UserResponse)
 def update_current_user(
     name: str | None = None,
+    phone: str | None = None,
     team: str | None = None,
     jersey_number: int | None = None,
+    profile_bio: str | None = None,
+    gender: str | None = None,
+    certifications: list | None = None,
+    specialization: list | None = None,
+    coach_category: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     if name is not None:
         current_user.name = name
+    if phone is not None:
+        current_user.phone = phone
     if team is not None:
         current_user.team = team
     if jersey_number is not None:
         current_user.jersey_number = jersey_number
+    if profile_bio is not None:
+        current_user.profile_bio = profile_bio
+    if gender is not None:
+        current_user.gender = gender
+    if certifications is not None:
+        current_user.certifications = certifications
+    if specialization is not None:
+        current_user.specialization = specialization
+    if coach_category is not None:
+        current_user.coach_category = coach_category
 
     db.commit()
     db.refresh(current_user)

@@ -21,9 +21,17 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     phone = Column(String, nullable=True)
     profile_bio = Column(Text, nullable=True)
+    gender = Column(String, nullable=True)
     jersey_number = Column(Integer, nullable=True)
     team = Column(String, nullable=True)
     stripe_customer_id = Column(String, nullable=True)
+    
+    # Coach branding fields
+    certifications = Column(JSON, nullable=True)  # [{name, issuer, year}]
+    specialization = Column(JSON, nullable=True)  # ["Batting", "Bowling", ...]
+    intro_video_url = Column(String, nullable=True)
+    profile_image_url = Column(String, nullable=True)
+    coach_category = Column(String, nullable=True)  # Under 12, Under 15, Under 18, etc.
     
     # Subscription field (BASIC, SILVER, GOLD)
     subscription_plan = Column(String, default='BASIC', nullable=False)

@@ -3,7 +3,6 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
-import Logo from '../../gallery/logo.webp';
 
 
 // Navigation items configuration
@@ -32,11 +31,18 @@ const dashboardItems: Record<string, NavItem[]> = {
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
-    { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
-    { to: "/coach/submissions", icon: "fas fa-inbox", label: "Inbox" },
-    { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+    { to: "/settings", icon: "fas fa-user-circle", label: "My Profile" },
+    { to: "/coach/players", icon: "fas fa-users", label: "My Players" },
+    { to: "/coach/submissions", icon: "fas fa-inbox", label: "Video Reviews" },
+    { to: "/coach/sessions", icon: "fas fa-calendar-alt", label: "Sessions" },
+    { to: "/coach/availability", icon: "fas fa-clock", label: "Availability" },
+    { to: "/coach/training-plans", icon: "fas fa-book-open", label: "Training Plans" },
+    { to: "/coach/inbox", icon: "fas fa-envelope", label: "Inbox" },
+    { to: "/coach/analytics", icon: "fas fa-chart-line", label: "Analytics" },
+    { to: "/coach/reviews", icon: "fas fa-star", label: "Reviews" },
+    { to: "/coach/earnings", icon: "fas fa-dollar-sign", label: "Earnings" },
+    { to: "/coach/content", icon: "fas fa-bullhorn", label: "My Content" },
+    { to: "/coach/settings", icon: "fas fa-cog", label: "Settings" },
   ],
  ADMIN: [
   { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
@@ -121,7 +127,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass border-b border-white/10">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-<img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
+            <img src="/logo.png" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
             <span className="font-bold text-xl text-white">PitchVision</span>
           </div>
           <motion.button
@@ -145,7 +151,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             <div className={`flex items-center gap-3 p-6 border-b ${
               theme === 'dark' ? 'border-white/10' : 'border-gray-200'
             }`}>
-<img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain pulse-glow" />
+              <img src="/logo.png" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
               <div>
                 <span className={`font-bold text-lg ${
                   theme === 'dark' ? 'text-white' : 'text-gray-900'
@@ -316,7 +322,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               <div className="h-full flex flex-col">
                 {/* Mobile Logo */}
                 <div className="flex items-center gap-3 p-6 border-b border-white/10">
-<img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
+                  <img src="/logo.png" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
                   <div>
                     <span className="font-bold text-lg text-white">PitchVision</span>
                     <p className="text-xs text-white/50">AI Analytics</p>

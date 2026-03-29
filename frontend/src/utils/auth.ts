@@ -12,8 +12,14 @@ interface UserProfile {
   email: string;
   phone?: string;
   profile_bio?: string;
+  gender?: string;
   jersey_number?: number;
   team?: string;
+  certifications?: Array<{name: string; issuer: string; year: string}>;
+  specialization?: string[];
+  intro_video_url?: string;
+  profile_image_url?: string;
+  coach_category?: string;
   is_verified: boolean;
   created_at: string;
   last_login?: string;

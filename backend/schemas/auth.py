@@ -111,8 +111,14 @@ class UserProfileResponse(BaseModel):
     email: str
     phone: Optional[str]
     profile_bio: Optional[str]
+    gender: Optional[str]
     jersey_number: Optional[int]
     team: Optional[str]
+    certifications: Optional[list] = None
+    specialization: Optional[list] = None
+    intro_video_url: Optional[str] = None
+    profile_image_url: Optional[str] = None
+    coach_category: Optional[str] = None
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime]
