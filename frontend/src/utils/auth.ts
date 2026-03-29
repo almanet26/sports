@@ -20,6 +20,7 @@ interface UserProfile {
   intro_video_url?: string;
   profile_image_url?: string;
   coach_category?: string;
+  session_type?: string;
   is_verified: boolean;
   created_at: string;
   last_login?: string;

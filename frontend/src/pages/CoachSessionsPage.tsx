@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Link } from 'react-router-dom';
 
 interface Session {
   id: string;
@@ -18,7 +17,6 @@ export default function CoachSessionsPage() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<'upcoming' | 'past'>('upcoming');
-  const [showAddModal, setShowAddModal] = useState(false);
 
   const handleEditSession = (sessionId: string) => {
     alert(`Edit session ${sessionId} - Feature coming soon!`);
@@ -117,7 +115,7 @@ export default function CoachSessionsPage() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => setShowAddModal(true)}
+            onClick={() => alert('New Session feature coming soon!')}
             className="px-6 py-3 bg-gradient-to-r from-purple-500 to-pink-600 rounded-xl font-medium"
           >
             <i className="fas fa-plus mr-2"></i>

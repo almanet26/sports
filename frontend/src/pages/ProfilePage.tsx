@@ -19,7 +19,6 @@ export default function ProfilePage() {
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profileComplete, setProfileComplete] = useState(0);
-  const [profileImage, setProfileImage] = useState<File | null>(null);
   const [profileImagePreview, setProfileImagePreview] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     name: userProfile?.name || '',
@@ -37,7 +36,6 @@ export default function ProfilePage() {
   const [certifications, setCertifications] = useState<Certification[]>([]);
   const [specialization, setSpecialization] = useState<string[]>([]);
   const [introVideo, setIntroVideo] = useState<File | null>(null);
-  const [videoUploading, setVideoUploading] = useState(false);
 
   // Load coach branding data on mount
   useEffect(() => {
@@ -97,8 +95,6 @@ export default function ProfilePage() {
   const handleProfileImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      setProfileImage(file);
-      // Create preview URL
       const reader = new FileReader();
       reader.onloadend = () => {
         setProfileImagePreview(reader.result as string);
