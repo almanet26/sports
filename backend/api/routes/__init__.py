@@ -10,7 +10,7 @@ Routes:
 - batting: Batting performance analysis
 - admin_coaches: Admin routes for coach verification
 """
-from . import auth, videos, jobs, requests, admin_coaches
+from . import auth, videos, jobs, requests, admin_coaches, players
 
 
 try:
@@ -55,6 +55,7 @@ except Exception as e:
 
 __all__ = [
     "auth", "videos", "jobs", "requests", "admin_coaches",
+    "players",
     "bowling", "BOWLING_AVAILABLE",
     "batting", "BATTING_AVAILABLE",
     "submissions", "SUBMISSIONS_AVAILABLE",

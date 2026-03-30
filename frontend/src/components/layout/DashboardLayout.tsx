@@ -1,52 +1,53 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
+import { Flame, Trophy, UserRound, type LucideIcon } from "lucide-react";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
-import Logo from '../../gallery/logo.webp';
+import Logo from "../../gallery/logo.webp";
 
-
-// Navigation items configuration
 interface NavItem {
   to: string;
-  icon: string;
+  icon?: string;
+  iconComponent?: LucideIcon;
   label: string;
+  end: boolean;
 }
 
-console.log("DashboardLayout rendered");
-
-// Role-specific dashboard items
 const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
-    { to: "/player", icon: "fas fa-home", label: "Dashboard" },
-    { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
-    { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
-    { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
-    { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
-    { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/stats", icon: "fas fa-chart-bar", label: "Stats" },
-    { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
-    { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+    { to: "/player", icon: "fas fa-home", label: "Dashboard", end: true },
+    { to: "/player/profile", iconComponent: UserRound, label: "Profile", end: true },
+    { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling", end: true },
+    { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting", end: true },
+    { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions", end: true },
+    { to: "/player/achievements", iconComponent: Trophy, label: "Achievements", end: true },
+    { to: "/player/streaks", iconComponent: Flame, label: "Streaks", end: true },
+    { to: "/player/subscription", icon: "fas fa-star", label: "Subscription", end: true },
+    { to: "/library", icon: "fas fa-video", label: "Library", end: true },
+    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests", end: true },
+    { to: "/stats", icon: "fas fa-chart-bar", label: "Stats", end: true },
+    { to: "/matches", icon: "fas fa-calendar", label: "Matches", end: true },
+    { to: "/notifications", icon: "fas fa-bell", label: "Notifications", end: true },
+    { to: "/settings", icon: "fas fa-cog", label: "Settings", end: true },
   ],
   COACH: [
-    { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
-    { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
-    { to: "/coach/submissions", icon: "fas fa-inbox", label: "Inbox" },
-    { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+    { to: "/coach", icon: "fas fa-home", label: "Dashboard", end: true },
+    { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload", end: true },
+    { to: "/coach/submissions", icon: "fas fa-inbox", label: "Inbox", end: true },
+    { to: "/library", icon: "fas fa-video", label: "Library", end: true },
+    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests", end: true },
+    { to: "/settings", icon: "fas fa-cog", label: "Settings", end: true },
   ],
- ADMIN: [
-  { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
-  { to: "/admin/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
-  { to: "/admin/coaches", icon: "fas fa-user-check", label: "Coach Approvals" },
-  { to: "/admin/plans", icon: "fas fa-tags", label: "Plans" },
-  { to: "/library", icon: "fas fa-video", label: "Library" },
-  { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-  { to: "/settings", icon: "fas fa-cog", label: "Settings" },
-],
+  ADMIN: [
+    { to: "/admin", icon: "fas fa-home", label: "Dashboard", end: true },
+    { to: "/admin/upload", icon: "fas fa-cloud-upload-alt", label: "Upload", end: true },
+    { to: "/admin/coaches", icon: "fas fa-user-check", label: "Coach Approvals", end: true },
+    { to: "/admin/plans", icon: "fas fa-tags", label: "Plans", end: true },
+    { to: "/library", icon: "fas fa-video", label: "Library", end: true },
+    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests", end: true },
+    { to: "/settings", icon: "fas fa-cog", label: "Settings", end: true },
+  ],
 };
 
 interface DashboardLayoutProps {
@@ -60,7 +61,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
 
   React.useEffect(() => {
-    document.body.className = theme === 'light' ? 'light-theme' : '';
+    document.body.className = theme === "light" ? "light-theme" : "";
   }, [theme]);
 
   const handleLogout = () => {
@@ -68,8 +69,21 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     navigate("/login");
   };
 
-  // Get role-specific navigation items
-  const navItems = dashboardItems[user?.role || 'PLAYER'] || dashboardItems.PLAYER;
+  const navItems = dashboardItems[user?.role || "PLAYER"] || dashboardItems.PLAYER;
+
+  const renderNavIcon = (item: NavItem, isActive: boolean) => {
+    const iconClass = isActive
+      ? "text-white"
+      : theme === "dark"
+        ? "text-white/60 group-hover:text-white"
+        : "text-gray-600 group-hover:text-gray-900";
+
+    if (item.iconComponent) {
+      const Icon = item.iconComponent;
+      return <Icon className={`h-4 w-4 ${iconClass}`} />;
+    }
+    return <i className={`${item.icon} text-sm ${iconClass}`}></i>;
+  };
 
   const getRoleBadge = () => {
     switch (user?.role) {
@@ -97,12 +111,32 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     }
   };
 
+  const desktopNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group border ${
+      theme === "dark"
+        ? isActive
+          ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border-white/20"
+          : "text-white/60 hover:text-white hover:bg-white/5 border-transparent"
+        : isActive
+          ? "bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-blue-200"
+          : "text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-transparent"
+    }`;
+
+  const mobileNavLinkClass = ({ isActive }: { isActive: boolean }) =>
+    `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
+      isActive
+        ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border border-white/20"
+        : "text-white/60 hover:text-white hover:bg-white/5"
+    }`;
+
   return (
-    <div className={`min-h-screen relative overflow-hidden ${
-      theme === 'dark' 
-        ? 'bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white'
-        : 'bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-900'
-    }`}>
+    <div
+      className={`min-h-screen relative overflow-hidden ${
+        theme === "dark"
+          ? "bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white"
+          : "bg-gradient-to-br from-gray-50 via-white to-gray-100 text-gray-900"
+      }`}
+    >
       {/* Background decorations */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <motion.div
@@ -121,7 +155,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass border-b border-white/10">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-<img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
+            <img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
             <span className="font-bold text-xl text-white">PitchVision</span>
           </div>
           <motion.button
@@ -129,174 +163,145 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             onClick={() => setSidebarOpen(!sidebarOpen)}
             className="w-10 h-10 rounded-xl glass border border-white/20 flex items-center justify-center text-white hover:bg-white/10 transition-all"
           >
-            <i className={`fas ${sidebarOpen ? 'fa-times' : 'fa-bars'}`}></i>
+            <i className={`fas ${sidebarOpen ? "fa-times" : "fa-bars"}`}></i>
           </motion.button>
         </div>
       </header>
 
-      {/* Desktop Sidebar - Always Visible */}
-      <aside className={`hidden lg:block fixed top-0 left-0 z-40 h-screen w-72 border-r ${
-        theme === 'dark' 
-          ? 'glass border-white/10' 
-          : 'bg-white border-gray-200 shadow-xl'
-      }`}>
-          <div className="h-full flex flex-col">
-            {/* Logo */}
-            <div className={`flex items-center gap-3 p-6 border-b ${
-              theme === 'dark' ? 'border-white/10' : 'border-gray-200'
-            }`}>
-<img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain pulse-glow" />
-              <div>
-                <span className={`font-bold text-lg ${
-                  theme === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>PitchVision</span>
-                <p className={`text-xs ${
-                  theme === 'dark' ? 'text-white/50' : 'text-gray-500'
-                }`}>AI Analytics</p>
-              </div>
-            </div>
-
-            {/* User Info */}
-            <div className={`p-4 border-b ${
-              theme === 'dark' ? 'border-white/10' : 'border-gray-200'
-            }`}>
-              <motion.div 
-                whileHover={{ scale: 1.02 }}
-                className={`rounded-2xl p-4 border cursor-pointer ${
-                  theme === 'dark' 
-                    ? 'glass border-white/10' 
-                    : 'bg-gray-50 border-gray-200'
-                }`}
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                    {user?.email?.charAt(0).toUpperCase() || "U"}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${
-                      theme === 'dark' ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      {user?.email || "User"}
-                    </p>
-                    <div className="mt-1">
-                      {getRoleBadge()}
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Navigation */}
-            <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-              {navItems.map((item, index) => (
-                <motion.div
-                  key={item.to}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                >
-                  <NavLink
-                    to={item.to}
-                    end={item.label === "Dashboard"}
-                    onClick={() => setSidebarOpen(false)}
-                    className={({ isActive }) =>
-                      `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group border ${
-                        theme === 'dark'
-                          ? isActive
-                            ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border-white/20"
-                            : "text-white/60 hover:text-white hover:bg-white/5 border-transparent"
-                          : isActive
-                            ? "bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-blue-200"
-                            : "text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-transparent"
-                      }`
-                    }
-                  >
-                    {({ isActive }) => (
-                      <>
-                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                          theme === 'dark'
-                            ? isActive 
-                              ? 'bg-gradient-to-r from-blue-500 to-purple-600' 
-                              : 'bg-white/10 group-hover:bg-white/20'
-                            : isActive
-                              ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                              : 'bg-gray-200 group-hover:bg-gray-300'
-                        }`}>
-                          <i className={`${item.icon} text-sm ${
-                            isActive ? 'text-white' : theme === 'dark' ? 'text-white/60 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
-                          }`}></i>
-                        </div>
-                        <span className="font-medium">{item.label}</span>
-                        {isActive && (
-                          <motion.div
-                            layoutId="activeIndicator"
-                            className="ml-auto w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500"
-                          />
-                        )}
-                      </>
-                    )}
-                  </NavLink>
-                </motion.div>
-              ))}
-            </nav>
-
-            {/* Theme Toggle */}
-            <div className={`p-4 border-t ${
-              theme === 'dark' ? 'border-white/10' : 'border-gray-200'
-            }`}>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={toggleTheme}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
-                  theme === 'dark'
-                    ? 'text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10'
-                    : 'text-gray-700 hover:text-blue-600 hover:bg-blue-50'
-                }`}
-              >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                  theme === 'dark'
-                    ? 'bg-white/10 group-hover:bg-yellow-500/20'
-                    : 'bg-gray-200 group-hover:bg-blue-100'
-                }`}>
-                  <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-sm`}></i>
-                </div>
-                <span className="font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-              </motion.button>
-            </div>
-
-            {/* Logout */}
-            <div className={`p-4 border-t ${
-              theme === 'dark' ? 'border-white/10' : 'border-gray-200'
-            }`}>
-              <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                onClick={handleLogout}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
-                  theme === 'dark'
-                    ? 'text-white/60 hover:text-red-400 hover:bg-red-500/10'
-                    : 'text-gray-700 hover:text-red-600 hover:bg-red-50'
-                }`}
-              >
-                <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
-                  theme === 'dark'
-                    ? 'bg-white/10 group-hover:bg-red-500/20'
-                    : 'bg-gray-200 group-hover:bg-red-100'
-                }`}>
-                  <i className="fas fa-sign-out-alt text-sm"></i>
-                </div>
-                <span className="font-medium">Log out</span>
-              </motion.button>
+      {/* Desktop Sidebar */}
+      <aside
+        className={`hidden lg:block fixed top-0 left-0 z-40 h-screen w-72 border-r ${
+          theme === "dark" ? "glass border-white/10" : "bg-white border-gray-200 shadow-xl"
+        }`}
+      >
+        <div className="h-full flex flex-col">
+          {/* Logo */}
+          <div className={`flex items-center gap-3 p-6 border-b ${theme === "dark" ? "border-white/10" : "border-gray-200"}`}>
+            <img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain pulse-glow" />
+            <div>
+              <span className={`font-bold text-lg ${theme === "dark" ? "text-white" : "text-gray-900"}`}>PitchVision</span>
+              <p className={`text-xs ${theme === "dark" ? "text-white/50" : "text-gray-500"}`}>AI Analytics</p>
             </div>
           </div>
+
+          {/* User Info */}
+          <div className={`p-4 border-b ${theme === "dark" ? "border-white/10" : "border-gray-200"}`}>
+            <motion.div
+              whileHover={{ scale: 1.02 }}
+              className={`rounded-2xl p-4 border cursor-pointer ${
+                theme === "dark" ? "glass border-white/10" : "bg-gray-50 border-gray-200"
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                  {user?.email?.charAt(0).toUpperCase() || "U"}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-medium truncate ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                    {user?.email || "User"}
+                  </p>
+                  <div className="mt-1">{getRoleBadge()}</div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* Navigation */}
+          <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
+            {navItems.map((item, index) => (
+              <motion.div
+                key={item.to}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.05 }}
+              >
+                <NavLink
+                  to={item.to}
+                  end={item.end}
+                  onClick={() => setSidebarOpen(false)}
+                  className={desktopNavLinkClass}
+                >
+                  {({ isActive }) => (
+                    <>
+                      <div
+                        className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                          theme === "dark"
+                            ? isActive
+                              ? "bg-gradient-to-r from-blue-500 to-purple-600"
+                              : "bg-white/10 group-hover:bg-white/20"
+                            : isActive
+                              ? "bg-gradient-to-r from-blue-500 to-purple-600"
+                              : "bg-gray-200 group-hover:bg-gray-300"
+                        }`}
+                      >
+                        {renderNavIcon(item, isActive)}
+                      </div>
+                      <span className="font-medium">{item.label}</span>
+                      {isActive && (
+                        <motion.div
+                          layoutId="activeIndicator"
+                          className="ml-auto w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500"
+                        />
+                      )}
+                    </>
+                  )}
+                </NavLink>
+              </motion.div>
+            ))}
+          </nav>
+
+          {/* Theme Toggle */}
+          <div className={`p-4 border-t ${theme === "dark" ? "border-white/10" : "border-gray-200"}`}>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={toggleTheme}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                theme === "dark"
+                  ? "text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10"
+                  : "text-gray-700 hover:text-blue-600 hover:bg-blue-50"
+              }`}
+            >
+              <div
+                className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                  theme === "dark" ? "bg-white/10 group-hover:bg-yellow-500/20" : "bg-gray-200 group-hover:bg-blue-100"
+                }`}
+              >
+                <i className={`fas ${theme === "dark" ? "fa-sun" : "fa-moon"} text-sm`}></i>
+              </div>
+              <span className="font-medium">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
+            </motion.button>
+          </div>
+
+          {/* Logout */}
+          <div className={`p-4 border-t ${theme === "dark" ? "border-white/10" : "border-gray-200"}`}>
+            <motion.button
+              whileHover={{ scale: 1.02 }}
+              whileTap={{ scale: 0.98 }}
+              onClick={handleLogout}
+              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${
+                theme === "dark"
+                  ? "text-white/60 hover:text-red-400 hover:bg-red-500/10"
+                  : "text-gray-700 hover:text-red-600 hover:bg-red-50"
+              }`}
+            >
+              <div
+                className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${
+                  theme === "dark" ? "bg-white/10 group-hover:bg-red-500/20" : "bg-gray-200 group-hover:bg-red-100"
+                }`}
+              >
+                <i className="fas fa-sign-out-alt text-sm"></i>
+              </div>
+              <span className="font-medium">Log out</span>
+            </motion.button>
+          </div>
+        </div>
       </aside>
 
       {/* Mobile Sidebar */}
       <AnimatePresence>
         {sidebarOpen && (
           <>
-            {/* Overlay */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -304,8 +309,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               onClick={() => setSidebarOpen(false)}
               className="fixed inset-0 z-30 bg-black/60 backdrop-blur-sm lg:hidden"
             />
-
-            {/* Mobile Sidebar */}
             <motion.aside
               initial={{ x: -288 }}
               animate={{ x: 0 }}
@@ -314,16 +317,14 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               className="fixed top-0 left-0 z-40 h-screen w-72 glass border-r border-white/10 lg:hidden"
             >
               <div className="h-full flex flex-col">
-                {/* Mobile Logo */}
                 <div className="flex items-center gap-3 p-6 border-b border-white/10">
-<img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
+                  <img src={Logo} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
                   <div>
                     <span className="font-bold text-lg text-white">PitchVision</span>
                     <p className="text-xs text-white/50">AI Analytics</p>
                   </div>
                 </div>
 
-                {/* User Info */}
                 <div className="p-4 border-b border-white/10">
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <div className="flex items-center gap-3">
@@ -331,39 +332,34 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         {user?.email?.charAt(0).toUpperCase() || "U"}
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {user?.email || "User"}
-                        </p>
-                        <div className="mt-1">
-                          {getRoleBadge()}
-                        </div>
+                        <p className="text-sm font-medium text-white truncate">{user?.email || "User"}</p>
+                        <div className="mt-1">{getRoleBadge()}</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* Navigation */}
                 <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
                   {navItems.map((item) => (
                     <NavLink
                       key={item.to}
                       to={item.to}
-                      end={item.label === "Dashboard"}
+                      end={item.end}
                       onClick={() => setSidebarOpen(false)}
-                      className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive
-                          ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border border-white/20"
-                          : "text-white/60 hover:text-white hover:bg-white/5"
-                        }`
-                      }
+                      className={mobileNavLinkClass}
                     >
                       {({ isActive }) => (
                         <>
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isActive
-                            ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                            : 'bg-white/10'
-                            }`}>
-                            <i className={`${item.icon} text-sm ${isActive ? 'text-white' : 'text-white/60'}`}></i>
+                          <div
+                            className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                              isActive ? "bg-gradient-to-r from-blue-500 to-purple-600" : "bg-white/10"
+                            }`}
+                          >
+                            {item.iconComponent ? (
+                              <item.iconComponent className={`h-4 w-4 ${isActive ? "text-white" : "text-white/60"}`} />
+                            ) : (
+                              <i className={`${item.icon} text-sm ${isActive ? "text-white" : "text-white/60"}`}></i>
+                            )}
                           </div>
                           <span className="font-medium">{item.label}</span>
                         </>
@@ -372,26 +368,22 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                   ))}
                 </nav>
 
-                {/* Theme Toggle */}
                 <div className="p-4 border-t border-white/10">
                   <button
                     onClick={toggleTheme}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${
-                      theme === 'dark'
-                        ? 'text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10'
-                        : 'text-gray-600 hover:text-blue-600 hover:bg-blue-500/10'
+                      theme === "dark"
+                        ? "text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10"
+                        : "text-gray-600 hover:text-blue-600 hover:bg-blue-500/10"
                     }`}
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
-                      theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'
-                    }`}>
-                      <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-sm`}></i>
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === "dark" ? "bg-white/10" : "bg-gray-200"}`}>
+                      <i className={`fas ${theme === "dark" ? "fa-sun" : "fa-moon"} text-sm`}></i>
                     </div>
-                    <span className="font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
+                    <span className="font-medium">{theme === "dark" ? "Light Mode" : "Dark Mode"}</span>
                   </button>
                 </div>
 
-                {/* Logout */}
                 <div className="p-4 border-t border-white/10">
                   <button
                     onClick={handleLogout}
@@ -411,9 +403,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
       {/* Main Content */}
       <main className="lg:ml-72 pt-16 lg:pt-0 min-h-screen relative z-10">
-        <div className="p-6 lg:p-8 max-w-7xl mx-auto">
-          {children || <Outlet />}
-        </div>
+        <div className="p-6 lg:p-8 max-w-7xl mx-auto">{children || <Outlet />}</div>
       </main>
     </div>
   );

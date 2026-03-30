@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,6 +8,11 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlalchemy import text
+
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
 from database.crud import bowling
 from database.config import SessionLocal, engine, Base
 
@@ -16,6 +22,7 @@ from database.models import (
     Video, HighlightEvent, HighlightJob, MatchRequest, UserVote,
     BattingAnalysis,
     VideoSubmission,
+    PlayerProfile,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -200,13 +207,8 @@ if not _CLOUD_RUN:
 # Health Check Endpoints 
 @app.get("/", tags=["health"])
 def read_root():
-    """Root endpoint - API info."""
-    return {
-        "name": "Cricket Highlight Platform API",
-        "version": "2.0.0",
-        "docs": "/docs",
-        "health": "/api/v1/health",
-    }
+    """Simple backend alive check."""
+    return {"status": "Backend is running"}
 
 
 @app.get("/api/v1/health", tags=["health"])
@@ -229,7 +231,7 @@ def db_health_check():
 
 
 # Include API Routers 
-from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
+from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches, players
 from api.routes import plan, subscription
 
 # Authentication routes
@@ -249,6 +251,9 @@ app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 
 # Match request/voting routes
 app.include_router(requests.router, prefix="/api/v1", tags=["requests"])
+
+# Player profile routes
+app.include_router(players.router, prefix="/api/v1", tags=["player-profile"])
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])
