@@ -1,0 +1,54 @@
+# ============================================
+# Cricket Highlight Platform - Backend Dependencies
+# ============================================
+
+# Core Framework & Server
+fastapi>=0.104.1
+uvicorn[standard]>=0.24.0
+gunicorn>=21.2.0             # Production WSGI server (Render)
+python-dotenv>=1.0.0
+python-multipart>=0.0.6      # Required for file uploads
+pydantic>=2.5.0
+pydantic-settings>=2.0.0
+
+# HTTP Client
+requests>=2.31.0
+httpx>=0.25.1                # Async HTTP client
+aiofiles>=23.2.1             # Async file operations
+
+# Database & ORM
+sqlalchemy>=2.0.23
+psycopg2-binary>=2.9.9       # PostgreSQL driver
+
+# Authentication & Security
+email-validator>=2.0.0
+PyJWT>=2.8.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+python-jose[cryptography]>=3.3.0
+
+# Video Processing
+yt-dlp>=2024.12.13           # YouTube downloader
+opencv-python-headless>=4.8.1  # Video analysis 
+
+# Machine Learning & OCR
+numpy>=1.26.2
+
+# Pose Estimation (Cloud Run worker)
+# Pinned to last version that ships the legacy mp.solutions.pose API.
+mediapipe==0.10.14           # MediaPipe pose estimation — requires libegl1 + libglx0 at runtime
+
+# NOTE: torch, torchvision, scipy, easyocr are only used by the standalone OCR highlight-reel pipeline (scripts/ocr_engine.py), which does NOT run on Cloud Run.  Install them locally
+#   pip install torch torchvision scipy easyocr
+
+# Bowling & Batting Analysis
+pandas>=2.0.0                # DataFrame operations for metrics analysis
+google-genai>=0.6.0
+fpdf2>=2.7.0
+Pillow>=10.0.0
+reportlab>=4.0.9             # PDF report generation 
+youtube-search-python>=1.6.6 # Resolve top YouTube tutorial link/title from search intent
+
+# Google Cloud
+google-cloud-storage>=2.14.0 # GCS direct uploads (signed URLs)
+google-cloud-tasks>=2.14.0   # Async worker dispatch

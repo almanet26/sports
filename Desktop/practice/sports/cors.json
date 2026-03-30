@@ -1,0 +1,13 @@
+[
+  {
+    "origin": [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "http://localhost:3000",
+      "https://sports-teal-two.vercel.app"
+    ],
+    "method": ["PUT", "OPTIONS"],
+    "responseHeader": ["Content-Type", "Content-Length", "Authorization"],
+    "maxAgeSeconds": 3600
+  }
+]
