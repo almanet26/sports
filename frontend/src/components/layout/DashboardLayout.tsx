@@ -127,7 +127,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass border-b border-white/10">
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
+            <img src="/logo.webp" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
             <span className="font-bold text-xl text-white">PitchVision</span>
           </div>
           <motion.button
@@ -151,7 +151,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             <div className={`flex items-center gap-3 p-6 border-b ${
               theme === 'dark' ? 'border-white/10' : 'border-gray-200'
             }`}>
-              <img src="/logo.png" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
+              <img src="/logo.webp" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
               <div>
                 <span className={`font-bold text-lg ${
                   theme === 'dark' ? 'text-white' : 'text-gray-900'
@@ -322,7 +322,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               <div className="h-full flex flex-col">
                 {/* Mobile Logo */}
                 <div className="flex items-center gap-3 p-6 border-b border-white/10">
-                  <img src="/logo.png" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
+                  <img src="/logo.webp" alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
                   <div>
                     <span className="font-bold text-lg text-white">PitchVision</span>
                     <p className="text-xs text-white/50">AI Analytics</p>
