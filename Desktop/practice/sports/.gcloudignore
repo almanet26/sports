@@ -1,0 +1,44 @@
+# Cloud Build source upload exclusions
+# These are excluded from the tarball sent to GCS — they're never needed for building
+.git/
+.gitignore
+
+# Frontend build artifacts & dependencies (not needed — only backend/ is built)
+frontend/node_modules/
+frontend/dist/
+frontend/.cache/
+
+# Backend: generated files, secrets, binaries, test videos
+backend/venv/
+backend/__pycache__/
+backend/**/__pycache__/
+backend/**/*.pyc
+backend/storage/
+backend/logs/
+backend/*.db
+backend/*.sqlite3
+backend/.env
+backend/.pytest_cache/
+backend/cricket_analytics.db
+backend/roi_check.jpg
+backend/cookies.txt
+backend/pose_landmarker.task
+
+# Test video files inside scripts/ (large — not needed for Docker build)
+backend/scripts/*.mp4
+backend/scripts/**/*.mp4
+backend/scripts/storage/
+backend/src/**/*.mp4
+
+# All binary/media files anywhere (Docker build only needs .py/.txt/.yaml)
+**/*.mp4
+**/*.webm
+**/*.avi
+**/*.mov
+**/*.mkv
+**/*.pdf
+
+# Temporary files
+cors.json
+*.tmp
+*.log

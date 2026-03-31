@@ -1,0 +1,142 @@
+{
+  "description": "Postman collection for Cricket Highlight Generator API",
+  "variables": {
+    "base_url": "http://localhost:8000/api/v1",
+    "token": "YOUR_JWT_TOKEN_HERE"
+  },
+  "requests": [
+    {
+      "name": "1. Register User",
+      "method": "POST",
+      "url": "{{base_url}}/auth/register",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "email": "player@cricket.com",
+        "password": "SecurePass123!",
+        "full_name": "John Cricket",
+        "role": "PLAYER"
+      }
+    },
+    {
+      "name": "2. Login",
+      "method": "POST",
+      "url": "{{base_url}}/auth/login",
+      "headers": {
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      "body_form": {
+        "username": "player@cricket.com",
+        "password": "SecurePass123!"
+      },
+      "save_response": "token"
+    },
+    {
+      "name": "3. Get Current User Profile",
+      "method": "GET",
+      "url": "{{base_url}}/auth/me",
+      "headers": {
+        "Authorization": "Bearer {{token}}"
+      }
+    },
+    {
+      "name": "4. Process Video - Full Test",
+      "method": "POST",
+      "url": "{{base_url}}/videos/process",
+      "headers": {
+        "Authorization": "Bearer {{token}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "video_url": "https://www.youtube.com/watch?v=GFj5cfzYoEQ",
+        "match_id": "asia_cup_final_2023",
+        "data_source": "mock",
+        "merge_threshold": 10.0
+      },
+      "save_response": "job_id"
+    },
+    {
+      "name": "5. Check Job Status",
+      "method": "GET",
+      "url": "{{base_url}}/videos/status/{{job_id}}",
+      "headers": {
+        "Authorization": "Bearer {{token}}"
+      }
+    },
+    {
+      "name": "6. Get Highlights",
+      "method": "GET",
+      "url": "{{base_url}}/videos/highlights/GFj5cfzYoEQ",
+      "headers": {
+        "Authorization": "Bearer {{token}}"
+      }
+    },
+    {
+      "name": "7. Process Video - Short Merge",
+      "method": "POST",
+      "url": "{{base_url}}/videos/process",
+      "headers": {
+        "Authorization": "Bearer {{token}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "video_url": "https://www.youtube.com/watch?v=awJ11QqXSBo",
+        "data_source": "mock",
+        "merge_threshold": 5.0
+      }
+    },
+    {
+      "name": "8. Process Video - Long Merge",
+      "method": "POST",
+      "url": "{{base_url}}/videos/process",
+      "headers": {
+        "Authorization": "Bearer {{token}}",
+        "Content-Type": "application/json"
+      },
+      "body": {
+        "video_url": "https://www.youtube.com/watch?v=GFj5cfzYoEQ",
+        "data_source": "mock",
+        "merge_threshold": 20.0
+      }
+    },
+    {
+      "name": "9. Health Check",
+      "method": "GET",
+      "url": "{{base_url}}/health"
+    },
+    {
+      "name": "10. Database Health",
+      "method": "GET",
+      "url": "{{base_url}}/db-health"
+    }
+  ],
+  "test_flows": [
+    {
+      "name": "Complete User Journey",
+      "steps": [
+        "Register User",
+        "Login",
+        "Get Current User Profile",
+        "Process Video - Full Test",
+        "Check Job Status (wait 30s)",
+        "Get Highlights"
+      ]
+    },
+    {
+      "name": "Different Merge Thresholds",
+      "steps": [
+        "Login",
+        "Process Video - Short Merge (5s)",
+        "Process Video - Long Merge (20s)",
+        "Compare results"
+      ]
+    }
+  ],
+  "curl_examples": {
+    "register": "curl -X POST \"http://localhost:8000/api/v1/auth/register\" -H \"Content-Type: application/json\" -d '{\"email\":\"test@cricket.com\",\"password\":\"Pass123!\",\"full_name\":\"Test User\",\"role\":\"PLAYER\"}'",
+    "login": "curl -X POST \"http://localhost:8000/api/v1/auth/login\" -H \"Content-Type: application/x-www-form-urlencoded\" -d \"username=test@cricket.com&password=Pass123!\"",
+    "process_video": "curl -X POST \"http://localhost:8000/api/v1/videos/process\" -H \"Authorization: Bearer YOUR_TOKEN\" -H \"Content-Type: application/json\" -d '{\"video_url\":\"https://www.youtube.com/watch?v=GFj5cfzYoEQ\",\"data_source\":\"mock\"}'",
+    "get_highlights": "curl -X GET \"http://localhost:8000/api/v1/videos/highlights/GFj5cfzYoEQ\" -H \"Authorization: Bearer YOUR_TOKEN\""
+  }
+}

@@ -1,0 +1,88 @@
+# IAM already provisioned (run setup_iam.ps1 once):
+#   Cloud Build SA  → artifactregistry.writer on repo
+#   Cloud Run SA    → artifactregistry.reader on repo
+#   Cloud Run SA    → secretmanager.secretAccessor on each secret
+
+substitutions:
+  _REGION: asia-south1
+  _PROJECT: sports-ai-489110
+  _SERVICE: sports-backend
+  _IMAGE: asia-south1-docker.pkg.dev/sports-ai-489110/sports-backend/api
+  _GCS_BUCKET: sports-ai-storage
+  _FRONTEND_URL: https://sports-teal-two.vercel.app
+  _WORKER_URL: https://sports-backend-kh55fwhmvq-el.a.run.app
+  _WORKER_SA_EMAIL: 261249483566-compute@developer.gserviceaccount.com
+  _TASK_QUEUE: video-processing
+
+steps:
+  # Step 0: Authenticate Docker with Artifact Registry
+  - name: "gcr.io/cloud-builders/gcloud"
+    id: Auth
+    args:
+      - auth
+      - configure-docker
+      - $_REGION-docker.pkg.dev
+
+  # Step 1: Build the Docker image with two tags: one for this commit, one for "latest"
+  - name: "gcr.io/cloud-builders/docker"
+    id: Build
+    waitFor: [Auth]
+    args:
+      - build
+      - -t
+      - $_IMAGE:$COMMIT_SHA
+      - -t
+      - $_IMAGE:latest
+      - --cache-from
+      - $_IMAGE:latest       # layer-cache from previous build (best-effort)
+      - -f
+      - backend/Dockerfile
+      - backend/             # Docker build context
+
+  # Step 2: Push both tags to Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    id: Push
+    args:
+      - push
+      - --all-tags
+      - $_IMAGE
+    waitFor: [Build]
+
+  # Step 3: Deploy to Cloud Run  (asia-south1 = Mumbai)
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    id: Deploy
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - $_SERVICE
+      - --image=$_IMAGE:$COMMIT_SHA
+      - --region=$_REGION
+      - --platform=managed
+      - --allow-unauthenticated
+      # Resources
+      - --memory=4Gi
+      - --cpu=2
+      - --cpu-boost                                 # extra CPU during cold start
+      # Request handling
+      - --timeout=3600
+      - --concurrency=4
+      # Scaling
+      - --min-instances=0
+      - --max-instances=3
+      - --execution-environment=gen2
+      # Non-sensitive env vars — values come from trigger substitutions, not hardcoded here
+      - --set-env-vars=CLOUD_RUN=1,GCS_BUCKET_NAME=$_GCS_BUCKET,FRONTEND_URL=$_FRONTEND_URL,ALLOWED_ORIGINS=$_FRONTEND_URL,GEMINI_MODEL=gemini-2.5-flash,GCP_PROJECT=$_PROJECT,GCP_LOCATION=$_REGION,GCP_TASK_QUEUE=$_TASK_QUEUE,WORKER_SERVICE_URL=$_WORKER_URL,WORKER_SERVICE_ACCOUNT_EMAIL=$_WORKER_SA_EMAIL
+      # Sensitive vars pulled from Secret Manager
+      # Create secrets once: gcloud secrets create DATABASE_URL --data-file=- <<< "your-value"
+      - --update-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,GEMINI_API_KEY_1=GEMINI_API_KEY_1:latest
+    waitFor: [Push]
+
+# Store the image in the build artifact list
+images:
+  - $_IMAGE:$COMMIT_SHA
+  - $_IMAGE:latest
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8   # Faster builds — large Python deps take time

@@ -1,0 +1,189 @@
+{
+  "video_id": "GFj5cfzYoEQ",
+  "detection_method": "audio_energy",
+  "total_events": 30,
+  "timestamps": [
+    95.0,
+    165.0,
+    210.0,
+    295.0,
+    315.0,
+    355.0,
+    435.0,
+    525.0,
+    570.0,
+    580.0,
+    595.0,
+    670.0,
+    680.0,
+    735.0,
+    1045.0,
+    1125.0,
+    1185.0,
+    1290.0,
+    1340.0,
+    1360.0,
+    1375.0,
+    1385.0,
+    1425.0,
+    1455.0,
+    1475.0,
+    1490.0,
+    1525.0,
+    1570.0,
+    1600.0,
+    1625.0
+  ],
+  "events": [
+    {
+      "timestamp": 95.0,
+      "formatted_time": "1:35",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 165.0,
+      "formatted_time": "2:45",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 210.0,
+      "formatted_time": "3:30",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 295.0,
+      "formatted_time": "4:55",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 315.0,
+      "formatted_time": "5:15",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 355.0,
+      "formatted_time": "5:55",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 435.0,
+      "formatted_time": "7:15",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 525.0,
+      "formatted_time": "8:45",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 570.0,
+      "formatted_time": "9:30",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 580.0,
+      "formatted_time": "9:40",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 595.0,
+      "formatted_time": "9:55",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 670.0,
+      "formatted_time": "11:10",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 680.0,
+      "formatted_time": "11:20",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 735.0,
+      "formatted_time": "12:15",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1045.0,
+      "formatted_time": "17:25",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1125.0,
+      "formatted_time": "18:45",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1185.0,
+      "formatted_time": "19:45",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1290.0,
+      "formatted_time": "21:30",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1340.0,
+      "formatted_time": "22:20",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1360.0,
+      "formatted_time": "22:40",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1375.0,
+      "formatted_time": "22:55",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1385.0,
+      "formatted_time": "23:05",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1425.0,
+      "formatted_time": "23:45",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1455.0,
+      "formatted_time": "24:15",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1475.0,
+      "formatted_time": "24:35",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1490.0,
+      "formatted_time": "24:50",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1525.0,
+      "formatted_time": "25:25",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1570.0,
+      "formatted_time": "26:10",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1600.0,
+      "formatted_time": "26:40",
+      "type": "AUTO_DETECTED"
+    },
+    {
+      "timestamp": 1625.0,
+      "formatted_time": "27:05",
+      "type": "AUTO_DETECTED"
+    }
+  ]
+}

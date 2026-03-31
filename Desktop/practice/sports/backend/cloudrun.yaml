@@ -1,0 +1,85 @@
+# Deploy manually with:
+#   gcloud run services replace backend/cloudrun.yaml --region=asia-south1
+#
+# Or use cloudbuild.yaml (at repo root) for automated CI/CD
+
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: sports-backend
+  labels:
+    cloud.googleapis.com/location: asia-south1
+spec:
+  template:
+    metadata:
+      annotations:
+        # --- Autoscaling ---
+        autoscaling.knative.dev/minScale: "0"    # scale to zero when idle (cost saving)
+        autoscaling.knative.dev/maxScale: "3"    # cap at 3 instances
+
+        # --- Runtime ---
+        run.googleapis.com/execution-environment: gen2   # faster networking + NFS support
+        run.googleapis.com/cpu-throttling: "false"       # keep CPU hot during request (MediaPipe needs it)
+
+    spec:
+      containerConcurrency: 4          # max concurrent requests per instance
+      timeoutSeconds: 3600             # 60 min — video analysis can be slow
+
+      containers:
+        - image: asia-south1-docker.pkg.dev/sports-ai-489110/sports-backend/api:latest   
+
+          ports:
+            - containerPort: 8080
+
+          # ---- Non-sensitive env vars ----
+          env:
+            - name: CLOUD_RUN
+              value: "1"
+            - name: GCS_BUCKET_NAME
+              value: sports-ai-storage
+            - name: FRONTEND_URL
+              value: https://sports-teal-two.vercel.app
+            - name: ALLOWED_ORIGINS
+              value: https://sports-teal-two.vercel.app
+            - name: GEMINI_MODEL
+              value: gemini-2.5-flash
+            # Cloud Tasks
+            - name: GCP_PROJECT
+              value: sports-ai-489110
+            - name: GCP_LOCATION
+              value: asia-south1
+            - name: GCP_TASK_QUEUE
+              value: video-processing
+            - name: WORKER_SERVICE_URL
+              value: https://sports-backend-kh55fwhmvq-el.a.run.app
+            - name: WORKER_SERVICE_ACCOUNT_EMAIL
+              value: 261249483566-compute@developer.gserviceaccount.com
+
+            # ---- Sensitive vars from Secret Manager ----
+            # Create once: gcloud secrets create SECRET_NAME --data-file=-
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: DATABASE_URL
+                  key: latest
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: JWT_SECRET_KEY
+                  key: latest
+            - name: GEMINI_API_KEY_1
+              valueFrom:
+                secretKeyRef:
+                  name: GEMINI_API_KEY_1
+                  key: latest
+
+          # ---- Resources ----
+          resources:
+            limits:
+              memory: 4Gi
+              cpu: "2"
+
+  # Always route 100% traffic to the latest revision
+  traffic:
+    - percent: 100
+      latestRevision: true

@@ -1,0 +1,20 @@
+{
+  "score": {
+    "x": 140,
+    "y": 620,
+    "roi_width": 100,
+    "roi_height": 50
+  },
+  "overs": {
+    "roi_x": 140,
+    "roi_y": 670,
+    "roi_width": 60,
+    "roi_height": 30
+  },
+  "batsman_name": {
+    "x": 274,
+    "y": 620,
+    "width": 535,
+    "height": 40
+  }
+}
