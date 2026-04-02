@@ -32,8 +32,6 @@ import FeaturesDetailPage from './pages/FeaturesDetailPage';
 import StatsPage from './pages/PlayerStatsPage';
 import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
-import PlayerAchievements from './pages/PlayerAchievements';
-import PlayerStreaks from './pages/PlayerStreaks';
 import PlayerProfile from './pages/PlayerProfile';
 
 let authInitialized = false;
@@ -203,8 +201,6 @@ export default function AppRouter() {
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
             <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
-            <Route path="/player/achievements" element={<PlayerAchievements />} />
-            <Route path="/player/streaks" element={<PlayerStreaks />} />
             <Route path="/player/subscription" element={<SubscriptionPage />} />
           </Route>
         </Route>
