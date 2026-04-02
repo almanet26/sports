@@ -80,19 +80,53 @@ api.interceptors.response.use(
       });
     }
     
-    // Handle 401 Unauthorized
-    if (error.response?.status === 401) {
-      // Clear auth data
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      localStorage.removeItem('user_profile');
-      
-      // Redirect to login (only if not already on login page)
-      if (!window.location.pathname.includes('/login')) {
-        window.location.href = '/login?session_expired=true';
+    // Handle 401 Unauthorized — attempt token refresh before giving up
+    if (error.response?.status === 401 && originalRequest) {
+      const refreshToken = localStorage.getItem('refresh_token');
+
+      // Only attempt refresh if we have a refresh token and haven't already retried
+      if (refreshToken && !(originalRequest as InternalAxiosRequestConfig & { _retry?: boolean })._retry) {
+        (originalRequest as InternalAxiosRequestConfig & { _retry?: boolean })._retry = true;
+
+        try {
+          const refreshResponse = await axios.post(
+            `${API_BASE_URL}/api/v1/auth/refresh`,
+            { refresh_token: refreshToken },
+            { headers: { 'Content-Type': 'application/json' } },
+          );
+
+          const { access_token, refresh_token: newRefreshToken } = refreshResponse.data as {
+            access_token: string;
+            refresh_token: string;
+          };
+
+          localStorage.setItem('access_token', access_token);
+          if (newRefreshToken) localStorage.setItem('refresh_token', newRefreshToken);
+
+          // Retry the original request with the new token
+          if (originalRequest.headers) {
+            originalRequest.headers.Authorization = `Bearer ${access_token}`;
+          }
+          return api(originalRequest);
+        } catch {
+          // Refresh failed — clear auth and redirect
+          localStorage.removeItem('access_token');
+          localStorage.removeItem('refresh_token');
+          localStorage.removeItem('user_profile');
+          if (!window.location.pathname.includes('/login')) {
+            window.location.href = '/login?session_expired=true';
+          }
+        }
+      } else if (!refreshToken) {
+        // No refresh token at all — clear and redirect
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('user_profile');
+        if (!window.location.pathname.includes('/login')) {
+          window.location.href = '/login?session_expired=true';
+        }
       }
     }
-    
+
     return Promise.reject(error);
   }
 );

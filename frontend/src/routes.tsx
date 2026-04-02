@@ -32,16 +32,53 @@ import FeaturesDetailPage from './pages/FeaturesDetailPage';
 import StatsPage from './pages/PlayerStatsPage';
 import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
+import PlayerAchievements from './pages/PlayerAchievements';
+import PlayerStreaks from './pages/PlayerStreaks';
+import PlayerProfile from './pages/PlayerProfile';
 
-// Auth Initializer (runs once on module load) 
 let authInitialized = false;
+
+function readPersistedAuthState() {
+  const raw = localStorage.getItem("auth-storage");
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: {
+        token?: string | null;
+        refreshToken?: string | null;
+        isAuthenticated?: boolean;
+        user?: {
+          id?: string;
+          email?: string;
+          name?: string;
+          role?: string;
+          is_verified?: boolean;
+          created_at?: string;
+        } | null;
+      };
+    };
+    return parsed?.state ?? null;
+  } catch (error) {
+    console.error("[Auth] Failed to parse persisted auth-storage:", error);
+    return null;
+  }
+}
+
+function normalizeRole(role?: string | null): UserRole {
+  const normalized = role?.toUpperCase();
+  if (normalized === "ADMIN" || normalized === "COACH") {
+    return normalized;
+  }
+  return "PLAYER";
+}
 
 function initializeAuthOnce() {
   if (authInitialized) return;
   authInitialized = true;
 
-  const token = localStorage.getItem('access_token');
-  const userProfile = localStorage.getItem('user_profile');
+  const token = localStorage.getItem("access_token");
+  const userProfile = localStorage.getItem("user_profile");
+  const persisted = readPersistedAuthState();
 
   if (token && userProfile) {
     try {
@@ -49,35 +86,53 @@ function initializeAuthOnce() {
       useAuthStore.setState({
         token,
         isAuthenticated: true,
-        user,
+        user: { ...user, role: normalizeRole(user?.role) },
       });
-      console.log('[Auth] Initialized from localStorage:', { userRole: user?.role });
     } catch (e) {
       console.error('[Auth] Failed to parse user profile:', e);
       localStorage.removeItem('access_token');
       localStorage.removeItem('user_profile');
     }
+    return;
+  }
+
+  if (persisted?.token && persisted?.user) {
+    const restoredUser = {
+      id: persisted.user.id || "local-user",
+      email: persisted.user.email || "",
+      name: persisted.user.name || "",
+      role: normalizeRole(persisted.user.role),
+      is_verified: Boolean(persisted.user.is_verified),
+      created_at: persisted.user.created_at || new Date().toISOString(),
+    };
+
+    localStorage.setItem("access_token", persisted.token);
+    if (persisted.refreshToken) {
+      localStorage.setItem("refresh_token", persisted.refreshToken);
+    }
+    localStorage.setItem("user_profile", JSON.stringify(restoredUser));
+
+    useAuthStore.setState({
+      token: persisted.token,
+      refreshToken: persisted.refreshToken || null,
+      isAuthenticated: Boolean(persisted.isAuthenticated ?? true),
+      user: restoredUser,
+    });
   }
 }
 
-// Initialize immediately on module load
 initializeAuthOnce();
 
-// Protected Route - Requires authentication
 function ProtectedRoute() {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  
   const shouldRedirect = useMemo(() => !isAuthenticated, [isAuthenticated]);
-  
   if (shouldRedirect) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
   return <Outlet />;
 }
 
-// Role Guard - Restricts access based on user role
 interface RoleGuardProps {
   allowedRoles: UserRole[];
   fallbackPath?: string;
@@ -86,57 +141,35 @@ interface RoleGuardProps {
 function RoleGuard({ allowedRoles, fallbackPath = '/player' }: RoleGuardProps) {
   const user = useAuthStore((state) => state.user);
   const location = useLocation();
-
   if (!user) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-
   if (!allowedRoles.includes(user.role)) {
     return <Navigate to={fallbackPath} replace />;
   }
-
   return <Outlet />;
 }
 
-// Guest Route - Only accessible when NOT authenticated
 function GuestRoute() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const user = useAuthStore((state) => state.user);
-
   if (isAuthenticated && user) {
-    const targetPath =
-      user.role === 'ADMIN'
-        ? '/admin'
-        : user.role === 'COACH'
-          ? '/coach'
-          : '/player';
-
+    const targetPath = user.role === 'ADMIN' ? '/admin' : user.role === 'COACH' ? '/coach' : '/player';
     return <Navigate to={targetPath} replace />;
   }
-
   return <Outlet />;
 }
 
-// Dashboard Redirect - Routes to role-specific dashboard
 function DashboardRedirect() {
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-
   if (!isAuthenticated || !user) {
     return <Navigate to="/login" replace />;
   }
-
-  const targetPath =
-    user.role === 'ADMIN'
-      ? '/admin'
-      : user.role === 'COACH'
-        ? '/coach'
-        : '/player';
-
+  const targetPath = user.role === 'ADMIN' ? '/admin' : user.role === 'COACH' ? '/coach' : '/player';
   return <Navigate to={targetPath} replace />;
 }
 
-// App Router
 export default function AppRouter() {
   return (
     <BrowserRouter>
@@ -166,10 +199,12 @@ export default function AppRouter() {
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/player" element={<PlayerDashboard />} />
-            <Route path="/player/:id" element={<PlayerPerformance />} />
+            <Route path="/player/profile" element={<PlayerProfile />} />
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
             <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
+            <Route path="/player/achievements" element={<PlayerAchievements />} />
+            <Route path="/player/streaks" element={<PlayerStreaks />} />
             <Route path="/player/subscription" element={<SubscriptionPage />} />
           </Route>
         </Route>
@@ -198,11 +233,10 @@ export default function AppRouter() {
             </Route>
           </Route>
         </Route>
-        
 
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
-        <Route path="/profile" element={<Navigate to="/settings" replace />} />
+        <Route path="/profile" element={<Navigate to="/player/profile" replace />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

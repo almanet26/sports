@@ -5,7 +5,42 @@ Application configuration management.
 import os
 from pathlib import Path
 from typing import List
-from pydantic_settings import BaseSettings
+
+try:
+    from pydantic_settings import BaseSettings
+except Exception:  # pragma: no cover - local fallback when optional dep is missing
+    from pydantic import BaseModel
+
+    class BaseSettings(BaseModel):
+        @staticmethod
+        def _coerce_value(field_info, raw_value):
+            annotation = field_info.annotation
+            try:
+                if annotation is bool:
+                    lowered = str(raw_value).strip().lower()
+                    if lowered in {"1", "true", "yes", "on"}:
+                        return True
+                    if lowered in {"0", "false", "no", "off"}:
+                        return False
+                    return field_info.default
+                if annotation is int:
+                    return int(raw_value)
+                if annotation is float:
+                    return float(raw_value)
+            except Exception:
+                return field_info.default
+            return raw_value
+
+        def __init__(self, **data):
+            values = {}
+            for field_name, field_info in self.__class__.model_fields.items():
+                env_value = os.getenv(field_name)
+                if env_value is not None:
+                    values[field_name] = self._coerce_value(field_info, env_value)
+                elif field_info.default is not None:
+                    values[field_name] = field_info.default
+            values.update(data)
+            super().__init__(**values)
 
 
 class Settings(BaseSettings):

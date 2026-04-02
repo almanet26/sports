@@ -1,11 +1,20 @@
 """
-Authentication Schemas for Request/Response validation
+Authentication Schemas for Request/Response validation.
+
+Falls back to plain string emails when the optional `email-validator`
+package is not installed so local development can still boot cleanly.
 """
 
-from pydantic import BaseModel, EmailStr, field_validator, ConfigDict
+from pydantic import BaseModel, field_validator, ConfigDict
 from typing import Optional
 from datetime import datetime
 import uuid
+
+try:
+    import email_validator  # noqa: F401
+    from pydantic import EmailStr
+except Exception:  # pragma: no cover - local fallback
+    EmailStr = str  # type: ignore[misc,assignment]
 
 
 # Registration Schemas

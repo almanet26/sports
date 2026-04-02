@@ -21,6 +21,23 @@ interface UserProfile {
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
+function readPersistedAuthStorage() {
+  const raw = localStorage.getItem("auth-storage");
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      state?: {
+        token?: string | null;
+        refreshToken?: string | null;
+      };
+    };
+    return parsed?.state ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export const authService = {
   // Store authentication tokens
   setTokens(accessToken: string, refreshToken: string) {
@@ -30,12 +47,30 @@ export const authService = {
 
   // Get access token
   getAccessToken(): string | null {
-    return localStorage.getItem("access_token");
+    const directToken = localStorage.getItem("access_token");
+    if (directToken) return directToken;
+
+    const persisted = readPersistedAuthStorage();
+    if (persisted?.token) {
+      localStorage.setItem("access_token", persisted.token);
+      return persisted.token;
+    }
+
+    return null;
   },
 
   // Get refresh token
   getRefreshToken(): string | null {
-    return localStorage.getItem("refresh_token");
+    const directToken = localStorage.getItem("refresh_token");
+    if (directToken) return directToken;
+
+    const persisted = readPersistedAuthStorage();
+    if (persisted?.refreshToken) {
+      localStorage.setItem("refresh_token", persisted.refreshToken);
+      return persisted.refreshToken;
+    }
+
+    return null;
   },
 
   // Store user profile
