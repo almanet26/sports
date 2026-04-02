@@ -664,7 +664,7 @@ export default function PlayerProfile() {
       await uploadPlayerVideo(selectedFile);
       await Promise.all([
         loadUploadedVideos(),
-        getPlayerProfile().then((data) => {
+        getPlayerProfile().then((data: PlayerProfileEnvelope | null) => {
           if (data) applyApiResponse(data);
         }),
       ]);
@@ -684,7 +684,7 @@ export default function PlayerProfile() {
       await deletePlayerVideo(videoId);
       await Promise.all([
         loadUploadedVideos(),
-        getPlayerProfile().then((data) => {
+        getPlayerProfile().then((data: PlayerProfileEnvelope | null) => {
           if (data) applyApiResponse(data);
         }),
       ]);
