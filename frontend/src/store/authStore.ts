@@ -54,6 +54,38 @@ interface AuthState {
   canUpload: () => boolean;
 }
 
+function clearStoredAuth() {
+  if (typeof window === 'undefined') return;
+  localStorage.removeItem('access_token');
+  localStorage.removeItem('refresh_token');
+  localStorage.removeItem('user_profile');
+}
+
+function normalizeUser(user: unknown): User | null {
+  if (!user || typeof user !== 'object') return null;
+
+  const source = user as Partial<User> & { full_name?: string; role?: string };
+  const role = typeof source.role === 'string' ? source.role.toUpperCase() : '';
+
+  if (role !== 'PLAYER' && role !== 'COACH' && role !== 'ADMIN') {
+    return null;
+  }
+
+  return {
+    id: String(source.id ?? ''),
+    email: String(source.email ?? ''),
+    name: String(source.name ?? source.full_name ?? ''),
+    role,
+    phone: source.phone,
+    team: source.team,
+    profile_bio: source.profile_bio,
+    jersey_number: source.jersey_number,
+    is_verified: Boolean(source.is_verified),
+    created_at: String(source.created_at ?? ''),
+    last_login: source.last_login,
+  };
+}
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
@@ -80,14 +112,14 @@ export const useAuthStore = create<AuthState>()(
             localStorage.setItem('refresh_token', refresh_token);
           }
           
-          const userData = user ? {
-            id: user.id,
-            email: user.email,
-            name: user.full_name || user.name,
-            role: user.role,
-            is_verified: true,
-            created_at: new Date().toISOString(),
-          } : null;
+          const userData = normalizeUser(
+            user ? {
+              ...user,
+              name: user.full_name || user.name,
+              created_at: new Date().toISOString(),
+              is_verified: true,
+            } : null,
+          );
           
           // Store user profile in localStorage
           if (userData) {
@@ -140,9 +172,7 @@ export const useAuthStore = create<AuthState>()(
           // Ignore logout errors
         } finally {
           // Clear all auth data
-          localStorage.removeItem('access_token');
-          localStorage.removeItem('refresh_token');
-          localStorage.removeItem('user_profile');
+          clearStoredAuth();
           
           set({
             user: null,
@@ -158,7 +188,10 @@ export const useAuthStore = create<AuthState>()(
       fetchProfile: async () => {
         try {
           const response = await authApi.getProfile();
-          const user = response.data as User;
+          const user = normalizeUser(response.data);
+          if (!user) {
+            throw new Error('Invalid user profile response');
+          }
           
           // Also store in localStorage for backward compatibility
           localStorage.setItem('user_profile', JSON.stringify(user));

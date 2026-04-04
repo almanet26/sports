@@ -221,10 +221,13 @@ export default function PlayerProfile() {
 
   const applyApiProfile = useCallback(
     (envelope: PlayerProfileEnvelope) => {
-      const merged = apiToState(envelope.profile, buildInitial(user));
-      saveLocal(user, merged);
-      setProfile(merged);
-      setDraft(merged);
+      // Preserve non-API fields (snapshot, activity) from current profile state
+      setProfile((current) => {
+        const merged = apiToState(envelope.profile, current);
+        saveLocal(user, merged);
+        return merged;
+      });
+      setDraft((current) => apiToState(envelope.profile, current));
     },
     [user],
   );
@@ -450,6 +453,66 @@ export default function PlayerProfile() {
           ))}
         </section>
 
+        {/* Personal Info + Playing Style */}
+        <section className="grid gap-6 xl:grid-cols-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-[30px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl"
+          >
+            <h2 className="text-lg font-semibold text-white mb-5">Personal Information</h2>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {[
+                { label: "Full Name", value: profile.fullName },
+                { label: "Age", value: profile.age },
+                { label: "Gender", value: profile.gender },
+                { label: "City / State", value: [profile.city, profile.state].filter(Boolean).join(", ") },
+                { label: "Country", value: profile.country },
+                { label: "Education", value: profile.educationType },
+                { label: "Institution", value: profile.institutionName },
+                { label: "Cricket Club", value: profile.hasCricketClub === null ? "" : profile.hasCricketClub ? profile.cricketClubName || "Yes" : "No" },
+                { label: "Cricket Role", value: profile.cricketRole },
+                { label: "Experience", value: profile.experienceLevel },
+              ].map((item) => (
+                <div key={item.label} className="rounded-[18px] border border-white/10 bg-slate-950/70 p-3">
+                  <p className="text-xs uppercase tracking-widest text-slate-500">{item.label}</p>
+                  <p className={`mt-2 text-sm font-medium ${item.value ? "text-white" : "text-slate-500"}`}>
+                    {item.value || "Not added"}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+            className="rounded-[30px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl"
+          >
+            <h2 className="text-lg font-semibold text-white mb-5">Playing Style</h2>
+            <div className="flex flex-wrap gap-3 mb-6">
+              {[
+                { label: "Batting Hand", value: profile.battingHand },
+                { label: "Bowling Arm", value: profile.bowlingArm },
+                { label: "Bowling Type", value: profile.bowlingType },
+                { label: "Format", value: profile.preferredFormat },
+              ].map((item, i) => (
+                <span key={item.label} className={`rounded-full border px-4 py-2 text-sm ${
+                  i % 3 === 0 ? "border-blue-400/20 bg-blue-400/10 text-blue-200"
+                  : i % 3 === 1 ? "border-violet-400/20 bg-violet-400/10 text-violet-200"
+                  : "border-amber-400/20 bg-amber-400/10 text-amber-200"
+                }`}>
+                  {item.label}: <span className={item.value ? "" : "opacity-50"}>{item.value || "Not set"}</span>
+                </span>
+              ))}
+            </div>
+            <div className="rounded-[22px] border border-white/10 bg-slate-950/70 p-4">
+              <p className="text-xs text-slate-400 mb-2">Bio</p>
+              <p className={`text-sm leading-6 ${profile.bio ? "text-slate-200" : "text-slate-500"}`}>
+                {profile.bio || "Add a short bio to describe your cricket style, strengths, and goals."}
+              </p>
+            </div>
+          </motion.div>
+        </section>
+
         {/* Video grid */}
         <VideoGrid
           videos={videos}
@@ -459,6 +522,79 @@ export default function PlayerProfile() {
           onDelete={handleDelete}
           onError={(msg) => setToast({ msg, type: "error" })}
         />
+
+        {/* Recent Activity + Profile Status */}
+        <section className="grid gap-6 xl:grid-cols-2">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+            className="rounded-[30px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl"
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500">
+                <span className="text-white text-lg">⚡</span>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Recent Activity</p>
+                <h2 className="text-xl font-semibold text-white">Recent Activity</h2>
+              </div>
+            </div>
+            <div className="space-y-3">
+              {profile.recentActivity.length > 0 ? (
+                profile.recentActivity.map((item, index) => (
+                  <div key={`${item}-${index}`} className="flex items-start gap-4 rounded-[20px] border border-white/10 bg-slate-950/70 p-4">
+                    <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-blue-500">
+                      <span className="text-white text-sm">↯</span>
+                    </div>
+                    <div>
+                      <p className="font-medium text-white">{item}</p>
+                      <p className="mt-1 text-sm text-slate-400">Player activity updates appear here as you use PitchVision.</p>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] p-5 text-sm text-slate-400">
+                  Your recent activity will appear here once you start uploading videos and building streaks.
+                </div>
+              )}
+            </div>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.06 }}
+            className="rounded-[30px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl"
+          >
+            <div className="flex items-center gap-3 mb-6">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500">
+                <span className="text-white text-lg">✦</span>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Profile Status</p>
+                <h2 className="text-xl font-semibold text-white">Profile Status</h2>
+              </div>
+            </div>
+            <div className="space-y-4">
+              <div className="rounded-[22px] border border-white/10 bg-slate-950/70 p-5">
+                <p className="text-sm text-slate-400">Identity strength</p>
+                <p className="mt-2 text-3xl font-semibold text-white">{completion.completionPercentage}%</p>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  {completion.profileCompleted
+                    ? "Your profile is ready to represent your player identity across PitchVision."
+                    : "Finish the missing fields to unlock a stronger athlete presence and better personalization."}
+                </p>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[22px] border border-white/10 bg-slate-950/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Verification</p>
+                  <p className="mt-3 text-lg font-semibold text-white">{profile.verified ? "Verified" : "Pending"}</p>
+                </div>
+                <div className="rounded-[22px] border border-white/10 bg-slate-950/70 p-4">
+                  <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Missing Fields</p>
+                  <p className="mt-3 text-lg font-semibold text-white">{completion.missingFields.length}</p>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </section>
 
         {/* Edit modal */}
         <ProfileForm

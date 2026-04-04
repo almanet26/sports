@@ -228,12 +228,15 @@ def db_health_check():
         return {"status": "error", "database": "disconnected", "detail": str(e)}
 
 
-# Include API Routers 
+# Include API Routers
 from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches, players
 from api.routes import plan, subscription
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
+
+# Player profile routes
+app.include_router(players.router, prefix="/api/v1", tags=["player-profile"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])

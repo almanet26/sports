@@ -28,26 +28,26 @@ export const api = axios.create({
 api.interceptors.request.use(
   (config: InternalAxiosRequestConfig) => {
     const token = localStorage.getItem('access_token');
-    
+
     // Public routes that don't need authentication
     const publicRoutes = ['/auth/login', '/auth/register', '/health'];
     const isPublicRoute = publicRoutes.some(route => config.url?.includes(route));
-    
+
     // Only attach token if available AND not a public route
     if (token && config.headers && !isPublicRoute) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    
+
     // Only warn about missing token for protected routes
     if (!token && !isPublicRoute) {
       console.warn(`⚠️ [API] No token found for ${config.method?.toUpperCase()} ${config.url}`);
     }
-    
+
     // Log requests in development
     if (import.meta.env.DEV) {
       console.log(`🚀 [API] ${config.method?.toUpperCase()} ${config.url} ${token && !isPublicRoute ? '(with token)' : isPublicRoute ? '(public)' : '(NO TOKEN)'}`);
     }
-    
+
     return config;
   },
   (error) => {
@@ -66,7 +66,7 @@ api.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const originalRequest = error.config;
-    
+
     // Log errors in development
     if (import.meta.env.DEV) {
       const url = originalRequest?.url || 'unknown';
@@ -79,7 +79,7 @@ api.interceptors.response.use(
         code: error.code,
       });
     }
-    
+
     // Handle 401 Unauthorized — attempt token refresh before giving up
     if (error.response?.status === 401 && originalRequest) {
       const refreshToken = localStorage.getItem('refresh_token');
@@ -109,21 +109,22 @@ api.interceptors.response.use(
           }
           return api(originalRequest);
         } catch {
-          // Refresh failed — clear auth and redirect
+          // Refresh failed — clear auth tokens
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user_profile');
-          if (!window.location.pathname.includes('/login')) {
-            window.location.href = '/login?session_expired=true';
-          }
+
+          // Don't do hard redirect - let the component handle via React routing
+          // This event allows listeners to react to auth expiration
+          window.dispatchEvent(new CustomEvent('auth:session-expired'));
         }
       } else if (!refreshToken) {
-        // No refresh token at all — clear and redirect
+        // No refresh token — clear auth tokens
         localStorage.removeItem('access_token');
         localStorage.removeItem('user_profile');
-        if (!window.location.pathname.includes('/login')) {
-          window.location.href = '/login?session_expired=true';
-        }
+
+        // Emit custom event for listeners
+        window.dispatchEvent(new CustomEvent('auth:session-expired'));
       }
     }
 
@@ -135,9 +136,9 @@ api.interceptors.response.use(
 
 // Auth endpoints
 export const authApi = {
-  login: (email: string, password: string) => 
+  login: (email: string, password: string) =>
     api.post('/auth/login', { email, password }),
-  
+
   register: (data: {
     name: string;
     email: string;
@@ -146,11 +147,11 @@ export const authApi = {
     phone?: string;
     team?: string;
   }) => api.post('/auth/register', data),
-  
+
   logout: () => api.post('/auth/logout'),
-  
+
   getProfile: () => api.get('/auth/me'),
-  
+
   updateProfile: (data: Partial<{
     name: string;
     phone: string;
@@ -162,36 +163,36 @@ export const authApi = {
 // Video endpoints
 export const videosApi = {
   // Admin only: list ALL videos
-  listAll: (params?: { 
-    page?: number; 
-    per_page?: number; 
+  listAll: (params?: {
+    page?: number;
+    per_page?: number;
     visibility?: 'PUBLIC' | 'PRIVATE';
   }) => api.get('/videos/all', { params }),
-  
+
   // Public library with search
-  listPublic: (params?: { 
-    page?: number; 
-    per_page?: number; 
+  listPublic: (params?: {
+    page?: number;
+    per_page?: number;
     search?: string;
     event_type?: 'FOUR' | 'SIX' | 'WICKET';
   }) => api.get('/videos/public', { params }),
-  
+
   // Private dashboard (Premium)
-  listPrivate: (page = 1, perPage = 20) => 
+  listPrivate: (page = 1, perPage = 20) =>
     api.get('/videos/private', { params: { page, per_page: perPage } }),
 
   // Current user's uploads (all visibilities)
   listMine: (page = 1, perPage = 20) =>
     api.get('/videos/mine', { params: { page, per_page: perPage } }),
-  
+
   // Get video details by ID
-  getById: (videoId: string) => 
+  getById: (videoId: string) =>
     api.get(`/videos/${videoId}`),
-  
+
   // Get video events with optional filter
-  getEvents: (videoId: string, eventType?: 'FOUR' | 'SIX' | 'WICKET') => 
+  getEvents: (videoId: string, eventType?: 'FOUR' | 'SIX' | 'WICKET') =>
     api.get(`/videos/${videoId}/events`, { params: { event_type: eventType } }),
-  
+
   // Upload video (multipart form data)
   upload: (formData: FormData, onProgress?: (progress: number) => void) => {
     const token = localStorage.getItem('access_token');
@@ -209,7 +210,7 @@ export const videosApi = {
       },
     });
   },
-  
+
   // Upload video from YouTube URL
   uploadYouTube: (data: {
     url: string;
@@ -232,7 +233,7 @@ export const videosApi = {
     if (typeof data.transient === 'boolean') {
       formData.append('transient', String(data.transient));
     }
-    
+
     const token = localStorage.getItem('access_token');
 
     return api.post('/videos/upload/youtube', formData, {
@@ -249,48 +250,48 @@ export const videosApi = {
       timeout: 0,
     });
   },
-  
+
   // Publish private video to public
-  publish: (videoId: string) => 
+  publish: (videoId: string) =>
     api.post(`/videos/${videoId}/publish`),
-  
+
   // Delete video
-  delete: (videoId: string) => 
+  delete: (videoId: string) =>
     api.delete(`/videos/${videoId}`),
-  
+
   // Get video stream URL (for original video)
-  getStreamUrl: (videoId: string) => 
+  getStreamUrl: (videoId: string) =>
     `${API_BASE_URL}/api/v1/videos/${videoId}/stream`,
-  
+
   // Get supercut stream URL (for highlight reel)
-  getSupercutUrl: (videoId: string) => 
+  getSupercutUrl: (videoId: string) =>
     `${API_BASE_URL}/api/v1/videos/${videoId}/supercut`,
 };
 
 // Jobs endpoints (OCR processing)
 export const jobsApi = {
   // Trigger OCR processing
-  trigger: (videoId: string, config?: Record<string, unknown>) => 
+  trigger: (videoId: string, config?: Record<string, unknown>) =>
     api.post('/jobs/trigger', { video_id: videoId, config }),
-  
+
   // Get job status (lightweight polling - no auth required)
-  getStatus: (videoId: string) => 
+  getStatus: (videoId: string) =>
     api.get(`/jobs/${videoId}/status/poll`),
-  
+
   // Get full job status (requires auth)
-  getFullStatus: (videoId: string) => 
+  getFullStatus: (videoId: string) =>
     api.get(`/jobs/${videoId}/status`),
-  
+
   // Get job results
-  getResult: (videoId: string) => 
+  getResult: (videoId: string) =>
     api.get(`/jobs/${videoId}/result`),
-  
+
   // Retry failed job
-  retry: (videoId: string) => 
+  retry: (videoId: string) =>
     api.post(`/jobs/${videoId}/retry`),
-  
+
   // Admin: list pending jobs
-  listPending: () => 
+  listPending: () =>
     api.get('/jobs/pending'),
 };
 
@@ -302,39 +303,39 @@ export const requestsApi = {
     match_title?: string;
     match_description?: string;
   }) => api.post('/requests/', data),
-  
+
   // List all requests
-  list: (page = 1, perPage = 20, status?: string) => 
+  list: (page = 1, perPage = 20, status?: string) =>
     api.get('/requests/', { params: { page, per_page: perPage, status_filter: status } }),
-  
+
   // Vote up/down for request
-  vote: (requestId: string, voteType: 'up' | 'down') => 
+  vote: (requestId: string, voteType: 'up' | 'down') =>
     api.post(`/requests/${requestId}/vote`, { vote_type: voteType }),
-  
+
   // Remove vote
-  removeVote: (requestId: string) => 
+  removeVote: (requestId: string) =>
     api.delete(`/requests/${requestId}/vote`),
-  
+
   // Admin: get dashboard
-  adminDashboard: (page = 1, perPage = 50) => 
+  adminDashboard: (page = 1, perPage = 50) =>
     api.get('/requests/admin/dashboard', { params: { page, per_page: perPage } }),
-  
+
   // Admin: approve request
-  approve: (requestId: string) => 
-    api.patch(`/requests/${requestId}/status`, null, { 
-      params: { new_status: 'approved' } 
+  approve: (requestId: string) =>
+    api.patch(`/requests/${requestId}/status`, null, {
+      params: { new_status: 'approved' }
     }),
-  
+
   // Admin: reject request
-  reject: (requestId: string) => 
-    api.patch(`/requests/${requestId}/status`, null, { 
-      params: { new_status: 'rejected' } 
+  reject: (requestId: string) =>
+    api.patch(`/requests/${requestId}/status`, null, {
+      params: { new_status: 'rejected' }
     }),
-  
+
   // Admin: update status (general)
-  updateStatus: (requestId: string, status: string, videoId?: string) => 
-    api.patch(`/requests/${requestId}/status`, null, { 
-      params: { new_status: status, fulfilled_video_id: videoId } 
+  updateStatus: (requestId: string, status: string, videoId?: string) =>
+    api.patch(`/requests/${requestId}/status`, null, {
+      params: { new_status: status, fulfilled_video_id: videoId }
     }),
 };
 

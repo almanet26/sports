@@ -1,5 +1,4 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useNavigate } from "react-router-dom";
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -38,8 +37,7 @@ interface UserRequest {
   created_at: string;
 }
 
-export default function PlayerDashboard(){
-  const navigate = useNavigate();
+export default function PlayerDashboard() {
   const { user } = useAuthStore();
   const [recentVideos, setRecentVideos] = useState<VideoSummary[]>([]);
   const [myRequests, setMyRequests] = useState<UserRequest[]>([]);
@@ -164,15 +162,16 @@ export default function PlayerDashboard(){
               <i className="fas fa-video"></i>
               Library
             </Link>
-            <button
-              onClick={() => navigate("/profile")}
+            <Link
+              to="/player/profile"
+              onMouseDown={() => window.location.assign("/player/profile")}
               className="px-4 py-2 rounded-xl glass border border-white/20
              hover:bg-white/10 transition-all duration-300 text-sm
              flex items-center gap-2"
             >
               <i className="fas fa-user-edit"></i>
               Profile
-            </button>
+            </Link>
           </div>
         </div>
       </motion.div >
