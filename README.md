@@ -1,4 +1,4 @@
-# Cricket Analytics & Highlight Platform
+# Cricket Analytics & Highlight Platform 
 
 A full-stack cloud-native web application that analyzes cricket videos, detects highlight events (4s, 6s, wickets) using OCR, and provides advanced AI-driven player biomechanics analysis (batting and bowling).
 
