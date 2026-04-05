@@ -7,6 +7,7 @@ import uuid
 import os
 import base64
 import re
+import tempfile
 from pathlib import Path
 from typing import Dict, Optional
 import yt_dlp
@@ -75,18 +76,32 @@ def download_youtube_video(
     
     output_dir.mkdir(parents=True, exist_ok=True)
     
-    # Check for cookies in environment (for Render production)
-    cookie_file_path = None
-    cookies_b64 = os.getenv('YOUTUBE_COOKIES_B64')
-    if cookies_b64:
-        try:
-            cookie_file_path = Path('/tmp/youtube_cookies.txt')
-            cookie_data = base64.b64decode(cookies_b64)
-            cookie_file_path.write_bytes(cookie_data)
-            logger.info("✅ Loaded YouTube cookies from YOUTUBE_COOKIES_B64 environment variable")
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to decode YOUTUBE_COOKIES_B64: {e}")
-            cookie_file_path = None
+    # Resolve optional YouTube cookie source for bot-protected videos.
+    cookie_file_path: Optional[Path] = None
+    cleanup_cookie_file = False
+
+    cookies_file = os.getenv('YOUTUBE_COOKIES_FILE', '').strip()
+    if cookies_file:
+        candidate = Path(cookies_file).expanduser()
+        if candidate.exists() and candidate.is_file():
+            cookie_file_path = candidate
+            logger.info("Loaded YouTube cookies from YOUTUBE_COOKIES_FILE")
+        else:
+            logger.warning("YOUTUBE_COOKIES_FILE is set but file was not found: %s", candidate)
+
+    if cookie_file_path is None:
+        cookies_b64 = os.getenv('YOUTUBE_COOKIES_B64', '').strip()
+        if cookies_b64:
+            try:
+                temp_dir = Path(tempfile.gettempdir())
+                cookie_file_path = temp_dir / 'youtube_cookies.txt'
+                cookie_data = base64.b64decode(cookies_b64)
+                cookie_file_path.write_bytes(cookie_data)
+                cleanup_cookie_file = True
+                logger.info("Loaded YouTube cookies from YOUTUBE_COOKIES_B64")
+            except Exception as e:
+                logger.warning("Failed to decode YOUTUBE_COOKIES_B64: %s", e)
+                cookie_file_path = None
     
     # Base yt-dlp configuration (NO cookies here - added per-attempt)
     base_ydl_opts = {
@@ -254,6 +269,12 @@ def download_youtube_video(
     except Exception as e:
         logger.error(f"YouTube download failed: {e}")
         raise Exception(f"Unexpected error during download: {str(e)}")
+    finally:
+        if cleanup_cookie_file and cookie_file_path is not None:
+            try:
+                cookie_file_path.unlink(missing_ok=True)
+            except Exception as cleanup_err:
+                logger.debug("Failed to cleanup temporary YouTube cookies file: %s", cleanup_err)
 
 
 def validate_youtube_url(url: str) -> bool:
