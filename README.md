@@ -12,7 +12,7 @@ A full-stack cloud-native web application that analyzes cricket videos, detects 
 - ✂️ **Supercut Generation** - Automatically create highlight reels from detected events via zero-copy `FFmpeg`.
 - 🤖 **Player Biomechanics Analysis** - MediaPipe Pose Landmarker integration for batting stances and bowling action.
 - 👨‍🏫 **Coach Portal** - Dedicated UI for coaches to review student submissions frame-by-frame.
-
+ 
 ---
 
 ## 📁 GitHub Repository Details (Structure)
