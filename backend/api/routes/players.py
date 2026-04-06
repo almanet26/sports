@@ -260,7 +260,16 @@ async def upload_player_video(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    _require_player(current_user)
+    try:
+        _require_player(current_user)
+    except HTTPException as exc:
+        # Re-raise with more context
+        if exc.status_code == status.HTTP_403_FORBIDDEN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access denied. This endpoint requires PLAYER role. Your role: {current_user.role}"
+            )
+        raise
 
     if not video.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Video filename is required.")

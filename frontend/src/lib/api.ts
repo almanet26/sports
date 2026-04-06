@@ -19,9 +19,7 @@ export function resolveMediaUrl(path: string | null | undefined): string {
 export const api = axios.create({
   baseURL: `${API_BASE_URL}/api/v1`,
   timeout: 300000, // 5 min default, overridden per-endpoint for long operations
-  headers: {
-    'Content-Type': 'application/json',
-  },
+  headers: {},
 });
 
 // Request interceptor - attach JWT token
@@ -157,6 +155,10 @@ export const authApi = {
     phone: string;
     team: string;
     profile_bio: string;
+    gender: string;
+    certifications: Array<{ name: string; issuer: string; year: string }>;
+    specialization: string[];
+    coach_category: string;
   }>) => api.put('/auth/me', data),
 };
 
@@ -238,7 +240,6 @@ export const videosApi = {
 
     return api.post('/videos/upload/youtube', formData, {
       headers: {
-        'Content-Type': 'multipart/form-data',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
       onUploadProgress: (progressEvent) => {
@@ -260,8 +261,10 @@ export const videosApi = {
     api.delete(`/videos/${videoId}`),
 
   // Get video stream URL (for original video)
-  getStreamUrl: (videoId: string) =>
-    `${API_BASE_URL}/api/v1/videos/${videoId}/stream`,
+  getStreamUrl: (videoId: string, token?: string) => {
+    const url = `${API_BASE_URL}/api/v1/videos/${videoId}/stream`;
+    return token ? `${url}?token=${encodeURIComponent(token)}` : url;
+  },
 
   // Get supercut stream URL (for highlight reel)
   getSupercutUrl: (videoId: string) =>
@@ -621,6 +624,24 @@ export const subscriptionApi = {
   getUserSubscription: (userId: string) =>
     api.get(`/subscriptions/user/${userId}`)
 
+};
+
+// Admin API
+export const adminApi = {
+  // Get admin stats
+  getStats: () => api.get('/admin/stats'),
+
+  // Get pending coach verifications
+  getPendingCoaches: (limit = 5) =>
+    api.get('/admin/coaches/pending', { params: { limit } }),
+
+  // Verify coach (approve/reject)
+  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
+    api.patch(`/admin/coaches/${coachId}/verify`, null, { params: { action } }),
+
+  // Get activity feed
+  getActivityFeed: (limit = 20) =>
+    api.get('/admin/activity', { params: { limit } }),
 };
 
 export default api;

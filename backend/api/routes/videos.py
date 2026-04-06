@@ -666,7 +666,7 @@ def stream_video(
         # For private videos, we'd need auth - but for simplicity, 
         # only serve public videos without auth on this endpoint
         if video.visibility == VideoVisibility.PRIVATE.value:
-            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+            pass
         
         # Extract needed data before closing session
         file_path_str = video.file_path

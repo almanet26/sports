@@ -34,11 +34,7 @@ export async function uploadPlayerVideo(file: File) {
   const formData = new FormData();
   formData.append("video", file);
 
-  const response = await api.post("/player/videos/upload", formData, {
-    headers: {
-      "Content-Type": "multipart/form-data",
-    },
-  });
+  const response = await api.post("/player/videos/upload", formData);
 
   return response.data as PlayerVideoUploadEnvelope;
 }
