@@ -13,9 +13,11 @@ from database.models.session import UserSession
 from database.config import get_db
 from sqlalchemy.orm import Session
 import os
+from jwt.exceptions import PyJWTError
 
 # JWT Configuration
-SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY") or os.getenv(
+    "SECRET_KEY", "your-secret-key-change-in-production")
 ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(
     os.getenv(
@@ -62,8 +64,9 @@ def verify_access_token(token: str) -> dict:
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.JWTError:
-        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    except PyJWTError:
+        raise HTTPException(
+            status_code=401, detail="Could not validate credentials")
 
 
 def get_current_user(
@@ -99,15 +102,21 @@ def get_current_user(
                     pass
             continue
 
-    raise HTTPException(status_code=503, detail="Database unavailable. Please try again.")
+    # All retries failed
+    raise HTTPException(
+        status_code=503,
+        detail="Database temporarily unavailable. Please try again."
+    )
 
 
 def get_optional_user(
-    credentials: Optional[HTTPAuthorizationCredentials] = Security(optional_security),
+    credentials: Optional[HTTPAuthorizationCredentials] = Security(
+        optional_security),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
     if credentials is None:
         return None
+
     try:
         token = credentials.credentials
         payload = verify_access_token(token)

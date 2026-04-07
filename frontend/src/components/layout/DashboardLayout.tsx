@@ -42,6 +42,7 @@ const dashboardItems: Record<string, NavItem[]> = {
   ADMIN: [
     { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
     { to: "/admin/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
+    { to: "/admin/users", icon: "fas fa-users", label: "User Management" },
     { to: "/admin/coaches", icon: "fas fa-user-check", label: "Coach Approvals" },
     { to: "/admin/plans", icon: "fas fa-tags", label: "Plans" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
@@ -358,7 +359,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
                 {/* Theme Toggle */}
                 <div className="p-4 border-t border-white/10">
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={toggleTheme}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${theme === 'dark'
                       ? 'text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10'
@@ -370,12 +373,14 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                       <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-sm`}></i>
                     </div>
                     <span className="font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-                  </button>
+                  </motion.button>
                 </div>
 
                 {/* Logout */}
                 <div className="p-4 border-t border-white/10">
-                  <button
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
                     onClick={handleLogout}
                     className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300"
                   >
@@ -383,7 +388,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                       <i className="fas fa-sign-out-alt text-sm"></i>
                     </div>
                     <span className="font-medium">Log out</span>
-                  </button>
+                  </motion.button>
                 </div>
               </div>
             </motion.aside>

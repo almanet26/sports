@@ -510,9 +510,6 @@ def create_resumable_session(
     if analysis_type not in ("FULL_MATCH", "BATTING", "BOWLING"):
         raise HTTPException(status_code=400, detail="analysis_type must be FULL_MATCH, BATTING or BOWLING")
 
-    if not GCS_AVAILABLE:
-        raise HTTPException(status_code=503, detail="GCS is not configured for resumable uploads.")
-
     safe_name = payload.filename.replace(" ", "_")
     upload_prefix = "raw_matches" if analysis_type == "FULL_MATCH" else "raw_videos"
     blob_name = f"{upload_prefix}/{uuid.uuid4().hex[:12]}_{safe_name}"
@@ -525,21 +522,34 @@ def create_resumable_session(
         blob_name=blob_name,
     )
 
-    try:
-        blob = _bucket.blob(blob_name)  # type: ignore[union-attr]
-        request_origin = request.headers.get("origin")
-        upload_size = payload.size_bytes if payload.size_bytes and payload.size_bytes > 0 else None
-        session_uri = blob.create_resumable_upload_session(
-            content_type=payload.content_type,
-            size=upload_size,
-            origin=request_origin,
-        )
-    except Exception as exc:
-        logger.exception("Failed to create resumable session for %s: %s", blob_name, exc)
-        raise HTTPException(status_code=500, detail="Failed to create resumable upload session.") from exc
+    session_uri: str
+    upload_mode = "LOCAL"
+
+    # Prefer GCS resumable uploads when available; auto-fallback to local upload when unavailable.
+    if GCS_AVAILABLE:
+        try:
+            blob = _bucket.blob(blob_name)  # type: ignore[union-attr]
+            request_origin = request.headers.get("origin")
+            upload_size = payload.size_bytes if payload.size_bytes and payload.size_bytes > 0 else None
+            session_uri = blob.create_resumable_upload_session(
+                content_type=payload.content_type,
+                size=upload_size,
+                origin=request_origin,
+            )
+            upload_mode = "GCS"
+        except Exception as exc:
+            logger.warning(
+                "Failed to create GCS resumable session, falling back to local upload: %s",
+                exc,
+            )
+            session_uri = _build_local_upload_url(request, blob_name)
+    else:
+        logger.info("GCS not configured, using local upload for resumable session")
+        session_uri = _build_local_upload_url(request, blob_name)
 
     logger.info(
-        "Resumable session created — user=%s submission=%s blob=%s",
+        "Resumable session created (%s) — user=%s submission=%s blob=%s",
+        upload_mode,
         current_user.id,
         submission.id,
         blob_name,

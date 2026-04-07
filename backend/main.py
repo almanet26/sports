@@ -89,6 +89,8 @@ _CLOUD_RUN = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
 if not _CLOUD_RUN:
     STORAGE_DIRS = [
         "storage/uploads",
+        "storage/uploads/raw_videos",
+        "storage/uploads/raw_matches",
         "storage/raw",
         "storage/trimmed",
         "storage/highlight",
@@ -277,12 +279,12 @@ if SUBMISSIONS_AVAILABLE and submissions is not None:
 else:
     logger.warning("Submissions pipeline disabled")
 
-# Cloud Storage (Direct-to-GCS signed URL uploads)
-if GCS_AVAILABLE and storage is not None:
-    app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
+# Cloud Storage (Direct-to-GCS signed URL uploads with local fallback)
+app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
+if GCS_AVAILABLE:
     logger.info("Direct-to-GCS upload feature enabled")
 else:
-    logger.warning("Direct-to-GCS upload feature disabled (GCS not configured)")
+    logger.info("Storage routes enabled with local fallback (GCS not configured)")
 
 # Internal Worker endpoint (called by Cloud Tasks, NOT public API)
 if WORKER_AVAILABLE and worker is not None:
