@@ -162,6 +162,7 @@ if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         "https://sports-teal-two.vercel.app",  # Vercel production frontend
+        "https://sports-l8at.vercel.app",        # Fork deployment
     ]
     # Append additional production frontend URL from env if set
     _frontend = os.getenv("FRONTEND_URL", "").strip()
