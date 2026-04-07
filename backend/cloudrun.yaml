@@ -40,7 +40,7 @@ spec:
             - name: FRONTEND_URL
               value: https://sports-teal-two.vercel.app
             - name: ALLOWED_ORIGINS
-              value: https://sports-teal-two.vercel.app
+              value: https://sports-teal-two.vercel.app,https://sports-l8at.vercel.app
             - name: GEMINI_MODEL
               value: gemini-2.5-flash
             # Cloud Tasks
