@@ -240,9 +240,9 @@ export default function VideoDetailPage() {
               className="w-full h-full relative z-10"
               controls
               preload="metadata"
-              src={getSupercutPlaybackUrl(video)}
+              src={resolveMediaUrl(video.supercut_path)}
             >
-              <source src={getSupercutPlaybackUrl(video)} type="video/mp4" />
+              <source src={resolveMediaUrl(video.supercut_path)} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
           ) : String(video.status || '').toLowerCase() === 'completed' ? (
@@ -299,7 +299,6 @@ export default function VideoDetailPage() {
           <div className="flex items-start justify-between gap-6 mb-6">
             <div className="flex-1">
               <h1 className="text-3xl font-bold text-white mb-3 gradient-text">{video.title}</h1>
-
               {/* Match Info Cards */}
               <div className="flex flex-wrap items-center gap-3">
                 <div className="flex items-center gap-2 px-4 py-2 glass rounded-xl border border-white/20">
@@ -326,7 +325,7 @@ export default function VideoDetailPage() {
               <motion.a
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                href={getSupercutPlaybackUrl(video)}
+                href={resolveMediaUrl(video.supercut_path)}
                 download={`${video.title}_highlights.mp4`}
                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-500/30"
               >
@@ -409,7 +408,6 @@ export default function VideoDetailPage() {
                 {events.length} {eventFilter === 'all' ? 'events' : `${eventFilter.toLowerCase()}s`} detected
               </p>
             </div>
-
             {/* Filter Pills */}
             <div className="flex items-center gap-2">
               {(['all', 'FOUR', 'SIX', 'WICKET'] as EventFilter[]).map((filter) => (

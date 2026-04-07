@@ -14,6 +14,7 @@ import PlayerDashboard from './pages/PlayerDashboard';
 import CoachDashboard from './pages/CoachDashboard';
 import AdminPlansPage from './pages/AdminPlansPage';
 import AdminDashboard from './pages/AdminDashboard';
+import AdminUsersPage from './pages/AdminUsersPage';
 import UploadPage from './pages/UploadPage';
 import HighlightsPage from './pages/HighlightsPage';
 import VideoDetailPage from './pages/VideoDetailPage';
