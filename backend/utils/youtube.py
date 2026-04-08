@@ -15,6 +15,15 @@ import yt_dlp
 logger = logging.getLogger(__name__)
 
 
+def _decode_b64_cookies(value: str) -> bytes:
+    """Decode base64 cookie payload resiliently (trims quotes/newlines, fixes padding)."""
+    cleaned = value.strip().strip('"').strip("'").replace("\n", "").replace("\r", "")
+    missing_padding = len(cleaned) % 4
+    if missing_padding:
+        cleaned += "=" * (4 - missing_padding)
+    return base64.b64decode(cleaned)
+
+
 def normalize_youtube_url(url: str) -> str:
     """
     Normalize YouTube URL to standard watch format.
@@ -75,6 +84,11 @@ def download_youtube_video(
         video_id = str(uuid.uuid4())
     
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    try:
+        max_duration_seconds = int(os.getenv("YOUTUBE_MAX_DURATION_SECONDS", "43200"))
+    except ValueError:
+        max_duration_seconds = 43200
     
     # Resolve optional YouTube cookie source for bot-protected videos.
     cookie_file_path: Optional[Path] = None
@@ -95,13 +109,15 @@ def download_youtube_video(
             try:
                 temp_dir = Path(tempfile.gettempdir())
                 cookie_file_path = temp_dir / 'youtube_cookies.txt'
-                cookie_data = base64.b64decode(cookies_b64)
+                cookie_data = _decode_b64_cookies(cookies_b64)
                 cookie_file_path.write_bytes(cookie_data)
                 cleanup_cookie_file = True
                 logger.info("Loaded YouTube cookies from YOUTUBE_COOKIES_B64")
             except Exception as e:
                 logger.warning("Failed to decode YOUTUBE_COOKIES_B64: %s", e)
                 cookie_file_path = None
+
+    cookie_opts = {'cookiefile': str(cookie_file_path)} if cookie_file_path else {}
     
     # Base yt-dlp configuration (NO cookies here - added per-attempt)
     base_ydl_opts = {
@@ -122,6 +138,9 @@ def download_youtube_video(
         'nocheckcertificate': True,
         'socket_timeout': 60,
         'ignoreerrors': False,
+        'retries': 3,
+        'extractor_retries': 3,
+        'fragment_retries': 3,
         'http_headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-us,en;q=0.5',
@@ -137,40 +156,29 @@ def download_youtube_video(
             # Attempt 1: Android client (BEST - bypasses SABR streaming & 403 errors)
             {
                 **base_ydl_opts,
+                **cookie_opts,
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['android'],
                     }
                 },
             },
-            # Attempt 2: Android with cookies (production) or Chrome cookies (local dev)
+            # Attempt 2: Android with creator/embedded fallback
             {
                 **base_ydl_opts,
-                **(
-                    {'cookiefile': str(cookie_file_path)} if cookie_file_path 
-                    else {}  # Skip browser cookies if they fail
-                ),
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android'],
-                    }
-                },
-                'user_agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 12; US) gzip',
-            },
-            # Attempt 3: Android TV client (more lenient than mobile)
-            {
-                **base_ydl_opts,
-                'user_agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 12; US) gzip',
+                **cookie_opts,
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['android_creator', 'android_embedded'],
                         'player_skip': ['webpage'],
                     }
                 },
+                'user_agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 12; US) gzip',
             },
-            # Attempt 4: iOS client
+            # Attempt 3: iOS client
             {
                 **base_ydl_opts,
+                **cookie_opts,
                 'user_agent': 'com.google.ios.youtube/19.09.3 (iPhone14,5; U; CPU iOS 15_6 like Mac OS X)',
                 'extractor_args': {
                     'youtube': {
@@ -179,13 +187,25 @@ def download_youtube_video(
                     }
                 },
             },
-            # Attempt 5: TV embedded client (works for many restricted videos)
+            # Attempt 4: TV embedded client (works for many restricted videos)
             {
                 **base_ydl_opts,
+                **cookie_opts,
                 'user_agent': 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.146 TV Safari/537.36',
                 'extractor_args': {
                     'youtube': {
                         'player_client': ['tv_embedded'],
+                        'player_skip': ['webpage', 'configs'],
+                    }
+                },
+            },
+            # Attempt 5: Generic best client set for edge videos
+            {
+                **base_ydl_opts,
+                **cookie_opts,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['android', 'ios', 'tv_embedded'],
                         'player_skip': ['webpage', 'configs'],
                     }
                 },
@@ -210,8 +230,12 @@ def download_youtube_video(
                     logger.info(f"Video info: {title} ({duration}s)")
                     
                     # Check duration (cricket matches can be very long)
-                    if duration > 28800:  # 8 hours max
-                        raise ValueError("Video is too long (max 8 hours). Consider trimming before upload.")
+                    if duration > max_duration_seconds:
+                        max_hours = max_duration_seconds / 3600
+                        raise ValueError(
+                            f"Video is too long (max {max_hours:.1f} hours). "
+                            "Consider trimming before upload or increase YOUTUBE_MAX_DURATION_SECONDS."
+                        )
                     
                     # Now download
                     ydl.download([url])
@@ -262,7 +286,7 @@ def download_youtube_video(
             raise Exception(f"Failed to download video: {error_msg}")
     except ValueError as e:
         logger.error(f"Validation error: {e}")
-        raise Exception(str(e))
+        raise
     except FileNotFoundError as e:
         logger.error(f"File not found: {e}")
         raise Exception("Downloaded video file not found. Please try again.")

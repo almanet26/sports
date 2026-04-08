@@ -34,13 +34,17 @@ opencv-python-headless>=4.8.1  # Video analysis
 
 # Machine Learning & OCR
 numpy>=1.26.2
+scipy>=1.10.0
+torch>=2.2.0
+torchvision>=0.17.0
+easyocr>=1.7.1
 
 # Pose Estimation (Cloud Run worker)
 # Pinned to last version that ships the legacy mp.solutions.pose API.
 mediapipe==0.10.14           # MediaPipe pose estimation — requires libegl1 + libglx0 at runtime
 
-# NOTE: torch, torchvision, scipy, easyocr are only used by the standalone OCR highlight-reel pipeline (scripts/ocr_engine.py), which does NOT run on Cloud Run.  Install them locally
-#   pip install torch torchvision scipy easyocr
+# NOTE: OCR highlight processing is executed by /internal/worker/process-video in Cloud Run,
+# so EasyOCR and its dependencies must be present in the deployed image.
 
 # Bowling & Batting Analysis
 pandas>=2.0.0                # DataFrame operations for metrics analysis

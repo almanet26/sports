@@ -414,6 +414,7 @@ export default function HeavyVideoUploader({
         method: "PUT",
         headers: {
           "Content-Type": file.type || "application/octet-stream",
+          ...buildHeaders(), // Include auth headers for CORS preflight on Safari
         },
         attempts: UPLOAD_RETRY_ATTEMPTS,
         delayBeforeAttempt: UPLOAD_RETRY_DELAY_SECONDS,
@@ -422,6 +423,16 @@ export default function HeavyVideoUploader({
         maxChunkSize: MAX_CHUNK_SIZE_KIB,
         retryCodes: [408, 409, 429, 500, 502, 503, 504],
       }) as UpChunkLike;
+
+      // Safari keep-alive: periodically trigger small fetches to prevent tab sleep during long uploads. Large uploads (>1GB) can take 10+ minutes; Safari will sleep tabs after ~30 seconds of inactivity
+      const keepAliveInterval = setInterval(() => {
+        if (uploadRef.current) {
+          // Silently check if upload is still alive (lightweight OPTIONS request)
+          fetch(sessionUri, { method: "OPTIONS", headers: buildHeaders() }).catch(() => {
+            // Ignore network errors; this is just a keep-alive signal
+          });
+        }
+      }, 15000); 
 
       uploadRef.current = upload;
 
@@ -436,7 +447,13 @@ export default function HeavyVideoUploader({
         }));
       });
 
+      // Clean up keep-alive on completion (success or error)
+      const cleanup = () => {
+        clearInterval(keepAliveInterval);
+      };
+
       upload.on("error", (err?: unknown) => {
+        cleanup();
         const msg = extractUploadError(err);
         setState((prev) => ({
           ...prev,
@@ -447,6 +464,7 @@ export default function HeavyVideoUploader({
       });
 
       upload.on("success", async () => {
+        cleanup();
         try {
           setState((prev) => ({
             ...prev,

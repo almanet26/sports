@@ -324,6 +324,13 @@ async def upload_youtube_video(
         
         # Use provided title or fall back to YouTube title
         final_title = title if title else youtube_title
+
+    except ValueError as e:
+        logger.warning(f"YouTube validation error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=str(e),
+        )
         
     except Exception as e:
         logger.error(f"Failed to download YouTube video: {e}")
