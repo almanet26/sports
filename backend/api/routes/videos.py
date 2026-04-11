@@ -20,6 +20,7 @@ import shutil
 import time
 import uuid
 import os
+import re
 
 from utils.config import settings
 from utils.auth import get_current_user, get_optional_user, require_role
@@ -103,6 +104,29 @@ def _refresh_video_with_retry(db: Session, video: Video, *, action: str) -> Vide
                 detail="Upload saved but could not re-read database row. Please retry.",
             )
         return fetched
+
+
+def _extract_teams_from_title(title: str) -> Optional[str]:
+    """Best-effort extraction of teams from common cricket title formats."""
+    if not title:
+        return None
+
+    candidate = title.split("|")[0].strip()
+    candidate = re.sub(r"\s+", " ", candidate)
+    match = re.search(
+        r"([A-Za-z][A-Za-z .&'\-]{1,30})\s+(?:v(?:s)?\.?)\s+([A-Za-z][A-Za-z .&'\-]{1,30})",
+        candidate,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return None
+
+    team_one = match.group(1).strip(" -|")
+    team_two = match.group(2).strip(" -|")
+    if len(team_one) < 2 or len(team_two) < 2:
+        return None
+
+    return f"{team_one} vs {team_two}"
 
 # Lazy import for legacy engine functions
 def get_engine_functions():
@@ -304,6 +328,10 @@ async def upload_youtube_video(
             status_code=403,
             detail="Only admins can upload to public library"
         )
+
+    # For transient YouTube processing flows, ensure admin uploads land in public library after OCR completes even if older clients send private.
+    if transient and current_user.role == "ADMIN":
+        visibility = VideoVisibility.PUBLIC.value
     
     # Generate unique video ID
     video_id = str(uuid.uuid4())
@@ -324,6 +352,7 @@ async def upload_youtube_video(
         
         # Use provided title or fall back to YouTube title
         final_title = title if title else youtube_title
+        resolved_teams = teams.strip() if teams and teams.strip() else _extract_teams_from_title(final_title)
 
     except ValueError as e:
         logger.warning(f"YouTube validation error: {e}")
@@ -371,7 +400,7 @@ async def upload_youtube_video(
         file_size_bytes=file_size,
         duration_seconds=duration,
         match_date=parsed_date,
-        teams=teams,
+        teams=resolved_teams,
         venue=venue,
         visibility=visibility,
         uploaded_by=current_user.id,
@@ -829,18 +858,24 @@ def get_video_events(
 def publish_video(
     video_id: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["COACH"])),
+    current_user: User = Depends(require_role(["COACH", "ADMIN"])),
 ):
     """
     Publish a private video to the public library.
     
-    **Access Control:** COACH (Premium) only - can publish their own videos.
+    **Access Control:**
+    - COACH (Premium): can publish on their own
+    - ADMIN: can publish any video
     """
-    video = db.query(Video).filter(
+    query = db.query(Video).filter(
         Video.id == video_id,
-        Video.uploaded_by == current_user.id,
         Video.deleted_at.is_(None),
-    ).first()
+    )
+
+    if current_user.role != "ADMIN":
+        query = query.filter(Video.uploaded_by == current_user.id)
+
+    video = query.first()
     
     if not video:
         raise HTTPException(status_code=404, detail="Video not found or access denied")
