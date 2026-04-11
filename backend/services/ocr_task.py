@@ -9,6 +9,7 @@ import traceback
 import os
 import tempfile
 import time
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional, Dict, List
@@ -111,6 +112,30 @@ def _store_supercut(video_id: str, local_supercut_path: str) -> str:
     with open(local_supercut_path, "rb") as src, open(target, "wb") as dst:
         dst.write(src.read())
     return f"/static/highlights/{filename}"
+
+
+def _probe_video_duration_seconds(video_path: str) -> Optional[int]:
+    """Return rounded media duration in seconds using ffprobe."""
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        video_path,
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        if result.returncode != 0:
+            return None
+        duration = float(result.stdout.strip())
+        if duration <= 0:
+            return None
+        return max(1, int(round(duration)))
+    except Exception:
+        return None
 
 
 def _safe_rollback(db: Session) -> None:
@@ -281,6 +306,7 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
 
         clips: List[str] = []
         supercut_path: str | None = None
+        supercut_duration_seconds: Optional[int] = None
         with tempfile.TemporaryDirectory(prefix=f"ocr_{video_id}_") as work_dir:
             clips_dir = Path(work_dir) / "clips"
             clips_dir.mkdir(parents=True, exist_ok=True)
@@ -314,6 +340,7 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
                 supercut_tmp = Path(work_dir) / f"{video_id}_highlights.mp4"
                 supercut_local = create_supercut(clips, str(supercut_tmp))
                 if supercut_local:
+                    supercut_duration_seconds = _probe_video_duration_seconds(supercut_local)
                     supercut_path = _store_supercut(video_id, supercut_local)
         
         job.progress_percent = 80
@@ -359,6 +386,8 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
         video.total_fours = fours
         video.total_sixes = sixes
         video.total_wickets = wickets
+        if supercut_duration_seconds is not None:
+            video.duration_seconds = supercut_duration_seconds
         
         # Update job with results
         job.status = VideoStatus.COMPLETED.value
@@ -395,6 +424,8 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
             video.total_fours = fours
             video.total_sixes = sixes
             video.total_wickets = wickets
+            if supercut_duration_seconds is not None:
+                video.duration_seconds = supercut_duration_seconds
             
             job.status = VideoStatus.COMPLETED.value
             job.progress_percent = 100

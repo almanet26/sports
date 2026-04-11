@@ -6,6 +6,7 @@ import logging
 import uuid
 import os
 import base64
+import binascii
 import re
 import tempfile
 from pathlib import Path
@@ -21,7 +22,20 @@ def _decode_b64_cookies(value: str) -> bytes:
     missing_padding = len(cleaned) % 4
     if missing_padding:
         cleaned += "=" * (4 - missing_padding)
-    return base64.b64decode(cleaned)
+    try:
+        return base64.b64decode(cleaned, validate=True)
+    except binascii.Error as e:
+        raise ValueError("Invalid base64 cookie payload") from e
+
+
+def _looks_like_cookie_file_content(value: str) -> bool:
+    """Best-effort check for raw Netscape cookie file content."""
+    text = value.strip()
+    if not text:
+        return False
+    if text.startswith("# Netscape HTTP Cookie File"):
+        return True
+    return "youtube.com" in text and "\t" in text
 
 
 def normalize_youtube_url(url: str) -> str:
@@ -109,7 +123,11 @@ def download_youtube_video(
             try:
                 temp_dir = Path(tempfile.gettempdir())
                 cookie_file_path = temp_dir / 'youtube_cookies.txt'
-                cookie_data = _decode_b64_cookies(cookies_b64)
+                # Secret may contain either raw Netscape cookie text or base64 content.
+                if _looks_like_cookie_file_content(cookies_b64):
+                    cookie_data = cookies_b64.encode("utf-8")
+                else:
+                    cookie_data = _decode_b64_cookies(cookies_b64)
                 cookie_file_path.write_bytes(cookie_data)
                 cleanup_cookie_file = True
                 logger.info("Loaded YouTube cookies from YOUTUBE_COOKIES_B64")
@@ -118,7 +136,22 @@ def download_youtube_video(
                 cookie_file_path = None
 
     cookie_opts = {'cookiefile': str(cookie_file_path)} if cookie_file_path else {}
-    
+
+    # Resolve optional PO token (Proof of Origin) for server-side bot bypass.
+    # Generate via: https://github.com/iv-org/youtube-po-token-generator
+    # Set env var YOUTUBE_PO_TOKEN=<token>
+    po_token = os.getenv('YOUTUBE_PO_TOKEN', '').strip()
+    po_token_opts: dict = {}
+    if po_token:
+        po_token_opts = {
+            'extractor_args': {
+                'youtube': {
+                    'po_token': [f'web+{po_token}'],
+                }
+            }
+        }
+        logger.info("Loaded YouTube PO token from YOUTUBE_PO_TOKEN")
+
     # Base yt-dlp configuration (NO cookies here - added per-attempt)
     base_ydl_opts = {
         'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best',  # Best video + audio merged
@@ -133,28 +166,64 @@ def download_youtube_video(
         }],
         # Download restrictions
         'max_filesize': 12 * 1024 * 1024 * 1024,  # 12GB max for cricket matches
-        
-        # Additional anti-bot measures
+
+        # Anti-bot / server-friendly settings
         'nocheckcertificate': True,
         'socket_timeout': 60,
         'ignoreerrors': False,
         'retries': 3,
         'extractor_retries': 3,
         'fragment_retries': 3,
+        'sleep_interval_requests': 1,  # 1s between requests to avoid rate-limiting
         'http_headers': {
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'en-us,en;q=0.5',
             'Sec-Fetch-Mode': 'navigate',
         },
     }
-    
+
+    # Build po_token extractor_args merged into each attempt's extractor_args
+    def _merge_po_token(attempt: dict) -> dict:
+        """Merge PO token into attempt's extractor_args if set."""
+        if not po_token:
+            return attempt
+        merged = dict(attempt)
+        ea = dict(merged.get('extractor_args', {}))
+        yt_ea = dict(ea.get('youtube', {}))
+        yt_ea['po_token'] = [f'web+{po_token}']
+        ea['youtube'] = yt_ea
+        merged['extractor_args'] = ea
+        return merged
+
     try:
         logger.info(f"Downloading YouTube video: {url}")
-        
-        # Try multiple methods in sequence with different client emulations
+
+        # Try multiple methods in sequence with different client emulations.
+        # Ordered from most server-friendly to fallback options.
         download_attempts = [
-            # Attempt 1: Android client (BEST - bypasses SABR streaming & 403 errors)
-            {
+            # Attempt 1: web_creator — best for GCP/server IPs, avoids SABR detection
+            _merge_po_token({
+                **base_ydl_opts,
+                **cookie_opts,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['web_creator'],
+                    }
+                },
+            }),
+            # Attempt 2: mweb (mobile web) — lower-profile than desktop, hard to fingerprint
+            _merge_po_token({
+                **base_ydl_opts,
+                **cookie_opts,
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['mweb'],
+                        'player_skip': ['webpage'],
+                    }
+                },
+            }),
+            # Attempt 3: Android client — bypasses SABR streaming & 403 errors
+            _merge_po_token({
                 **base_ydl_opts,
                 **cookie_opts,
                 'extractor_args': {
@@ -162,21 +231,9 @@ def download_youtube_video(
                         'player_client': ['android'],
                     }
                 },
-            },
-            # Attempt 2: Android with creator/embedded fallback
-            {
-                **base_ydl_opts,
-                **cookie_opts,
-                'extractor_args': {
-                    'youtube': {
-                        'player_client': ['android_creator', 'android_embedded'],
-                        'player_skip': ['webpage'],
-                    }
-                },
-                'user_agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 12; US) gzip',
-            },
-            # Attempt 3: iOS client
-            {
+            }),
+            # Attempt 4: iOS client
+            _merge_po_token({
                 **base_ydl_opts,
                 **cookie_opts,
                 'user_agent': 'com.google.ios.youtube/19.09.3 (iPhone14,5; U; CPU iOS 15_6 like Mac OS X)',
@@ -186,9 +243,9 @@ def download_youtube_video(
                         'player_skip': ['webpage', 'configs'],
                     }
                 },
-            },
-            # Attempt 4: TV embedded client (works for many restricted videos)
-            {
+            }),
+            # Attempt 5: TV embedded client (works for many restricted videos)
+            _merge_po_token({
                 **base_ydl_opts,
                 **cookie_opts,
                 'user_agent': 'Mozilla/5.0 (SMART-TV; Linux; Tizen 5.0) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/76.0.3809.146 TV Safari/537.36',
@@ -198,18 +255,18 @@ def download_youtube_video(
                         'player_skip': ['webpage', 'configs'],
                     }
                 },
-            },
-            # Attempt 5: Generic best client set for edge videos
-            {
+            }),
+            # Attempt 6: Shotgun — try all available clients
+            _merge_po_token({
                 **base_ydl_opts,
                 **cookie_opts,
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['android', 'ios', 'tv_embedded'],
+                        'player_client': ['web_creator', 'mweb', 'android', 'ios', 'tv_embedded'],
                         'player_skip': ['webpage', 'configs'],
                     }
                 },
-            },
+            }),
         ]
         
         last_error = None
@@ -273,14 +330,36 @@ def download_youtube_video(
     
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)
+        error_msg_lower = error_msg.lower()
         logger.error(f"yt-dlp download error: {error_msg}")
         
         # Provide user-friendly error messages
-        if 'unavailable' in error_msg.lower():
+        if (
+            "sign in to confirm" in error_msg_lower
+            or "not a bot" in error_msg_lower
+            or "cookies-from-browser" in error_msg_lower
+            or "http error 429" in error_msg_lower
+            or "too many requests" in error_msg_lower
+            or "confirm you're not a bot" in error_msg_lower
+            or "video unavailable" in error_msg_lower and "bot" in error_msg_lower
+            or "http error 403" in error_msg_lower
+            or "proof of origin" in error_msg_lower
+            or "po_token" in error_msg_lower
+        ):
+            hints = []
+            if not cookie_file_path:
+                hints.append("set YOUTUBE_COOKIES_B64 with exported browser cookies")
+            if not po_token:
+                hints.append("set YOUTUBE_PO_TOKEN with a proof-of-origin token")
+            hint_str = "; or ".join(hints) if hints else "check your cookie/token configuration"
+            raise ValueError(
+                f"YouTube blocked this download in server mode. To fix: {hint_str}."
+            )
+        if 'unavailable' in error_msg_lower:
             raise Exception("Video is unavailable or private. Please check the URL.")
-        elif 'copyright' in error_msg.lower():
+        elif 'copyright' in error_msg_lower:
             raise Exception("Video cannot be downloaded due to copyright restrictions.")
-        elif 'age' in error_msg.lower():
+        elif 'age' in error_msg_lower:
             raise Exception("Age-restricted video cannot be downloaded.")
         else:
             raise Exception(f"Failed to download video: {error_msg}")
