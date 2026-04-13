@@ -21,6 +21,8 @@ import VideoDetailPage from './pages/VideoDetailPage';
 import RequestsPage from './pages/RequestsPage';
 import ProfilePage from './pages/ProfilePage';
 import PlayerPerformance from './pages/PlayerPerformance';
+import PlayerProfile from './pages/PlayerProfile';
+import PlayerVideosPage from './pages/PlayerVideosPage';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
@@ -167,6 +169,8 @@ export default function AppRouter() {
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/player" element={<PlayerDashboard />} />
+            <Route path="/player/profile" element={<PlayerProfile />} />
+            <Route path="/player/videos" element={<PlayerVideosPage />} />
             <Route path="/player/:id" element={<PlayerPerformance />} />
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
@@ -204,7 +208,7 @@ export default function AppRouter() {
 
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
-        <Route path="/profile" element={<Navigate to="/settings" replace />} />
+        <Route path="/profile" element={<Navigate to="/player/profile" replace />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

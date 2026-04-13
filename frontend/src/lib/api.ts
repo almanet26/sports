@@ -86,6 +86,26 @@ api.interceptors.response.use(
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
       localStorage.removeItem('user_profile');
+      localStorage.removeItem('auth-storage');
+
+      // Also reset the in-memory auth store so route guards don't think we're still logged in.
+      // Use a dynamic import to avoid circular dependencies between api.ts <-> authStore.ts.
+      queueMicrotask(() => {
+        import('../store/authStore')
+          .then(({ useAuthStore }) => {
+            useAuthStore.setState({
+              user: null,
+              token: null,
+              refreshToken: null,
+              isAuthenticated: false,
+              error: null,
+              isLoading: false,
+            });
+          })
+          .catch(() => {
+            // ignore - best effort logout sync
+          });
+      });
       
       // Redirect to login (only if not already on login page)
       if (!window.location.pathname.includes('/login')) {
@@ -425,6 +445,18 @@ export const submissionsApi = {
       onUploadProgress: (e) => {
         if (e.total && onProgress) onProgress(Math.round((e.loaded * 100) / e.total));
       },
+    });
+  },
+
+  /** Player: Submit an already-uploaded gallery video (no re-upload) */
+  submitExistingVideo: (videoId: string, coachId: string, analysisType: string = 'BATTING') => {
+    const formData = new FormData();
+    formData.append('video_id', videoId);
+    formData.append('coach_id', coachId);
+    formData.append('analysis_type', analysisType);
+    return api.post('/submissions/from-video', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
     });
   },
 

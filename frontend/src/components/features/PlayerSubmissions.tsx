@@ -8,6 +8,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../../store/themeStore';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   submissionsApi,
   resolveMediaUrl,
@@ -25,6 +26,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string
 export default function PlayerSubmissions() {
   const { theme } = useThemeStore();
   const dark = theme === 'dark';
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // State
   const [coaches, setCoaches] = useState<CoachListItem[]>([]);
@@ -34,12 +37,34 @@ export default function PlayerSubmissions() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [existingVideoId, setExistingVideoId] = useState<string | null>(null);
+  const [submittingExisting, setSubmittingExisting] = useState(false);
 
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [activeTab, setActiveTab] = useState<'upload' | 'all' | 'published'>('upload');
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Optional integration: prefill the upload file from an already-uploaded private video.
+  // This keeps the existing UI intact and still supports normal direct uploads.
+  useEffect(() => {
+    const state = location.state as null | { prefillVideoId?: string; prefillTitle?: string };
+    const prefillVideoId = state?.prefillVideoId;
+    if (!prefillVideoId) return;
+
+    setActiveTab('upload');
+    setUploadError('');
+    setExistingVideoId(prefillVideoId);
+
+    // Use a lightweight placeholder File object for display only (no upload).
+    const filename = (state?.prefillTitle || 'video.mp4').trim() || 'video.mp4';
+    setFile(new File([], filename, { type: 'video/mp4' }));
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    // Clear the navigation state so refresh/back doesn't keep re-prefilling.
+    navigate(location.pathname, { replace: true, state: null });
+  }, [location.state, location.pathname, navigate]);
 
   // Fetch coaches + submissions
   const fetchCoaches = useCallback(async () => {
@@ -77,12 +102,19 @@ export default function PlayerSubmissions() {
   // Upload handler
   const handleUpload = async () => {
     if (!file || !selectedCoach) return;
-    setUploading(true);
-    setUploadError('');
-    setUploadProgress(0);
     try {
-      await submissionsApi.upload(file, selectedCoach, analysisType, setUploadProgress);
+      if (existingVideoId) {
+        setSubmittingExisting(true);
+        setUploadError('');
+        await submissionsApi.submitExistingVideo(existingVideoId, selectedCoach, analysisType);
+      } else {
+        setUploading(true);
+        setUploadError('');
+        setUploadProgress(0);
+        await submissionsApi.upload(file, selectedCoach, analysisType, setUploadProgress);
+      }
       setFile(null);
+      setExistingVideoId(null);
       setSelectedCoach('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       setActiveTab('all');
@@ -92,6 +124,7 @@ export default function PlayerSubmissions() {
       setUploadError(msg);
     } finally {
       setUploading(false);
+      setSubmittingExisting(false);
     }
   };
 
@@ -101,7 +134,10 @@ export default function PlayerSubmissions() {
     e.preventDefault();
     setDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped && /\.(mp4|mov|avi)$/i.test(dropped.name)) setFile(dropped);
+    if (dropped && /\.(mp4|mov|avi)$/i.test(dropped.name)) {
+      setExistingVideoId(null);
+      setFile(dropped);
+    }
   };
 
   // Status badge renderer
@@ -191,7 +227,10 @@ export default function PlayerSubmissions() {
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
-                    if (f) setFile(f);
+                    if (f) {
+                      setExistingVideoId(null);
+                      setFile(f);
+                    }
                   }}
                 />
                 {file ? (
@@ -199,7 +238,7 @@ export default function PlayerSubmissions() {
                     <i className="fas fa-check-circle text-4xl text-green-500 mb-3"></i>
                     <p className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{file.name}</p>
                     <p className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>
-                      {(file.size / 1024 / 1024).toFixed(1)} MB
+                      {existingVideoId ? 'Ready to submit (already uploaded)' : `${(file.size / 1024 / 1024).toFixed(1)} MB`}
                     </p>
                   </>
                 ) : (
@@ -277,10 +316,10 @@ export default function PlayerSubmissions() {
                 <motion.button
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
-                  disabled={!file || !selectedCoach || uploading}
+                  disabled={!file || !selectedCoach || uploading || submittingExisting}
                   onClick={handleUpload}
                   className={`w-full py-4 rounded-xl text-white font-semibold text-lg transition-all ${
-                    !file || !selectedCoach || uploading
+                    !file || !selectedCoach || uploading || submittingExisting
                       ? 'bg-gray-500 cursor-not-allowed opacity-50'
                       : 'bg-gradient-to-r from-blue-500 to-purple-600 hover:shadow-lg hover:shadow-blue-500/25'
                   }`}
@@ -289,6 +328,11 @@ export default function PlayerSubmissions() {
                     <span className="flex items-center justify-center gap-2">
                       <i className="fas fa-spinner fa-spin"></i>
                       Uploading… {uploadProgress}%
+                    </span>
+                  ) : submittingExisting ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <i className="fas fa-spinner fa-spin"></i>
+                      Submittingâ€¦
                     </span>
                   ) : (
                     <span>

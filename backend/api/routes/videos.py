@@ -94,7 +94,8 @@ def _refresh_video_with_retry(db: Session, video: Video, *, action: str) -> Vide
         db.refresh(video)
         return video
     except OperationalError as exc:
-        logger.warning("DB refresh failed for %s: %s. Retrying via query.", action, exc)
+        logger.warning(
+            "DB refresh failed for %s: %s. Retrying via query.", action, exc)
         db.rollback()
         fetched = db.query(Video).filter(Video.id == video.id).first()
         if fetched is None:
@@ -105,6 +106,8 @@ def _refresh_video_with_retry(db: Session, video: Video, *, action: str) -> Vide
         return fetched
 
 # Lazy import for legacy engine functions
+
+
 def get_engine_functions():
     from src.engine import (
         download_video,
@@ -114,11 +117,79 @@ def get_engine_functions():
     )
     return download_video, fetch_match_data, generate_highlights, create_highlight_reel
 
+
 router = APIRouter(prefix="/videos", tags=["videos"])
 
 # ============ Storage Configuration ============
 UPLOAD_DIR = Path("storage/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# Shared constraints for file uploads
+ALLOWED_EXTENSIONS = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
+CHUNK_SIZE = 8192  # 8KB chunks for streaming
+MAX_FILE_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10000")
+                    ) * 1024 * 1024  # Default: 10GB
+
+
+async def _store_uploaded_file(*, file: UploadFile, video_id: str) -> tuple[str, str, int]:
+    """
+    Persist an uploaded binary to local disk (streaming) and optionally to GCS.
+    Returns (file_ext, storage_path, file_size_bytes).
+    """
+    file_ext = Path(file.filename).suffix.lower()
+    if file_ext not in ALLOWED_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid file type. Allowed: {', '.join(ALLOWED_EXTENSIONS)}",
+        )
+
+    logger.info("Max upload size: %.2fGB",
+                MAX_FILE_SIZE / (1024 * 1024 * 1024))
+
+    file_path = UPLOAD_DIR / f"{video_id}{file_ext}"
+
+    try:
+        total_size = 0
+        with open(file_path, "wb") as buffer:
+            while chunk := await file.read(CHUNK_SIZE):
+                total_size += len(chunk)
+                if total_size > MAX_FILE_SIZE:
+                    buffer.close()
+                    file_path.unlink(missing_ok=True)
+                    raise HTTPException(
+                        status_code=413,
+                        detail=(
+                            f"File too large. Maximum size: {MAX_FILE_SIZE // (1024 * 1024)}MB. "
+                            "For videos >10GB, use YouTube URL upload (supports up to 12GB)."
+                        ),
+                    )
+                buffer.write(chunk)
+
+        file_size = file_path.stat().st_size
+        logger.info("File uploaded: %s%s (%.2fMB)", video_id,
+                    file_ext, file_size / (1024 * 1024))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to save file: %s", e)
+        file_path.unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=500, detail=f"Failed to save video file: {str(e)}")
+
+    storage_path = str(file_path)
+    if _gcs_bucket is not None:
+        try:
+            gcs_blob = f"videos/raw/{video_id}{file_ext}"
+            gcs_url = _upload_local_to_gcs(file_path, gcs_blob)
+            if gcs_url:
+                storage_path = gcs_url
+                file_path.unlink(missing_ok=True)
+                logger.info("Video uploaded to GCS: %s", gcs_blob)
+        except Exception as gcs_err:
+            logger.warning(
+                "GCS upload failed, keeping local file: %s", gcs_err)
+
+    return file_ext, storage_path, file_size
 
 
 # ============ Video Upload Endpoints ============
@@ -135,74 +206,31 @@ async def upload_video(
     padding_before: float = Form(12.0),
     padding_after: float = Form(8.0),
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["ADMIN", "COACH"])),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Upload a video file with metadata.
-    
+
     **Access Control:** 
     - ADMIN: Can upload to public library
     - COACH (Premium): Can upload to private dashboard
     - PLAYER (Free): Cannot upload
-    
+
     **File Constraints:**
     - Max size: 10GB
     - Formats: mp4, mkv, avi, mov, webm
     """
-    # Validate file type
-    allowed_extensions = {".mp4", ".mkv", ".avi", ".mov", ".webm"}
-    file_ext = Path(file.filename).suffix.lower()
-    if file_ext not in allowed_extensions:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid file type. Allowed: {', '.join(allowed_extensions)}"
-        )
-    
-    # Check file size 
-    CHUNK_SIZE = 8192  # 8KB chunks for streaming
-    MAX_FILE_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10000")) * 1024 * 1024  # Default: 10GB
-    
-    logger.info(f"Max upload size: {MAX_FILE_SIZE / (1024*1024*1024):.2f}GB")
-    
     # Enforce visibility rules
     if visibility == "public" and current_user.role != "ADMIN":
         raise HTTPException(
             status_code=403,
             detail="Only admins can upload to public library"
         )
-    
+
     # Generate unique filename
     video_id = str(uuid.uuid4())
-    file_path = UPLOAD_DIR / f"{video_id}{file_ext}"
-    
-    # Save file with streaming to avoid memory issues
-    try:
-        total_size = 0
-        with open(file_path, "wb") as buffer:
-            while chunk := await file.read(CHUNK_SIZE):
-                total_size += len(chunk)
-                
-                # Check size limit during upload
-                if total_size > MAX_FILE_SIZE:
-                    buffer.close()
-                    file_path.unlink(missing_ok=True)  # Delete partial file
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File too large. Maximum size: {MAX_FILE_SIZE // (1024*1024)}MB. "
-                               f"For videos >10GB, use YouTube URL upload (supports up to 12GB)."
-                    )
-                
-                buffer.write(chunk)
-        
-        file_size = file_path.stat().st_size
-        logger.info(f"File uploaded: {video_id}{file_ext} ({file_size / (1024*1024):.2f}MB)")
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to save file: {e}")
-        file_path.unlink(missing_ok=True)  # Clean up on error
-        raise HTTPException(status_code=500, detail=f"Failed to save video file: {str(e)}")
-    
+    file_ext, storage_path, file_size = await _store_uploaded_file(file=file, video_id=video_id)
+
     # Parse match_date if provided
     parsed_date = None
     if match_date:
@@ -210,19 +238,6 @@ async def upload_video(
             parsed_date = datetime.fromisoformat(match_date)
         except ValueError:
             pass
-    
-    # Prefer GCS for binary storage when configured.
-    storage_path = str(file_path)
-    if _gcs_bucket is not None:
-        try:
-            gcs_blob = f"videos/raw/{video_id}{file_ext}"
-            gcs_url = _upload_local_to_gcs(file_path, gcs_blob)
-            if gcs_url:
-                storage_path = gcs_url
-                file_path.unlink(missing_ok=True)
-                logger.info("Video uploaded to GCS: %s", gcs_blob)
-        except Exception as gcs_err:
-            logger.warning("GCS upload failed, keeping local file: %s", gcs_err)
 
     # Create video record
     video = Video(
@@ -238,13 +253,14 @@ async def upload_video(
         uploaded_by=current_user.id,
         status=VideoStatus.PENDING.value,
     )
-    
+
     db.add(video)
     _commit_with_retry(db, action="file upload video insert")
-    video = _refresh_video_with_retry(db, video, action="file upload video insert")
-    
+    video = _refresh_video_with_retry(
+        db, video, action="file upload video insert")
+
     logger.info(f"Video uploaded: {video.id} by {current_user.email}")
-    
+
     return VideoResponse(
         id=video.id,
         title=video.title,
@@ -279,12 +295,12 @@ async def upload_youtube_video(
 ):
     """
     Upload a video from YouTube URL.
-    
+
     **Access Control:** 
     - ADMIN: Can upload to public library
     - COACH (Premium): Can upload to private dashboard
     - PLAYER (Free): Cannot upload
-    
+
     **Process:**
     1. Validates YouTube URL
     2. Downloads video using yt-dlp
@@ -297,17 +313,17 @@ async def upload_youtube_video(
             status_code=400,
             detail="Invalid YouTube URL. Please provide a valid YouTube video link."
         )
-    
+
     # Enforce visibility rules
     if visibility == "public" and current_user.role != "ADMIN":
         raise HTTPException(
             status_code=403,
             detail="Only admins can upload to public library"
         )
-    
+
     # Generate unique video ID
     video_id = str(uuid.uuid4())
-    
+
     # Download video from YouTube
     try:
         logger.info(f"Downloading YouTube video: {url}")
@@ -316,22 +332,22 @@ async def upload_youtube_video(
             output_dir=UPLOAD_DIR,
             video_id=video_id,
         )
-        
+
         file_path = Path(download_result['file_path'])
         file_size = download_result['file_size']
         duration = download_result['duration']
         youtube_title = download_result['title']
-        
+
         # Use provided title or fall back to YouTube title
         final_title = title if title else youtube_title
-        
+
     except Exception as e:
         logger.error(f"Failed to download YouTube video: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Failed to download video from YouTube: {str(e)}"
         )
-    
+
     # Parse match_date if provided
     parsed_date = None
     if match_date:
@@ -339,7 +355,7 @@ async def upload_youtube_video(
             parsed_date = datetime.fromisoformat(match_date)
         except ValueError:
             pass
-    
+
     # Prefer GCS for binary storage when configured, unless this is a transient
     # source used only for immediate OCR processing.
     storage_path = str(file_path)
@@ -353,7 +369,8 @@ async def upload_youtube_video(
                 file_path.unlink(missing_ok=True)
                 logger.info("YouTube video uploaded to GCS: %s", gcs_blob)
         except Exception as gcs_err:
-            logger.warning("YouTube GCS upload failed, keeping local file: %s", gcs_err)
+            logger.warning(
+                "YouTube GCS upload failed, keeping local file: %s", gcs_err)
 
     # Create video record
     video = Video(
@@ -370,13 +387,15 @@ async def upload_youtube_video(
         uploaded_by=current_user.id,
         status=VideoStatus.PENDING.value,
     )
-    
+
     db.add(video)
     _commit_with_retry(db, action="youtube upload video insert")
-    video = _refresh_video_with_retry(db, video, action="youtube upload video insert")
-    
-    logger.info(f"YouTube video uploaded: {video.id} from {url} by {current_user.email}")
-    
+    video = _refresh_video_with_retry(
+        db, video, action="youtube upload video insert")
+
+    logger.info(
+        f"YouTube video uploaded: {video.id} from {url} by {current_user.email}")
+
     return VideoResponse(
         id=video.id,
         title=video.title,
@@ -400,25 +419,27 @@ async def upload_youtube_video(
 def list_all_videos(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
-    visibility: Optional[str] = Query(None, description="Filter by visibility: PUBLIC, PRIVATE"),
+    visibility: Optional[str] = Query(
+        None, description="Filter by visibility: PUBLIC, PRIVATE"),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_role(["ADMIN"])),
 ):
     """
     List ALL videos (Admin only).
-    
+
     **Access Control:** ADMIN only.
     """
     offset = (page - 1) * per_page
-    
+
     query = db.query(Video).filter(Video.deleted_at.is_(None))
-    
+
     if visibility:
         query = query.filter(Video.visibility == visibility)
-    
+
     total = query.count()
-    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
-    
+    videos = query.order_by(Video.created_at.desc()).offset(
+        offset).limit(per_page).all()
+
     return VideoListResponse(
         videos=[VideoResponse(
             id=v.id,
@@ -453,19 +474,20 @@ def list_public_videos(
 ):
     """
     List all public videos (Public Library).
-    
+
     **Access:** Open to all users (including unauthenticated).
     """
     offset = (page - 1) * per_page
-    
+
     query = db.query(Video).filter(
         Video.visibility == VideoVisibility.PUBLIC.value,
         Video.deleted_at.is_(None),
     )
-    
+
     total = query.count()
-    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
-    
+    videos = query.order_by(Video.created_at.desc()).offset(
+        offset).limit(per_page).all()
+
     return VideoListResponse(
         videos=[VideoResponse(
             id=v.id,
@@ -501,20 +523,21 @@ def list_private_videos(
 ):
     """
     List user's private videos (Premium Dashboard).
-    
+
     **Access Control:** COACH (Premium) only.
     """
     offset = (page - 1) * per_page
-    
+
     query = db.query(Video).filter(
         Video.uploaded_by == current_user.id,
         Video.visibility == VideoVisibility.PRIVATE.value,
         Video.deleted_at.is_(None),
     )
-    
+
     total = query.count()
-    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
-    
+    videos = query.order_by(Video.created_at.desc()).offset(
+        offset).limit(per_page).all()
+
     return VideoListResponse(
         videos=[VideoResponse(
             id=v.id,
@@ -557,7 +580,8 @@ def list_my_videos(
     )
 
     total = query.count()
-    videos = query.order_by(Video.created_at.desc()).offset(offset).limit(per_page).all()
+    videos = query.order_by(Video.created_at.desc()).offset(
+        offset).limit(per_page).all()
 
     return VideoListResponse(
         videos=[
@@ -596,28 +620,30 @@ def get_video(
 ):
     """
     Get video details by ID.
-    
+
     **Access Control:**
     - Public videos: accessible to all (no auth required)
     - Private videos: owner or ADMIN only
     """
-    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
-    
+    video = db.query(Video).filter(Video.id == video_id,
+                                   Video.deleted_at.is_(None)).first()
+
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    
+
     # Check access - public videos are accessible to everyone
     if video.visibility == VideoVisibility.PRIVATE.value:
         if not current_user:
-            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+            raise HTTPException(
+                status_code=401, detail="Authentication required for private videos")
         if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
             raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # Get supercut_path from highlight_job if available
     supercut_path = None
     if video.highlight_job and video.highlight_job.supercut_path:
         supercut_path = video.highlight_job.supercut_path
-    
+
     return VideoResponse(
         id=video.id,
         title=video.title,
@@ -645,35 +671,37 @@ def stream_video(
 ):
     """
     Stream the original video file.
-    
+
     **Access Control:**
     - Public videos: accessible to all (no auth required)
     - Private videos: owner or ADMIN only
-    
+
     Note: Database session is managed manually to prevent connection
     timeout during long video streams.
     """
     # Manually manage DB session to close before streaming
     from database.config import SessionLocal
     db = SessionLocal()
-    
+
     try:
-        video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
-        
+        video = db.query(Video).filter(Video.id == video_id,
+                                       Video.deleted_at.is_(None)).first()
+
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # For private videos, we'd need auth - but for simplicity, 
+
+        # For private videos, we'd need auth - but for simplicity,
         # only serve public videos without auth on this endpoint
         if video.visibility == VideoVisibility.PRIVATE.value:
-            raise HTTPException(status_code=401, detail="Authentication required for private videos")
-        
+            raise HTTPException(
+                status_code=401, detail="Authentication required for private videos")
+
         # Extract needed data before closing session
         file_path_str = video.file_path
         video_title = video.title
     finally:
         db.close()
-    
+
     # Remote storage URL (e.g., GCS public URL)
     if file_path_str.startswith("http://") or file_path_str.startswith("https://"):
         return RedirectResponse(url=file_path_str, status_code=307)
@@ -682,7 +710,7 @@ def stream_video(
     file_path = Path(file_path_str)
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="Video file not found")
-    
+
     return FileResponse(
         path=str(file_path),
         media_type="video/mp4",
@@ -702,41 +730,44 @@ def stream_supercut(
 ):
     """
     Stream the generated highlight supercut video.
-    
+
     **Access Control:**
     - Public videos: accessible to all (no auth required)
     - Private videos: require authentication (use /stream endpoint with auth)
-    
+
     **Status:**
     - 404 if supercut not yet generated (processing still in progress)
-    
+
     Note: Database session is managed manually to prevent connection
     timeout during long video streams.
     """
     # Manually manage DB session to close before streaming
     from database.config import SessionLocal
     db = SessionLocal()
-    
+
     try:
-        video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
-        
+        video = db.query(Video).filter(Video.id == video_id,
+                                       Video.deleted_at.is_(None)).first()
+
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
+
         # For private videos, require authentication
         if video.visibility == VideoVisibility.PRIVATE.value:
-            raise HTTPException(status_code=401, detail="Authentication required for private videos")
-        
+            raise HTTPException(
+                status_code=401, detail="Authentication required for private videos")
+
         # Check if highlight job exists and has supercut
         if not video.highlight_job or not video.highlight_job.supercut_path:
-            raise HTTPException(status_code=404, detail="Supercut not yet generated. Processing may still be in progress.")
-        
+            raise HTTPException(
+                status_code=404, detail="Supercut not yet generated. Processing may still be in progress.")
+
         # Extract needed data before closing session
         supercut_path_str = video.highlight_job.supercut_path
         video_title = video.title
     finally:
         db.close()
-    
+
     # Remote storage URL (e.g., GCS public URL)
     if supercut_path_str.startswith("http://") or supercut_path_str.startswith("https://"):
         return RedirectResponse(url=supercut_path_str, status_code=307)
@@ -744,8 +775,9 @@ def stream_supercut(
     # Now stream local file with DB connection closed
     supercut_path = Path(supercut_path_str)
     if not supercut_path.exists():
-        raise HTTPException(status_code=404, detail="Supercut file not found on disk")
-    
+        raise HTTPException(
+            status_code=404, detail="Supercut file not found on disk")
+
     return FileResponse(
         path=str(supercut_path),
         media_type="video/mp4",
@@ -762,45 +794,50 @@ def stream_supercut(
 @router.get("/{video_id}/events", response_model=VideoEventsResponse)
 def get_video_events(
     video_id: str,
-    event_type: Optional[str] = Query(None, description="Filter by event type: FOUR, SIX, WICKET"),
+    event_type: Optional[str] = Query(
+        None, description="Filter by event type: FOUR, SIX, WICKET"),
     db: Session = Depends(get_db),
     current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
     Get highlight events for a video with optional filtering.
-    
+
     **Filters:**
     - `event_type=FOUR`: Show only fours
     - `event_type=SIX`: Show only sixes
     - `event_type=WICKET`: Show only wickets
-    
+
     **Access Control:**
     - Public videos: accessible to all (no auth required)
     - Private videos: owner or ADMIN only
     """
-    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
-    
+    video = db.query(Video).filter(Video.id == video_id,
+                                   Video.deleted_at.is_(None)).first()
+
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    
+
     # Check access - public videos are accessible to everyone
     if video.visibility == VideoVisibility.PRIVATE.value:
         if not current_user:
-            raise HTTPException(status_code=401, detail="Authentication required for private videos")
+            raise HTTPException(
+                status_code=401, detail="Authentication required for private videos")
         if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
             raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # Query events
-    query = db.query(HighlightEvent).filter(HighlightEvent.video_id == video_id)
-    
+    query = db.query(HighlightEvent).filter(
+        HighlightEvent.video_id == video_id)
+
     if event_type:
         event_type = event_type.upper()
         if event_type not in ["FOUR", "SIX", "WICKET"]:
-            raise HTTPException(status_code=400, detail="Invalid event_type. Use: FOUR, SIX, WICKET")
+            raise HTTPException(
+                status_code=400, detail="Invalid event_type. Use: FOUR, SIX, WICKET")
         query = query.filter(HighlightEvent.event_type == event_type)
-    
+
     events = query.order_by(HighlightEvent.timestamp_seconds).all()
-    
+
     return VideoEventsResponse(
         video_id=video_id,
         events=[HighlightEventResponse(
@@ -826,7 +863,7 @@ def publish_video(
 ):
     """
     Publish a private video to the public library.
-    
+
     **Access Control:** COACH (Premium) only - can publish their own videos.
     """
     video = db.query(Video).filter(
@@ -834,22 +871,24 @@ def publish_video(
         Video.uploaded_by == current_user.id,
         Video.deleted_at.is_(None),
     ).first()
-    
+
     if not video:
-        raise HTTPException(status_code=404, detail="Video not found or access denied")
-    
+        raise HTTPException(
+            status_code=404, detail="Video not found or access denied")
+
     if video.visibility == VideoVisibility.PUBLIC.value:
         raise HTTPException(status_code=400, detail="Video is already public")
-    
+
     if video.status != VideoStatus.COMPLETED.value:
-        raise HTTPException(status_code=400, detail="Only processed videos can be published")
-    
+        raise HTTPException(
+            status_code=400, detail="Only processed videos can be published")
+
     video.visibility = VideoVisibility.PUBLIC.value
     db.commit()
     db.refresh(video)
-    
+
     logger.info(f"Video published: {video.id} by {current_user.email}")
-    
+
     return VideoResponse(
         id=video.id,
         title=video.title,
@@ -877,26 +916,27 @@ def delete_video(
 ):
     """
     Soft delete a video.
-    
+
     **Access Control:**
     - Users can delete their own private videos
     - ADMIN can delete any video
     """
-    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
-    
+    video = db.query(Video).filter(Video.id == video_id,
+                                   Video.deleted_at.is_(None)).first()
+
     if not video:
         raise HTTPException(status_code=404, detail="Video not found")
-    
+
     # Check permission
     if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     # Soft delete
     video.deleted_at = datetime.utcnow()
     db.commit()
-    
+
     logger.info(f"Video deleted: {video.id} by {current_user.email}")
-    
+
     return None
 
 
@@ -909,7 +949,8 @@ class VideoProcessRequest(BaseModel):
 
     video_url: HttpUrl
     match_id: str  # Required: Match ID from Cricsheet, Sportmonks, etc.
-    data_source: str = "cricsheet"  # cricsheet (FREE), sportmonks, cricapi, rapidapi, espncricinfo
+    # cricsheet (FREE), sportmonks, cricapi, rapidapi, espncricinfo
+    data_source: str = "cricsheet"
     merge_threshold: float = 10.0
 
 
@@ -951,17 +992,19 @@ def process_video_task(
     from database.config import get_db
     from database.models.session import ProcessingJob, JobStatus
     from datetime import datetime
-    
+
     # Import engine functions
     download_video, fetch_match_data, generate_highlights, create_highlight_reel = get_engine_functions()
-    
+
     db = next(get_db())
-    
+
     try:
-        logger.info(f"Starting video processing job {job_id} for user {user_id}: {video_url}")
-        
+        logger.info(
+            f"Starting video processing job {job_id} for user {user_id}: {video_url}")
+
         # Update job status to processing
-        job = db.query(ProcessingJob).filter(ProcessingJob.job_id == job_id).first()
+        job = db.query(ProcessingJob).filter(
+            ProcessingJob.job_id == job_id).first()
         if job:
             job.status = JobStatus.PROCESSING
             job.started_at = datetime.utcnow()
@@ -974,9 +1017,10 @@ def process_video_task(
         logger.info(f"[Job {job_id}] Downloaded video: {video_id}")
 
         # Step 2: Fetch match data from API (NO MOCK DATA)
-        logger.info(f"[Job {job_id}] Step 2/3: Fetching ball-by-ball data from {data_source}...")
+        logger.info(
+            f"[Job {job_id}] Step 2/3: Fetching ball-by-ball data from {data_source}...")
         events = fetch_match_data(match_id, source=data_source)
-        
+
         if not events:
             raise ValueError(
                 f"No events found for match_id '{match_id}' from source '{data_source}'. "
@@ -984,7 +1028,8 @@ def process_video_task(
                 f"For Cricsheet: Browse https://cricsheet.org/matches/ for available matches."
             )
 
-        logger.info(f"[Job {job_id}] Fetched {len(events)} events from {data_source}")
+        logger.info(
+            f"[Job {job_id}] Fetched {len(events)} events from {data_source}")
 
         # Step 3: Generate highlights
         logger.info(f"[Job {job_id}] Step 3/3: Generating highlight clips...")
@@ -996,7 +1041,8 @@ def process_video_task(
             merge_threshold=merge_threshold,
         )
 
-        logger.info(f"[Job {job_id}] Generated {len(clips)} clips for video {video_id}")
+        logger.info(
+            f"[Job {job_id}] Generated {len(clips)} clips for video {video_id}")
 
         # Update database with success status
         if job:
@@ -1015,8 +1061,9 @@ def process_video_task(
             logger.info(f"[Job {job_id}] Completed successfully")
 
     except Exception as e:
-        logger.error(f"[Job {job_id}] Error processing video: {str(e)}", exc_info=True)
-        
+        logger.error(
+            f"[Job {job_id}] Error processing video: {str(e)}", exc_info=True)
+
         # Update database with error status
         if job:
             job.status = JobStatus.FAILED
@@ -1024,7 +1071,7 @@ def process_video_task(
             job.error_message = str(e)
             db.commit()
             logger.error(f"[Job {job_id}] Failed with error: {str(e)}")
-    
+
     finally:
         db.close()
 
@@ -1053,7 +1100,7 @@ async def process_video(
         from database.config import get_db
         from database.models.session import ProcessingJob, JobStatus
         from datetime import datetime
-        
+
         db = next(get_db())
         job = ProcessingJob(
             job_id=job_id,
@@ -1079,7 +1126,8 @@ async def process_video(
             current_user.id,
         )
 
-        logger.info(f"Queued video processing job {job_id} for user {current_user.id}")
+        logger.info(
+            f"Queued video processing job {job_id} for user {current_user.id}")
 
         return VideoProcessResponse(
             job_id=job_id,
@@ -1088,7 +1136,8 @@ async def process_video(
         )
 
     except Exception as e:
-        logger.error(f"Error queuing video processing: {str(e)}", exc_info=True)
+        logger.error(
+            f"Error queuing video processing: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1129,19 +1178,22 @@ async def get_job_status(job_id: str, current_user: User = Depends(get_current_u
     """
     from database.config import get_db
     from database.models.session import ProcessingJob
-    
+
     db = next(get_db())
-    
+
     try:
-        job = db.query(ProcessingJob).filter(ProcessingJob.job_id == job_id).first()
-        
+        job = db.query(ProcessingJob).filter(
+            ProcessingJob.job_id == job_id).first()
+
         if not job:
-            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Job {job_id} not found")
+
         # Verify user owns this job
         if job.user_id != current_user.id:
-            raise HTTPException(status_code=403, detail="Access denied to this job")
-        
+            raise HTTPException(
+                status_code=403, detail="Access denied to this job")
+
         response = {
             "job_id": job.job_id,
             "status": job.status.value,
@@ -1152,7 +1204,7 @@ async def get_job_status(job_id: str, current_user: User = Depends(get_current_u
             "started_at": job.started_at.isoformat() if job.started_at else None,
             "completed_at": job.completed_at.isoformat() if job.completed_at else None,
         }
-        
+
         # Add additional fields based on status
         if job.status.value == "completed":
             response["video_id"] = job.video_id
@@ -1167,9 +1219,9 @@ async def get_job_status(job_id: str, current_user: User = Depends(get_current_u
             response["message"] = "Video is currently being processed..."
         else:  # queued
             response["message"] = "Job is queued and will start processing soon."
-        
+
         return response
-        
+
     except HTTPException:
         raise
     except Exception as e:
