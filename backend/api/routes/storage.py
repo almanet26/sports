@@ -683,11 +683,19 @@ def start_processing(
     if not (is_owner or is_admin):
         raise HTTPException(status_code=403, detail="Not authorized to process this submission.")
 
-    # Accept both UPLOADING and PENDING - upload completed if we reached this point
-    if sub.status not in (SubmissionStatus.PENDING, SubmissionStatus.UPLOADING):
+    # Auto-confirm UPLOADING submissions that have their file on disk
+    if sub.status == SubmissionStatus.UPLOADING:
+        try:
+            if _resolve_local_upload_path(sub.video_url).exists():
+                sub.status = SubmissionStatus.PENDING
+                db.commit()
+        except HTTPException:
+            pass
+
+    if sub.status not in (SubmissionStatus.PENDING, SubmissionStatus.ACCEPTED):
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot process — current status is '{sub.status.value}'. Only PENDING or UPLOADING submissions can be queued.",
+            detail=f"Cannot process — current status is '{sub.status.value}'. Only PENDING or ACCEPTED submissions can be queued.",
         )
 
     # If uploaded to local fallback storage, process locally even when Cloud Tasks is configured.
