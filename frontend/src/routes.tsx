@@ -40,6 +40,7 @@ import CoachTrainingPlansPage from './pages/CoachTrainingPlansPage';
 import CoachAnalyticsPage from './pages/CoachAnalyticsPage';
 import CoachReviewsPage from './pages/CoachReviewsPage';
 import CoachEarningsPage from './pages/CoachEarningsPage';
+import CoachMyPlayersPage from './pages/CoachMyPlayersPage';
 import CoachMessagesPage from './pages/CoachMessagesPage';
 import CoachContentPage from './pages/CoachContentPage';
 import CoachSettingsPage from './pages/CoachSettingsPage';
@@ -214,6 +215,7 @@ export default function AppRouter() {
                 <Route path="/coach" element={<CoachDashboard />} />
                 <Route path="/coach/upload" element={<UploadPage />} />
                 <Route path="/coach/player/:id" element={<PlayerPerformance />} />
+                <Route path="/coach/players" element={<CoachMyPlayersPage />} />
                 <Route path="/coach/submissions" element={<CoachInboxPage />} />
                 <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
                 <Route path="/coach/sessions" element={<CoachSessionsPage />} />
