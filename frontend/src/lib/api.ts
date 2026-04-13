@@ -622,4 +622,65 @@ export const adminApi = {
     api.get('/admin/activity', { params: { limit } }),
 };
 
+// ============ Coach Dashboard APIs ============
+
+export interface TrainingSession {
+  id: string;
+  topic: string;
+  description?: string;
+  prerequisites?: string;
+  session_date: string;
+  session_time: string;
+  duration_minutes: string;
+  session_type: string;
+  created_at?: string;
+}
+
+export const sessionsApi = {
+  list: () => api.get<{ sessions: TrainingSession[] }>('/sessions'),
+  create: (data: Omit<TrainingSession, 'id' | 'created_at'>) => api.post<TrainingSession>('/sessions', data),
+  update: (id: string, data: Partial<TrainingSession>) => api.put<TrainingSession>(`/sessions/${id}`, data),
+  delete: (id: string) => api.delete(`/sessions/${id}`),
+};
+
+export interface AvailabilitySlot {
+  id: string;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
+}
+
+export const availabilityApi = {
+  list: () => api.get<{ slots: AvailabilitySlot[] }>('/sessions/availability'),
+  save: (slots: Omit<AvailabilitySlot, 'id'>[]) => api.post('/sessions/availability', { slots }),
+};
+
+export interface TrainingPlanData {
+  id: string;
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: string;
+  is_public: boolean;
+  drills?: string[];
+  created_at?: string;
+}
+
+export interface TrainingPlanCreate {
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: 'group_all' | 'individual' | 'age_group';
+  is_public: boolean;
+  drills?: string[];
+}
+
+export const trainingPlansApi = {
+  list: () => api.get<{ plans: TrainingPlanData[] }>('/sessions/training-plans'),
+  create: (data: TrainingPlanCreate) => api.post<TrainingPlanData>('/sessions/training-plans', data),
+  update: (id: string, data: Partial<TrainingPlanCreate>) => api.put<TrainingPlanData>(`/sessions/training-plans/${id}`, data),
+  delete: (id: string) => api.delete(`/sessions/training-plans/${id}`),
+};
+
 export default api;
