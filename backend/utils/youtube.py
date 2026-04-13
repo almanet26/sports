@@ -42,25 +42,27 @@ def normalize_youtube_url(url: str) -> str:
     """
     Normalize YouTube URL to standard watch format.
     Converts /live/ URLs to /watch?v= format for better compatibility.
-
+    
     Args:
         url: YouTube URL in any format
-
+        
     Returns:
         Normalized URL in /watch?v= format
     """
+    # Extract video ID from various YouTube URL formats
     patterns = [
         r'(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/live/)([a-zA-Z0-9_-]{11})',
         r'youtube\.com/embed/([a-zA-Z0-9_-]{11})',
         r'youtube\.com/v/([a-zA-Z0-9_-]{11})',
     ]
-
+    
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             video_id = match.group(1)
             return f'https://www.youtube.com/watch?v={video_id}'
-
+    
+    # If no match, return original URL
     return url
 
 
@@ -71,12 +73,12 @@ def download_youtube_video(
 ) -> Dict[str, any]:
     """
     Download a YouTube video using yt-dlp.
-
+    
     Args:
         url: YouTube video URL
         output_dir: Directory to save the downloaded video
         video_id: Optional custom video ID (generates UUID if not provided)
-
+    
     Returns:
         Dictionary containing:
         - video_id: Unique identifier
@@ -84,23 +86,24 @@ def download_youtube_video(
         - title: Video title from YouTube
         - duration: Video duration in seconds
         - file_size: File size in bytes
-
+    
     Raises:
         Exception: If download fails
     """
+    # Normalize URL to standard format
     url = normalize_youtube_url(url)
     logger.info(f"Normalized URL: {url}")
-
+    
     if not video_id:
         video_id = str(uuid.uuid4())
-
+    
     output_dir.mkdir(parents=True, exist_ok=True)
 
     try:
         max_duration_seconds = int(os.getenv("YOUTUBE_MAX_DURATION_SECONDS", "43200"))
     except ValueError:
         max_duration_seconds = 43200
-
+    
     # Resolve optional YouTube cookie source for bot-protected videos.
     cookie_file_path: Optional[Path] = None
     cleanup_cookie_file = False
@@ -151,7 +154,7 @@ def download_youtube_video(
 
     # Base yt-dlp configuration (NO cookies here - added per-attempt)
     base_ydl_opts = {
-        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best',
+        'format': 'bestvideo[ext=mp4]+bestaudio[ext=m4a]/bestvideo[ext=mp4]+bestaudio/best[ext=mp4]/best',  # Best video + audio merged
         'outtmpl': str(output_dir / f'{video_id}.%(ext)s'),
         'quiet': False,
         'no_warnings': False,
@@ -161,6 +164,7 @@ def download_youtube_video(
             'key': 'FFmpegVideoConvertor',
             'preferedformat': 'mp4',
         }],
+        # Download restrictions
         'max_filesize': 12 * 1024 * 1024 * 1024,  # 12GB max for cricket matches
 
         # Anti-bot / server-friendly settings
@@ -264,23 +268,24 @@ def download_youtube_video(
                 },
             }),
         ]
-
+        
         last_error = None
         for attempt_num, attempt_opts in enumerate(download_attempts, 1):
             try:
                 logger.info(f"Download attempt {attempt_num}/{len(download_attempts)}")
-
+                
                 with yt_dlp.YoutubeDL(attempt_opts) as ydl:
+                    # Extract info without downloading first (to validate and get metadata)
                     info = ydl.extract_info(url, download=False)
-
+                    
                     if not info:
                         raise ValueError("Could not extract video information")
-
+                    
                     title = info.get('title', 'Unknown Title')
                     duration = info.get('duration', 0)
-
+                    
                     logger.info(f"Video info: {title} ({duration}s)")
-
+                    
                     # Check duration (cricket matches can be very long)
                     if duration > max_duration_seconds:
                         max_hours = max_duration_seconds / 3600
@@ -288,29 +293,33 @@ def download_youtube_video(
                             f"Video is too long (max {max_hours:.1f} hours). "
                             "Consider trimming before upload or increase YOUTUBE_MAX_DURATION_SECONDS."
                         )
-
+                    
+                    # Now download
                     ydl.download([url])
+                    
+                    # If we reach here, download succeeded
                     break
-
+                    
             except Exception as e:
                 last_error = e
                 logger.warning(f"Attempt {attempt_num} failed: {str(e)}")
                 if attempt_num < len(download_attempts):
                     continue
                 else:
+                    # All attempts failed, raise the last error
                     raise last_error
-
+        
         # Find the downloaded file (yt-dlp may add different extensions)
         downloaded_files = list(output_dir.glob(f"{video_id}.*"))
-
+        
         if not downloaded_files:
             raise FileNotFoundError(f"Downloaded file not found for video_id: {video_id}")
-
+        
         file_path = downloaded_files[0]
         file_size = file_path.stat().st_size
-
+        
         logger.info(f"Successfully downloaded: {file_path} ({file_size} bytes)")
-
+        
         return {
             'video_id': video_id,
             'file_path': str(file_path),
@@ -318,12 +327,12 @@ def download_youtube_video(
             'duration': duration,
             'file_size': file_size,
         }
-
+    
     except yt_dlp.utils.DownloadError as e:
         error_msg = str(e)
         error_msg_lower = error_msg.lower()
         logger.error(f"yt-dlp download error: {error_msg}")
-
+        
         # Provide user-friendly error messages
         if (
             "sign in to confirm" in error_msg_lower
@@ -374,21 +383,21 @@ def download_youtube_video(
 def validate_youtube_url(url: str) -> bool:
     """
     Validate if a URL is a valid YouTube URL.
-
+    
     Args:
         url: URL string to validate
-
+    
     Returns:
         True if valid YouTube URL, False otherwise
     """
     import re
-
+    
     youtube_regex = (
         r'(https?://)?(www\.)?'
         r'(youtube|youtu|youtube-nocookie)\.(com|be)/'
         r'(watch\?v=|embed/|v/|.+\?v=)?([^&=%\?]{11})'
     )
-
+    
     match = re.match(youtube_regex, url)
     return bool(match)
 
@@ -396,24 +405,25 @@ def validate_youtube_url(url: str) -> bool:
 def extract_video_id_from_url(url: str) -> Optional[str]:
     """
     Extract the YouTube video ID from a URL.
-
+    
     Args:
         url: YouTube URL
-
+    
     Returns:
         YouTube video ID or None if not found
     """
     import re
-
+    
+    # Pattern to match various YouTube URL formats
     patterns = [
         r'(?:v=|\/)([0-9A-Za-z_-]{11}).*',
         r'(?:embed\/)([0-9A-Za-z_-]{11})',
         r'(?:watch\?v=)([0-9A-Za-z_-]{11})',
     ]
-
+    
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             return match.group(1)
-
+    
     return None
