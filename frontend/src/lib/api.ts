@@ -381,7 +381,7 @@ export interface SubmissionSummary {
   coach_name?: string;
   original_filename: string;
   analysis_type: string;
-  status: 'PENDING' | 'PROCESSING' | 'DRAFT_REVIEW' | 'PUBLISHED';
+  status: 'PENDING' | 'ACCEPTED' | 'PROCESSING' | 'DRAFT_REVIEW' | 'PUBLISHED';
   created_at: string;
   analyzed_at?: string;
   published_at?: string;
@@ -418,6 +418,50 @@ export interface CoachListItem {
   name: string;
   email: string;
   team?: string;
+}
+
+export interface PlayerProgress {
+  player: {
+    id: string;
+    name: string;
+    email: string;
+    team?: string;
+  };
+  summary: {
+    total_submissions: number;
+    published_reports: number;
+    batting_submissions: number;
+    bowling_submissions: number;
+    completion_rate: number;
+    days_since_last_submission: number | null;
+    improvement_trend: 'improving' | 'declining' | 'stable' | 'insufficient_data';
+  };
+  flaw_frequency: Array<{ flaw: string; count: number }>;
+  flaw_trend: {
+    first_report_flaw_count: number;
+    latest_report_flaw_count: number;
+    delta: number;
+    trend: string;
+  } | null;
+  submission_timeline: Array<{
+    id: string;
+    analysis_type: string;
+    status: string;
+    created_at: string;
+    published_at?: string;
+    flaw_count: number;
+    pdf_report_url?: string;
+  }>;
+}
+
+export interface CoachAthlete {
+  id: string;
+  name: string;
+  email: string;
+  team?: string;
+  total_submissions: number;
+  published_reports: number;
+  joined_at?: string;
 }
 
 export const submissionsApi = {
@@ -463,6 +507,14 @@ export const submissionsApi = {
   /** Get single submission detail */
   getById: (submissionId: string) =>
     api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+
+  /** Coach: My athletes (players with accepted submissions) */
+  coachAthletes: () =>
+    api.get<{ athletes: CoachAthlete[]; total: number }>('/submissions/coach/athletes'),
+
+  /** Coach: Individual player progress */
+  playerProgress: (playerId: string) =>
+    api.get<PlayerProgress>(`/submissions/coach/player/${playerId}/progress`),
 };
 
 // Cloud Storage — Direct-to-GCS Upload

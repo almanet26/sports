@@ -77,6 +77,8 @@ def list_submissions_for_coach(
         q = q.filter(
             VideoSubmission.status.in_([
                 SubmissionStatus.PENDING,
+                SubmissionStatus.ACCEPTED,
+                SubmissionStatus.PROCESSING,
                 SubmissionStatus.DRAFT_REVIEW,
             ])
         )
@@ -87,8 +89,16 @@ def list_submissions_for_coach(
 
 # Update: State transitions
 def mark_processing(db: Session, submission: VideoSubmission) -> VideoSubmission:
-    """PENDING → PROCESSING"""
+    """PENDING / ACCEPTED → PROCESSING"""
     submission.status = SubmissionStatus.PROCESSING
+    db.commit()
+    db.refresh(submission)
+    return submission
+
+
+def mark_accepted(db: Session, submission: VideoSubmission) -> VideoSubmission:
+    """PENDING → ACCEPTED"""
+    submission.status = SubmissionStatus.ACCEPTED
     db.commit()
     db.refresh(submission)
     return submission
