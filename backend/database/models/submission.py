@@ -33,6 +33,7 @@ class SubmissionStatus(str, PyEnum):
     """State machine for video submissions."""
     UPLOADING = "UPLOADING"
     PENDING = "PENDING"
+    ACCEPTED = "ACCEPTED"      # Coach accepted — player added to My Athletes
     PROCESSING = "PROCESSING"
     DRAFT_REVIEW = "DRAFT_REVIEW"
     PUBLISHED = "PUBLISHED"

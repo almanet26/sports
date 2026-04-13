@@ -71,12 +71,15 @@ def _ensure_videos_schema(db_session) -> None:
 
 
 def _ensure_submission_status_enum(db_session) -> None:
-    """Ensure legacy PostgreSQL enum includes UPLOADING status value."""
+    """Ensure legacy PostgreSQL enum includes UPLOADING and ACCEPTED status values."""
     try:
         dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
         if dialect != "sqlite":
             db_session.execute(
                 text("ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS 'UPLOADING'")
+            )
+            db_session.execute(
+                text("ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS 'ACCEPTED'")
             )
             db_session.commit()
             logger.info("Submission status enum patch check completed.")
@@ -280,12 +283,12 @@ if SUBMISSIONS_AVAILABLE and submissions is not None:
 else:
     logger.warning("Submissions pipeline disabled")
 
-# Cloud Storage (Direct-to-GCS signed URL uploads)
-if GCS_AVAILABLE and storage is not None:
+# Cloud Storage (Direct-to-GCS signed URL uploads + local fallback)
+if storage is not None:
     app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
-    logger.info("Direct-to-GCS upload feature enabled")
+    logger.info("Storage routes enabled (GCS=%s)", GCS_AVAILABLE)
 else:
-    logger.warning("Direct-to-GCS upload feature disabled (GCS not configured)")
+    logger.warning("Storage routes disabled")
 
 # Internal Worker endpoint (called by Cloud Tasks, NOT public API)
 if WORKER_AVAILABLE and worker is not None:
