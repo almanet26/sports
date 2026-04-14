@@ -212,57 +212,6 @@ async def upload_profile_image(
         await file.close()
 
 
-@router.post("/coach-intro-video")
-async def upload_intro_video(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    if current_user.role != 'COACH':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
-    ALLOWED_VIDEO = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_VIDEO:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video format")
-    MAX_SIZE = 100 * 1024 * 1024  # 100MB
-    try:
-        content = await file.read()
-        if len(content) > MAX_SIZE:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 100MB.")
-
-        GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
-        unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-
-        if GCS_BUCKET_NAME:
-            from google.cloud import storage as gcs
-            blob_name = f"coach_intro_videos/{unique_filename}"
-            gcs_client = gcs.Client()
-            bucket = gcs_client.bucket(GCS_BUCKET_NAME)
-            blob = bucket.blob(blob_name)
-            blob.upload_from_string(content, content_type=file.content_type or "video/mp4")
-            # Generate a signed URL valid for 7 days
-            from datetime import timedelta
-            intro_video_url = blob.generate_signed_url(version="v4", expiration=timedelta(days=7), method="GET")
-        else:
-            storage_dir = Path("storage/coach_intro_videos")
-            storage_dir.mkdir(parents=True, exist_ok=True)
-            with open(storage_dir / unique_filename, "wb") as buf:
-                buf.write(content)
-            intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
-
-        current_user.intro_video_url = intro_video_url
-        db.commit()
-        db.refresh(current_user)
-        return {"intro_video_url": intro_video_url}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error("Intro video upload failed: %s", e)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed")
-    finally:
-        await file.close()
-
-
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == login_data.email).first()
