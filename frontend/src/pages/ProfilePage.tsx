@@ -157,19 +157,27 @@ export default function ProfilePage() {
           </div>
 
           {/* Top row: photo + bio + completion */}
-          <div className="flex flex-col md:flex-row gap-4 mb-4">
+          <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_220px] gap-4 mb-4">
             {/* Profile Photo */}
             <div className="flex flex-col items-center gap-2">
-              <div className="relative group cursor-pointer" onClick={() => photoInputRef.current?.click()}>
+              <div
+                className="relative w-24 h-24 cursor-pointer"
+                onClick={() => photoInputRef.current?.click()}
+                onMouseEnter={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '1'}
+                onMouseLeave={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '0'}
+              >
                 {profileImageUrl
                   ? <img src={profileImageUrl} alt="profile" className="w-24 h-24 rounded-2xl object-cover" />
                   : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
                       {user?.name?.charAt(0)?.toUpperCase() || 'C'}
                     </div>}
-                <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <div className="photo-overlay absolute inset-0 rounded-2xl bg-black/60 flex flex-col items-center justify-center gap-1 transition-opacity" style={{ opacity: 0 }}>
                   {photoUploading
                     ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <i className="fas fa-camera text-white text-lg"></i>}
+                    : <>
+                        <i className="fas fa-camera text-white text-lg"></i>
+                        <span className="text-white text-xs">Change</span>
+                      </>}
                 </div>
               </div>
               <p className={`text-xs ${sub}`}>Profile Photo</p>
@@ -177,7 +185,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Bio */}
-            <div className={`flex-1 rounded-2xl p-4 border ${cardBg}`}>
+            <div className={`rounded-2xl p-4 border ${cardBg}`}>
               <p className="text-xs font-semibold mb-2 flex items-center gap-1">
                 <i className="fas fa-quote-left text-purple-400"></i>Professional Bio
               </p>
@@ -187,7 +195,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Completion */}
-            <div className="space-y-3 min-w-[180px]">
+            <div className="space-y-3">
               <div className={`rounded-2xl p-4 border ${cardBg}`}>
                 <p className="text-xs font-semibold mb-2">Profile Completion</p>
                 <div className="w-full h-2 rounded-full bg-white/10 mb-1">
@@ -201,7 +209,7 @@ export default function ProfilePage() {
                 <ul className="space-y-1.5">
                   {completionItems.map(({ label, done }) => (
                     <li key={label} className={`text-xs flex items-center gap-2 ${done ? 'text-green-400' : sub}`}>
-                      <span className={`w-2 h-2 rounded-full ${done ? 'bg-green-400' : 'bg-white/20'}`} />
+                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? 'bg-green-400' : 'bg-white/20'}`} />
                       {label}
                     </li>
                   ))}
