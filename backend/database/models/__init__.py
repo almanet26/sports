@@ -31,6 +31,7 @@ from database.models.coach_shortlist import CoachShortlist
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
+from database.models.coach_content import CoachContent
 __all__ = [
     # User models
     "User",
