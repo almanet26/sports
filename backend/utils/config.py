@@ -5,6 +5,7 @@ Application configuration management.
 import os
 from pathlib import Path
 from typing import List
+from pydantic import Field
 from pydantic_settings import BaseSettings
 
 
@@ -30,7 +31,9 @@ class Settings(BaseSettings):
 
     # Application
     ENVIRONMENT: str = "development"
-    DEBUG: bool = True
+    # Use APP_DEBUG to avoid clashing with common system-level DEBUG env vars
+    # (e.g., some environments set DEBUG=release).
+    DEBUG: bool = Field(default=True, validation_alias="APP_DEBUG")
     ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
 
     # Storage

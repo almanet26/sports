@@ -119,6 +119,7 @@ class UserProfileResponse(BaseModel):
     intro_video_url: Optional[str] = None
     profile_image_url: Optional[str] = None
     coach_category: Optional[str] = None
+    coach_status: Optional[str] = None
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime]
@@ -168,6 +169,13 @@ class EmailVerificationRequest(BaseModel):
 # Refresh Token Schema
 class RefreshTokenRequest(BaseModel):
     refresh_token: str
+
+
+# Intro video upload response schema
+class IntroVideoResponse(BaseModel):
+    intro_video_url: str
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 # Set aliases for backward compatibility

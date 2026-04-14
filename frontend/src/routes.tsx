@@ -31,10 +31,21 @@ import CoachReviewPage from './pages/CoachReviewPage';
 import SubscriptionPage from './pages/SubscriptionPage';
 import CoachPendingPage from './pages/CoachPendingPage';
 import CoachVerificationPage from './pages/CoachVerificationPage';
+import CoachProfileSetupPage from './pages/CoachProfileSetupPage';
 import FeaturesDetailPage from './pages/FeaturesDetailPage';
 import StatsPage from './pages/PlayerStatsPage';
 import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
+import CoachSessionsPage from './pages/CoachSessionsPage';
+import CoachAvailabilityPage from './pages/CoachAvailabilityPage';
+import CoachTrainingPlansPage from './pages/CoachTrainingPlansPage';
+import CoachAnalyticsPage from './pages/CoachAnalyticsPage';
+import CoachReviewsPage from './pages/CoachReviewsPage';
+import CoachEarningsPage from './pages/CoachEarningsPage';
+import CoachMyPlayersPage from './pages/CoachMyPlayersPage';
+import CoachMessagesPage from './pages/CoachMessagesPage';
+import CoachContentPage from './pages/CoachContentPage';
+import CoachSettingsPage from './pages/CoachSettingsPage';
 
 // Auth Initializer (runs once on module load) 
 let authInitialized = false;
@@ -101,6 +112,22 @@ function RoleGuard({ allowedRoles, fallbackPath = '/player' }: RoleGuardProps) {
   return <Outlet />;
 }
 
+// CoachStatusGuard — blocks incomplete/pending coaches from accessing coach routes
+function CoachStatusGuard() {
+  const user = useAuthStore((state) => state.user);
+
+  if (user?.role === 'COACH') {
+    if (user.coach_status === 'incomplete') {
+      return <Navigate to="/coach/setup" replace />;
+    }
+    if (user.coach_status === 'pending') {
+      return <Navigate to="/coach-pending" replace />;
+    }
+  }
+
+  return <Outlet />;
+}
+
 // Guest Route - Only accessible when NOT authenticated
 function GuestRoute() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -111,7 +138,7 @@ function GuestRoute() {
       user.role === 'ADMIN'
         ? '/admin'
         : user.role === 'COACH'
-          ? '/coach'
+          ? (user.coach_status === 'incomplete' ? '/coach/setup' : user.coach_status === 'pending' ? '/coach-pending' : '/coach')
           : '/player';
 
     return <Navigate to={targetPath} replace />;
@@ -133,7 +160,7 @@ function DashboardRedirect() {
     user.role === 'ADMIN'
       ? '/admin'
       : user.role === 'COACH'
-        ? '/coach'
+        ? (user.coach_status === 'incomplete' ? '/coach/setup' : user.coach_status === 'pending' ? '/coach-pending' : '/coach')
         : '/player';
 
   return <Navigate to={targetPath} replace />;
@@ -146,13 +173,18 @@ export default function AppRouter() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/coach-pending" element={<CoachPendingPage />} />
         <Route path="/features-detail" element={<FeaturesDetailPage />} />
 
         {/* Guest only */}
         <Route element={<GuestRoute />}>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+        </Route>
+
+        {/* Coach profile setup & pending — authenticated coaches only */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/coach/setup" element={<CoachProfileSetupPage />} />
+          <Route path="/coach-pending" element={<CoachPendingPage />} />
         </Route>
 
         {/* Dashboard redirect */}
@@ -182,12 +214,24 @@ export default function AppRouter() {
         {/* Coach */}
         <Route element={<ProtectedRoute />}>
           <Route element={<RoleGuard allowedRoles={['COACH', 'ADMIN']} />}>
-            <Route element={<DashboardLayout />}>
-              <Route path="/coach" element={<CoachDashboard />} />
-              <Route path="/coach/upload" element={<UploadPage />} />
-              <Route path="/coach/player/:id" element={<PlayerPerformance />} />
-              <Route path="/coach/submissions" element={<CoachInboxPage />} />
-              <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
+            <Route element={<CoachStatusGuard />}>
+              <Route element={<DashboardLayout />}>
+                <Route path="/coach" element={<CoachDashboard />} />
+                <Route path="/coach/upload" element={<UploadPage />} />
+                <Route path="/coach/player/:id" element={<PlayerPerformance />} />
+                <Route path="/coach/players" element={<CoachMyPlayersPage />} />
+                <Route path="/coach/submissions" element={<CoachInboxPage />} />
+                <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
+                <Route path="/coach/sessions" element={<CoachSessionsPage />} />
+                <Route path="/coach/availability" element={<CoachAvailabilityPage />} />
+                <Route path="/coach/training-plans" element={<CoachTrainingPlansPage />} />
+                <Route path="/coach/analytics" element={<CoachAnalyticsPage />} />
+                <Route path="/coach/reviews" element={<CoachReviewsPage />} />
+                <Route path="/coach/earnings" element={<CoachEarningsPage />} />
+                <Route path="/coach/messages" element={<CoachMessagesPage />} />
+                <Route path="/coach/content" element={<CoachContentPage />} />
+                <Route path="/coach/settings" element={<CoachSettingsPage />} />
+              </Route>
             </Route>
           </Route>
         </Route>
@@ -217,4 +261,4 @@ export default function AppRouter() {
   );
 }
 
-export { ProtectedRoute, RoleGuard, GuestRoute, DashboardRedirect };
+export { ProtectedRoute, RoleGuard, GuestRoute, DashboardRedirect, CoachStatusGuard };

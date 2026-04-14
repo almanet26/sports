@@ -298,12 +298,7 @@ export async function getPlayerProfile(): Promise<PlayerProfileEnvelope | null> 
 
 export async function updatePlayerProfile(payload: UpdatePlayerProfilePayload): Promise<PlayerProfileEnvelope> {
   try {
-    const response = await authApi.updateProfile({
-      name: payload.fullName,
-      profile_bio: payload.bio,
-      gender: payload.gender,
-    });
-
+    // Save extended profile data to localStorage first
     writePersistedProfile({
       fullName: payload.fullName,
       username: payload.username,
@@ -325,6 +320,13 @@ export async function updatePlayerProfile(payload: UpdatePlayerProfilePayload): 
       bio: payload.bio,
       profilePhoto: payload.profilePhoto,
       avatar: payload.profilePhoto,
+    });
+
+    // Only send fields the backend accepts
+    const response = await authApi.updateProfile({
+      name: payload.fullName,
+      profile_bio: payload.bio,
+      gender: payload.gender,
     });
 
     return normalizeProfile(response.data as Record<string, unknown>);

@@ -42,6 +42,7 @@ from database.crud.submission import (
     list_submissions_for_player,
     list_submissions_for_coach,
     mark_processing,
+    mark_accepted,
     save_analysis_results,
     publish_submission,
 )
@@ -640,6 +641,218 @@ def player_all_submissions(
     )
 
 
+#  COACH: Individual Player Progress
+@router.get("/coach/player/{player_id}/progress")
+def coach_player_progress(
+    player_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Full progress report for a single player derived from submission data."""
+    if current_user.role not in ("COACH", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only coaches can view player progress.")
+
+    player = db.query(User).filter(User.id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found.")
+
+    # All submissions for this player-coach pair
+    all_subs = (
+        db.query(VideoSubmission)
+        .filter(
+            VideoSubmission.player_id == player_id,
+            VideoSubmission.coach_id == current_user.id,
+        )
+        .order_by(VideoSubmission.created_at.asc())
+        .all()
+    )
+
+    if not all_subs:
+        raise HTTPException(status_code=404, detail="No submissions found for this player.")
+
+    published_subs = [s for s in all_subs if s.status == SubmissionStatus.PUBLISHED]
+    batting_subs   = [s for s in all_subs if s.analysis_type == "BATTING"]
+    bowling_subs   = [s for s in all_subs if s.analysis_type == "BOWLING"]
+
+    total       = len(all_subs)
+    published   = len(published_subs)
+    completion  = round((published / total) * 100) if total else 0
+
+    from datetime import date
+    last_sub_date = all_subs[-1].created_at.date() if all_subs else None
+    days_since    = (date.today() - last_sub_date).days if last_sub_date else None
+
+    # Flaw frequency across all published reports
+    flaw_counter: dict[str, int] = {}
+    for sub in published_subs:
+        source = sub.coach_final_text or sub.ai_draft_text or ""
+        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
+            flaws = extract_bowling_flaws(source)
+        elif BATTING_ENGINE_AVAILABLE:
+            flaws = extract_detected_flaws(source)
+        else:
+            flaws = []
+        for f in flaws:
+            name = f.get("flaw_name", "").strip()
+            if name:
+                flaw_counter[name] = flaw_counter.get(name, 0) + 1
+
+    flaw_frequency = [
+        {"flaw": k, "count": v}
+        for k, v in sorted(flaw_counter.items(), key=lambda x: -x[1])[:8]
+    ]
+
+    # Improvement trend: first vs latest published report flaw count
+    flaw_trend = None
+    if len(published_subs) >= 2:
+        def _flaw_count(sub):
+            source = sub.coach_final_text or sub.ai_draft_text or ""
+            if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
+                return len(extract_bowling_flaws(source))
+            elif BATTING_ENGINE_AVAILABLE:
+                return len(extract_detected_flaws(source))
+            return 0
+
+        first_count  = _flaw_count(published_subs[0])
+        latest_count = _flaw_count(published_subs[-1])
+        delta        = latest_count - first_count
+        trend        = "improving" if delta < 0 else ("declining" if delta > 0 else "stable")
+        flaw_trend   = {
+            "first_report_flaw_count":  first_count,
+            "latest_report_flaw_count": latest_count,
+            "delta":                    delta,
+            "trend":                    trend,
+        }
+
+    # Submission timeline
+    timeline = []
+    for sub in all_subs:
+        source = sub.coach_final_text or sub.ai_draft_text or ""
+        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
+            fc = len(extract_bowling_flaws(source))
+        elif BATTING_ENGINE_AVAILABLE:
+            fc = len(extract_detected_flaws(source))
+        else:
+            fc = 0
+        timeline.append({
+            "id":              sub.id,
+            "analysis_type":   sub.analysis_type,
+            "status":          sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status,
+            "created_at":      sub.created_at.isoformat() if sub.created_at else None,
+            "published_at":    sub.published_at.isoformat() if sub.published_at else None,
+            "flaw_count":      fc,
+            "pdf_report_url":  _gcs_to_signed_url(sub.pdf_report_url),
+        })
+
+    return {
+        "player": {
+            "id":    player.id,
+            "name":  player.name,
+            "email": player.email,
+            "team":  player.team,
+        },
+        "summary": {
+            "total_submissions":        total,
+            "published_reports":        published,
+            "batting_submissions":       len(batting_subs),
+            "bowling_submissions":       len(bowling_subs),
+            "completion_rate":          completion,
+            "days_since_last_submission": days_since,
+            "improvement_trend":        flaw_trend["trend"] if flaw_trend else "insufficient_data",
+        },
+        "flaw_frequency":    flaw_frequency,
+        "flaw_trend":        flaw_trend,
+        "submission_timeline": timeline,
+    }
+
+
+#  COACH: Accept a submission (no-op for now, acceptance is implicit when running AI)
+@router.post("/{submission_id}/accept")
+def coach_accept_submission(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Coach explicitly accepts a PENDING submission.
+    For now, this is a no-op that just validates the submission exists.
+    The player is added to 'My Athletes' when the coach runs AI analysis (PENDING → PROCESSING).
+    """
+    if current_user.role not in ("COACH", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only coaches can accept submissions.")
+
+    sub = get_submission_by_id(db, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    if sub.coach_id != current_user.id and current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Not your submission to accept.")
+    if sub.status != SubmissionStatus.PENDING:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Submission is already {sub.status.value}.",
+        )
+
+    mark_accepted(db, sub)
+    logger.info("Submission %s accepted by coach %s", sub.id, current_user.id)
+    return {"id": sub.id, "status": sub.status.value, "message": "Player added to My Athletes."}
+
+
+#  COACH: My Athletes (players with accepted submissions)
+@router.get("/coach/athletes")
+def coach_athletes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return distinct players whose submissions the coach has accepted (moved past PENDING)."""
+    if current_user.role not in ("COACH", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only coaches can access this endpoint.")
+
+    from sqlalchemy import distinct
+    accepted_statuses = [
+        SubmissionStatus.ACCEPTED,
+        SubmissionStatus.PROCESSING,
+        SubmissionStatus.DRAFT_REVIEW,
+        SubmissionStatus.PUBLISHED,
+    ]
+    subs = (
+        db.query(VideoSubmission)
+        .filter(
+            VideoSubmission.coach_id == current_user.id,
+            VideoSubmission.status.in_(accepted_statuses),
+        )
+        .all()
+    )
+
+    seen = set()
+    athletes = []
+    for sub in subs:
+        if sub.player_id not in seen:
+            seen.add(sub.player_id)
+            player = sub.player
+            if player:
+                # Count total submissions and published ones for this player-coach pair
+                total = db.query(VideoSubmission).filter(
+                    VideoSubmission.coach_id == current_user.id,
+                    VideoSubmission.player_id == sub.player_id,
+                ).count()
+                published = db.query(VideoSubmission).filter(
+                    VideoSubmission.coach_id == current_user.id,
+                    VideoSubmission.player_id == sub.player_id,
+                    VideoSubmission.status == SubmissionStatus.PUBLISHED,
+                ).count()
+                athletes.append({
+                    "id": player.id,
+                    "name": player.name,
+                    "email": player.email,
+                    "team": player.team,
+                    "total_submissions": total,
+                    "published_reports": published,
+                    "joined_at": sub.created_at.isoformat() if sub.created_at else None,
+                })
+
+    return {"athletes": athletes, "total": len(athletes)}
+
+
 #  COACH: Inbox
 @router.get("/coach/me", response_model=SubmissionListResponse)
 def coach_inbox(
@@ -682,10 +895,10 @@ def coach_run_analysis(
         raise HTTPException(status_code=404, detail="Submission not found.")
     if sub.coach_id != current_user.id and current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Not your submission to analyze.")
-    if sub.status != SubmissionStatus.PENDING:
+    if sub.status not in (SubmissionStatus.PENDING, SubmissionStatus.ACCEPTED):
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING submissions can be analyzed.",
+            detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING or ACCEPTED submissions can be analyzed.",
         )
 
     # Mark PROCESSING

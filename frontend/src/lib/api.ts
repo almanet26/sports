@@ -147,6 +147,18 @@ export const authApi = {
     specialization: string[];
     coach_category: string;
   }>) => api.put('/auth/me', data),
+
+  uploadIntroVideo: (file: File, onProgress?: (p: number) => void) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return api.post<{ intro_video_url: string }>('/auth/coach-intro-video', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
+      onUploadProgress: (e) => {
+        if (e.total && onProgress) onProgress(Math.round((e.loaded * 100) / e.total));
+      },
+    });
+  },
 };
 
 // Video endpoints
@@ -389,7 +401,7 @@ export interface SubmissionSummary {
   coach_name?: string;
   original_filename: string;
   analysis_type: string;
-  status: 'PENDING' | 'PROCESSING' | 'DRAFT_REVIEW' | 'PUBLISHED';
+  status: 'PENDING' | 'ACCEPTED' | 'PROCESSING' | 'DRAFT_REVIEW' | 'PUBLISHED';
   created_at: string;
   analyzed_at?: string;
   published_at?: string;
@@ -426,6 +438,50 @@ export interface CoachListItem {
   name: string;
   email: string;
   team?: string;
+}
+
+export interface PlayerProgress {
+  player: {
+    id: string;
+    name: string;
+    email: string;
+    team?: string;
+  };
+  summary: {
+    total_submissions: number;
+    published_reports: number;
+    batting_submissions: number;
+    bowling_submissions: number;
+    completion_rate: number;
+    days_since_last_submission: number | null;
+    improvement_trend: 'improving' | 'declining' | 'stable' | 'insufficient_data';
+  };
+  flaw_frequency: Array<{ flaw: string; count: number }>;
+  flaw_trend: {
+    first_report_flaw_count: number;
+    latest_report_flaw_count: number;
+    delta: number;
+    trend: string;
+  } | null;
+  submission_timeline: Array<{
+    id: string;
+    analysis_type: string;
+    status: string;
+    created_at: string;
+    published_at?: string;
+    flaw_count: number;
+    pdf_report_url?: string;
+  }>;
+}
+
+export interface CoachAthlete {
+  id: string;
+  name: string;
+  email: string;
+  team?: string;
+  total_submissions: number;
+  published_reports: number;
+  joined_at?: string;
 }
 
 export const submissionsApi = {
@@ -483,6 +539,14 @@ export const submissionsApi = {
   /** Get single submission detail */
   getById: (submissionId: string) =>
     api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+
+  /** Coach: My athletes (players with accepted submissions) */
+  coachAthletes: () =>
+    api.get<{ athletes: CoachAthlete[]; total: number }>('/submissions/coach/athletes'),
+
+  /** Coach: Individual player progress */
+  playerProgress: (playerId: string) =>
+    api.get<PlayerProgress>(`/submissions/coach/player/${playerId}/progress`),
 };
 
 // Cloud Storage — Direct-to-GCS Upload
@@ -640,6 +704,67 @@ export const adminApi = {
   // Get activity feed
   getActivityFeed: (limit = 20) => 
     api.get('/admin/activity', { params: { limit } }),
+};
+
+// ============ Coach Dashboard APIs ============
+
+export interface TrainingSession {
+  id: string;
+  topic: string;
+  description?: string;
+  prerequisites?: string;
+  session_date: string;
+  session_time: string;
+  duration_minutes: string;
+  session_type: string;
+  created_at?: string;
+}
+
+export const sessionsApi = {
+  list: () => api.get<{ sessions: TrainingSession[] }>('/sessions'),
+  create: (data: Omit<TrainingSession, 'id' | 'created_at'>) => api.post<TrainingSession>('/sessions', data),
+  update: (id: string, data: Partial<TrainingSession>) => api.put<TrainingSession>(`/sessions/${id}`, data),
+  delete: (id: string) => api.delete(`/sessions/${id}`),
+};
+
+export interface AvailabilitySlot {
+  id: string;
+  day_of_week: string;
+  start_time: string;
+  end_time: string;
+  is_available: boolean;
+}
+
+export const availabilityApi = {
+  list: () => api.get<{ slots: AvailabilitySlot[] }>('/sessions/availability'),
+  save: (slots: Omit<AvailabilitySlot, 'id'>[]) => api.post('/sessions/availability', { slots }),
+};
+
+export interface TrainingPlanData {
+  id: string;
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: string;
+  is_public: boolean;
+  drills?: string[];
+  created_at?: string;
+}
+
+export interface TrainingPlanCreate {
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: 'group_all' | 'individual' | 'age_group';
+  is_public: boolean;
+  drills?: string[];
+}
+
+export const trainingPlansApi = {
+  list: () => api.get<{ plans: TrainingPlanData[] }>('/sessions/training-plans'),
+  create: (data: TrainingPlanCreate) => api.post<TrainingPlanData>('/sessions/training-plans', data),
+  update: (id: string, data: Partial<TrainingPlanCreate>) => api.put<TrainingPlanData>(`/sessions/training-plans/${id}`, data),
+  delete: (id: string) => api.delete(`/sessions/training-plans/${id}`),
 };
 
 export default api;

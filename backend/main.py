@@ -17,6 +17,10 @@ from database.models import (
     BattingAnalysis,
     VideoSubmission,
 )
+from database.models.coach_content import CoachContent
+from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
+from database.models.coach_training_plan import CoachTrainingPlan
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -71,12 +75,15 @@ def _ensure_videos_schema(db_session) -> None:
 
 
 def _ensure_submission_status_enum(db_session) -> None:
-    """Ensure legacy PostgreSQL enum includes UPLOADING status value."""
+    """Ensure legacy PostgreSQL enum includes UPLOADING and ACCEPTED status values."""
     try:
         dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
         if dialect != "sqlite":
             db_session.execute(
                 text("ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS 'UPLOADING'")
+            )
+            db_session.execute(
+                text("ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS 'ACCEPTED'")
             )
             db_session.commit()
             logger.info("Submission status enum patch check completed.")
@@ -99,9 +106,36 @@ if not _CLOUD_RUN:
         "storage/submission_videos",
         "storage/temp_frames",
         "storage/coach_documents",
+        "storage/coach_intro_videos",
+        "storage/profile_images",
+        "storage/coach_content",
     ]
     for dir_path in STORAGE_DIRS:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_coach_tables(db_session) -> None:
+    """Create coach-related tables if they don't exist and patch missing columns."""
+    try:
+        Base.metadata.create_all(bind=db_session.bind)
+        # Patch missing columns on coach_content (table may exist from older schema)
+        dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
+        if dialect == "sqlite":
+            cols = db_session.execute(text("PRAGMA table_info(coach_content)")).fetchall()
+            existing = {str(c[1]).lower() for c in cols}
+            if "views" not in existing:
+                db_session.execute(text("ALTER TABLE coach_content ADD COLUMN views INTEGER DEFAULT 0"))
+            if "file_size" not in existing:
+                db_session.execute(text("ALTER TABLE coach_content ADD COLUMN file_size VARCHAR(50)"))
+        else:
+            db_session.execute(text("ALTER TABLE coach_content ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0"))
+            db_session.execute(text("ALTER TABLE coach_content ADD COLUMN IF NOT EXISTS file_size VARCHAR(50)"))
+        db_session.execute(text("UPDATE coach_content SET views = 0 WHERE views IS NULL"))
+        db_session.commit()
+        logger.info("Coach tables ensured.")
+    except Exception as e:
+        db_session.rollback()
+        logger.warning("Coach tables patch skipped/failed: %s", e)
 
 
 @asynccontextmanager
@@ -124,6 +158,7 @@ async def lifespan(app: FastAPI):
         _ensure_users_schema(db)
         _ensure_videos_schema(db)
         _ensure_submission_status_enum(db)
+        _ensure_coach_tables(db)
         logger.info("Database tables ready.")
         
         db.close()
@@ -160,7 +195,9 @@ if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://localhost:8000",
         "https://sports-teal-two.vercel.app",  # Vercel production frontend
+        "https://sports-l8at.vercel.app",        # Fork deployment
     ]
     # Append additional production frontend URL from env if set
     _frontend = os.getenv("FRONTEND_URL", "").strip()
@@ -195,6 +232,9 @@ if not _CLOUD_RUN:
     app.mount("/static/submission_videos", StaticFiles(directory="storage/submission_videos"), name="submission_videos")
     app.mount("/static/temp_frames", StaticFiles(directory="storage/temp_frames"), name="temp_frames")
     app.mount("/static/coach_documents", StaticFiles(directory="storage/coach_documents"), name="coach_documents")
+    app.mount("/static/coach_intro_videos", StaticFiles(directory="storage/coach_intro_videos"), name="coach_intro_videos")
+    app.mount("/static/profile_images", StaticFiles(directory="storage/profile_images"), name="profile_images")
+    app.mount("/static/coach_content", StaticFiles(directory="storage/coach_content"), name="coach_content")
 
 
 # Health Check Endpoints 
@@ -230,7 +270,7 @@ def db_health_check():
 
 # Include API Routers 
 from api.routes import auth, videos, player_videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
-from api.routes import plan, subscription
+from api.routes import plan, subscription, sessions
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
@@ -239,6 +279,7 @@ app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
 app.include_router(plan.router, prefix="/api/v1", tags=["admin"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
@@ -278,12 +319,12 @@ if SUBMISSIONS_AVAILABLE and submissions is not None:
 else:
     logger.warning("Submissions pipeline disabled")
 
-# Cloud Storage (Direct-to-GCS signed URL uploads)
-if GCS_AVAILABLE and storage is not None:
+# Cloud Storage (Direct-to-GCS signed URL uploads + local fallback)
+if storage is not None:
     app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
-    logger.info("Direct-to-GCS upload feature enabled")
+    logger.info("Storage routes enabled (GCS=%s)", GCS_AVAILABLE)
 else:
-    logger.warning("Direct-to-GCS upload feature disabled (GCS not configured)")
+    logger.warning("Storage routes disabled")
 
 # Internal Worker endpoint (called by Cloud Tasks, NOT public API)
 if WORKER_AVAILABLE and worker is not None:

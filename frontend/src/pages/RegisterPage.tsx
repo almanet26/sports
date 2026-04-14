@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { api } from '../lib/api';
+import { useAuthStore } from '../store/authStore';
 
 interface RegisterFormData {
   name: string;
@@ -13,11 +14,11 @@ interface RegisterFormData {
   jerseyNumber?: number;
   team?: string;
   profileBio?: string;
-  coachDocument?: File;
 }
 
 export default function RegisterPage() {
   const navigate = useNavigate();
+  const login = useAuthStore((state) => state.login);
   const [formData, setFormData] = useState<RegisterFormData>({
     name: '',
     email: '',
@@ -29,7 +30,6 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [uploadedFileName, setUploadedFileName] = useState<string>('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -70,16 +70,18 @@ export default function RegisterPage() {
       submitData.append('role', formData.role);
       if (formData.phone) submitData.append('phone', formData.phone);
       if (formData.team) submitData.append('team', formData.team);
-      if (formData.coachDocument) submitData.append('coach_document', formData.coachDocument);
 
-      const response = await api.post('/auth/register', submitData, {
+      await api.post('/auth/register', submitData, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      console.log('Registration successful:', response.data);
-
-      // Redirect to login
-      navigate('/login', { state: { message: 'Registration successful! Please log in.' } });
+      if (formData.role === 'COACH') {
+        // Auto-login and go straight to profile setup
+        await login(formData.email, formData.password);
+        navigate('/coach/setup', { replace: true });
+      } else {
+        navigate('/login', { state: { message: 'Registration successful! Please log in.' } });
+      }
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: unknown } } };
       const detail = axiosErr?.response?.data?.detail;
@@ -319,43 +321,6 @@ export default function RegisterPage() {
               >
                 <div>
                   <label className="block text-sm font-medium text-white/80 mb-2">
-                    Verification Document *
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="file"
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) {
-                          setFormData({ ...formData, coachDocument: file });
-                          setUploadedFileName(file.name);
-                        }
-                      }}
-                      className="hidden"
-                      id="coach-document"
-                      required={formData.role === 'COACH'}
-                    />
-                    <label
-                      htmlFor="coach-document"
-                      className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20 transition-all duration-300 cursor-pointer flex items-center gap-3"
-                    >
-                      <i className="fas fa-upload text-white/40"></i>
-                      <span className="flex-1">
-                        {uploadedFileName || 'Upload coaching certificate or ID'}
-                      </span>
-                      {uploadedFileName && (
-                        <i className="fas fa-check-circle text-green-400"></i>
-                      )}
-                    </label>
-                  </div>
-                  <p className="text-xs text-white/40 mt-1">
-                    Upload your coaching certificate, ID, or credentials (PDF, DOC, or Image)
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-white/80 mb-2">
                     Phone Number
                   </label>
                   <input
@@ -378,6 +343,11 @@ export default function RegisterPage() {
                     className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/40 focus:border-blue-400 focus:bg-white/10 focus:outline-none transition-all duration-300"
                     placeholder="Team name"
                   />
+                </div>
+
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-300 text-xs flex items-start gap-2">
+                  <i className="fas fa-info-circle mt-0.5"></i>
+                  <span>After registering, you'll be taken directly to complete your profile and upload credentials for admin verification.</span>
                 </div>
               </motion.div>
             )}
@@ -436,7 +406,7 @@ export default function RegisterPage() {
                   Creating Account...
                 </div>
               ) : (
-                "Create Account"
+                formData.role === 'COACH' ? 'Create Account & Continue' : 'Create Account'
               )}
             </motion.button>
           </form>

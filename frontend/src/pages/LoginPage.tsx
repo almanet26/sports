@@ -32,12 +32,18 @@ export default function LoginPage() {
     try {
       await login(formData.email, formData.password);
       
-      // Redirect based on role (user is updated by the store)
+      // Redirect based on role and coach_status
       const currentUser = useAuthStore.getState().user;
       if (currentUser?.role === 'PLAYER') {
         navigate('/player');
       } else if (currentUser?.role === 'COACH') {
-        navigate('/coach');
+        if (currentUser.coach_status === 'incomplete') {
+          navigate('/coach/setup');
+        } else if (currentUser.coach_status === 'pending') {
+          navigate('/coach-pending');
+        } else {
+          navigate('/coach');
+        }
       } else if (currentUser?.role === 'ADMIN') {
         navigate('/admin');
       } else {

@@ -6,10 +6,12 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '../../store/themeStore';
-import { submissionsApi, storageApi, resolveMediaUrl, type SubmissionSummary } from '../../lib/api';
+import { submissionsApi, resolveMediaUrl, type SubmissionSummary } from '../../lib/api';
+import { api } from '../../lib/api';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string; bg: string }> = {
   PENDING: { label: 'Pending', color: 'text-yellow-400', icon: 'fas fa-clock', bg: 'bg-yellow-500/10' },
+  ACCEPTED: { label: 'Accepted', color: 'text-teal-400', icon: 'fas fa-user-check', bg: 'bg-teal-500/10' },
   PROCESSING: { label: 'Processing…', color: 'text-blue-400', icon: 'fas fa-cog fa-spin', bg: 'bg-blue-500/10' },
   DRAFT_REVIEW: { label: 'Draft Ready', color: 'text-purple-400', icon: 'fas fa-edit', bg: 'bg-purple-500/10' },
   PUBLISHED: { label: 'Published', color: 'text-green-400', icon: 'fas fa-check-circle', bg: 'bg-green-500/10' },
@@ -24,6 +26,7 @@ export default function CoachInbox() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string | undefined>(undefined);
   const [analyzing, setAnalyzing] = useState<string | null>(null);
+  const [accepting, setAccepting] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const fetchInbox = useCallback(async () => {
@@ -42,16 +45,32 @@ export default function CoachInbox() {
     fetchInbox();
   }, [fetchInbox]);
 
+  // Accept submission (moves player to My Athletes)
+  const handleAccept = async (id: string) => {
+    setAccepting(id);
+    setError('');
+    try {
+      await api.post(`/submissions/${id}/accept`);
+      await fetchInbox();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Accept failed';
+      setError(msg);
+    } finally {
+      setAccepting(null);
+    }
+  };
+
   // Run AI analysis
   const handleAnalyze = async (id: string) => {
     setAnalyzing(id);
     setError('');
     try {
-      await storageApi.startProcessing(id);
-      await fetchInbox();
+      await submissionsApi.analyze(id);
+      navigate(`/coach/submissions/${id}/review`);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Analysis failed';
       setError(msg);
+      await fetchInbox();
     } finally {
       setAnalyzing(null);
     }
@@ -73,8 +92,9 @@ export default function CoachInbox() {
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {[
-          { key: undefined, label: 'Active (Pending & Drafts)', icon: 'fas fa-filter' },
+          { key: undefined, label: 'Active (Pending, Accepted & Drafts)', icon: 'fas fa-filter' },
           { key: 'PENDING', label: 'Pending', icon: 'fas fa-clock' },
+          { key: 'ACCEPTED', label: 'Accepted', icon: 'fas fa-user-check' },
           { key: 'DRAFT_REVIEW', label: 'Drafts', icon: 'fas fa-edit' },
           { key: 'PUBLISHED', label: 'Published', icon: 'fas fa-check-circle' },
         ].map((f) => (
@@ -164,6 +184,21 @@ export default function CoachInbox() {
                       <td className="px-5 py-4">
                         <div className="flex gap-2">
                           {sub.status === 'PENDING' && (
+                            <motion.button
+                              whileHover={{ scale: 1.05 }}
+                              whileTap={{ scale: 0.95 }}
+                              disabled={accepting === sub.id}
+                              onClick={() => handleAccept(sub.id)}
+                              className="px-3 py-1.5 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 text-white text-xs font-medium shadow hover:shadow-lg transition-all disabled:opacity-50"
+                            >
+                              {accepting === sub.id ? (
+                                <><i className="fas fa-spinner fa-spin mr-1"></i>Accepting…</>
+                              ) : (
+                                <><i className="fas fa-user-check mr-1"></i>Accept</>
+                              )}
+                            </motion.button>
+                          )}
+                          {(sub.status === 'PENDING' || sub.status === 'ACCEPTED') && (
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}

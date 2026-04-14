@@ -50,14 +50,10 @@ ENV PORT=8080
 # Cloud Run always sends traffic to $PORT (default 8080)
 EXPOSE 8080
 
-# Gunicorn with Uvicorn workers
-# --timeout 3600 : allow up to 60 min for heavy video/ML processing
-# --graceful-timeout 30 : give workers 30s to finish on SIGTERM (Cloud Run sends SIGTERM before kill)
-# --workers 2 : keep memory footprint reasonable inside 4 GB RAM
-# --max-requests 50 : recycle workers to prevent memory leaks from OpenCV/MediaPipe
+# --workers 1 : Render free tier only has 512MB RAM — MediaPipe alone uses ~400MB
 CMD exec gunicorn main:app \
     --bind 0.0.0.0:$PORT \
-    --workers 2 \
+    --workers 1 \
     --worker-class uvicorn.workers.UvicornWorker \
     --timeout 3600 \
     --graceful-timeout 30 \
