@@ -300,14 +300,16 @@ def db_health_check():
 # Include API Routers 
 from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
 from api.routes import match, notification
-from api.routes import subscription
+from api.routes import plan, subscription, sessions
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
+app.include_router(plan.router, prefix="/api/v1", tags=["admin"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
