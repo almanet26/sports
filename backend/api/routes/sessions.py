@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File as FastAPIFile, Form
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional, List
@@ -11,7 +11,6 @@ from utils.auth import get_current_coach
 import os
 import secrets
 from pathlib import Path
-from fastapi import UploadFile, File as FastAPIFile
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -302,8 +301,8 @@ def list_content(
 
 @router.post("/content", status_code=201)
 async def upload_content(
-    title: str,
-    content_type: str = "video",
+    title: str = Form(...),
+    content_type: str = Form("video"),
     file: UploadFile = FastAPIFile(...),
     db: Session = Depends(get_db),
     coach=Depends(get_current_coach),
