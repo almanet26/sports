@@ -5,6 +5,7 @@ from typing import Optional, List
 from database.config import get_db
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
+from database.models.coach_training_plan import CoachTrainingPlan
 from utils.auth import get_current_coach
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -160,3 +161,107 @@ def save_availability(
         ))
     db.commit()
     return {"message": "Availability saved", "count": len(body.slots)}
+
+
+# ── Training Plans ────────────────────────────────────────────────────────────
+
+class TrainingPlanCreate(BaseModel):
+    title: str
+    description: Optional[str] = None
+    analysis_type: str = "BATTING"
+    plan_type: str = "group_all"
+    is_public: bool = True
+    drills: Optional[List[str]] = []
+
+
+class TrainingPlanUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    analysis_type: Optional[str] = None
+    plan_type: Optional[str] = None
+    is_public: Optional[bool] = None
+    drills: Optional[List[str]] = None
+
+
+def _serialize_plan(p: CoachTrainingPlan) -> dict:
+    return {
+        "id": p.id,
+        "title": p.title,
+        "description": p.description,
+        "analysis_type": p.analysis_type,
+        "plan_type": p.plan_type,
+        "is_public": p.is_public,
+        "drills": p.drills or [],
+        "created_at": p.created_at.isoformat() if p.created_at else None,
+    }
+
+
+@router.get("/training-plans")
+def list_training_plans(
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    plans = (
+        db.query(CoachTrainingPlan)
+        .filter(CoachTrainingPlan.coach_id == coach.id)
+        .order_by(CoachTrainingPlan.created_at.desc())
+        .all()
+    )
+    return {"plans": [_serialize_plan(p) for p in plans]}
+
+
+@router.post("/training-plans", status_code=201)
+def create_training_plan(
+    body: TrainingPlanCreate,
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    plan = CoachTrainingPlan(
+        coach_id=coach.id,
+        title=body.title,
+        description=body.description,
+        analysis_type=body.analysis_type,
+        plan_type=body.plan_type,
+        is_public=body.is_public,
+        drills=body.drills,
+    )
+    db.add(plan)
+    db.commit()
+    db.refresh(plan)
+    return _serialize_plan(plan)
+
+
+@router.put("/training-plans/{plan_id}")
+def update_training_plan(
+    plan_id: str,
+    body: TrainingPlanUpdate,
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    plan = db.query(CoachTrainingPlan).filter(
+        CoachTrainingPlan.id == plan_id,
+        CoachTrainingPlan.coach_id == coach.id,
+    ).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    for field, value in body.dict(exclude_none=True).items():
+        setattr(plan, field, value)
+    db.commit()
+    db.refresh(plan)
+    return _serialize_plan(plan)
+
+
+@router.delete("/training-plans/{plan_id}", status_code=204)
+def delete_training_plan(
+    plan_id: str,
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    plan = db.query(CoachTrainingPlan).filter(
+        CoachTrainingPlan.id == plan_id,
+        CoachTrainingPlan.coach_id == coach.id,
+    ).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    db.delete(plan)
+    db.commit()
