@@ -15,6 +15,10 @@ from database.config import SessionLocal, engine, Base
 # Load environment variables from .env file
 load_dotenv()
 
+# Initialize logging
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
+
 # Initialize GCS configuration
 try:
     from config.gcs_config import gcs_config
@@ -36,10 +40,7 @@ from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-logger = logging.getLogger(__name__)
 
-# Suppress noisy upstream protobuf deprecation warning from Google client internals.
 warnings.filterwarnings(
     "ignore",
     message=r"SymbolDatabase\.GetPrototype\(\) is deprecated\..*",

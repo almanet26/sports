@@ -212,6 +212,59 @@ async def upload_profile_image(
         await file.close()
 
 
+@router.post("/coach-intro-video")
+async def upload_intro_video(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload intro video for coaches."""
+    if current_user.role != 'COACH':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
+    
+    ALLOWED_VIDEO = {'.mp4', '.avi', '.mov', '.wmv', '.webm'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_VIDEO:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video format. Allowed: mp4, avi, mov, wmv, webm")
+
+    MAX_SIZE = 50 * 1024 * 1024  # 50MB
+    try:
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 50MB.")
+
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+        if gcs_bucket:
+            import google.cloud.storage as gcs_lib
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            gcs_client = gcs_lib.Client()
+            bucket = gcs_client.bucket(gcs_bucket)
+            blob = bucket.blob(f"coach_intro_videos/{unique_filename}")
+            blob.upload_from_string(content, content_type=file.content_type or "video/mp4")
+            intro_video_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_intro_videos/{unique_filename}"
+        else:
+            storage_dir = Path("storage/coach_intro_videos")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            file_path = storage_dir / unique_filename
+            with open(file_path, "wb") as buf:
+                buf.write(content)
+            intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
+
+        current_user.intro_video_url = intro_video_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"Intro video uploaded for coach: {current_user.email}")
+        return {"intro_video_url": intro_video_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Intro video upload failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
+
+
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
     user = db.query(User).filter(User.email == login_data.email).first()
