@@ -192,47 +192,6 @@ async def upload_profile_image(
         await file.close()
 
 
-@router.post("/coach-intro-video")
-async def upload_intro_video(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Upload or replace coach intro video."""
-    if current_user.role != 'COACH':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
-
-    ALLOWED_VIDEO = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_VIDEO:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video format")
-
-    MAX_SIZE = 100 * 1024 * 1024  # 100MB
-    try:
-        content = await file.read()
-        if len(content) > MAX_SIZE:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 100MB.")
-
-        storage_dir = Path("storage/coach_intro_videos")
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-        file_path = storage_dir / unique_filename
-        with open(file_path, "wb") as buf:
-            buf.write(content)
-
-        current_user.intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
-        db.commit()
-        db.refresh(current_user)
-        return {"intro_video_url": current_user.intro_video_url}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Intro video upload failed: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed")
-    finally:
-        await file.close()
-
-
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
     # Find user
