@@ -15,6 +15,20 @@ from database.config import SessionLocal, engine, Base
 # Load environment variables from .env file
 load_dotenv()
 
+# Import all models to ensure they're registered with SQLAlchemy
+from database.models import (
+    User, UserSession,
+    Video, HighlightEvent, HighlightJob, MatchRequest, UserVote,
+    BattingAnalysis,
+    VideoSubmission,
+    VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
+    AdminAuditLog,
+)
+from database.models.coach_content import CoachContent
+from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
+from database.models.coach_training_plan import CoachTrainingPlan
+
 # Initialize logging
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
