@@ -24,6 +24,10 @@ from database.models import (
     VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
     AdminAuditLog,
 )
+from database.models.coach_content import CoachContent
+from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
+from database.models.coach_training_plan import CoachTrainingPlan
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
