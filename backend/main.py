@@ -115,11 +115,26 @@ if not _CLOUD_RUN:
 
 
 def _ensure_coach_tables(db_session) -> None:
-    """Create coach-related tables if they don't exist (handles existing DBs)."""
+    """Create coach-related tables if they don't exist and patch missing columns."""
     try:
         Base.metadata.create_all(bind=db_session.bind)
+        # Patch missing columns on coach_content (table may exist from older schema)
+        dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
+        if dialect == "sqlite":
+            cols = db_session.execute(text("PRAGMA table_info(coach_content)")).fetchall()
+            existing = {str(c[1]).lower() for c in cols}
+            if "views" not in existing:
+                db_session.execute(text("ALTER TABLE coach_content ADD COLUMN views INTEGER DEFAULT 0"))
+            if "file_size" not in existing:
+                db_session.execute(text("ALTER TABLE coach_content ADD COLUMN file_size VARCHAR(50)"))
+        else:
+            db_session.execute(text("ALTER TABLE coach_content ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0"))
+            db_session.execute(text("ALTER TABLE coach_content ADD COLUMN IF NOT EXISTS file_size VARCHAR(50)"))
+        db_session.execute(text("UPDATE coach_content SET views = 0 WHERE views IS NULL"))
+        db_session.commit()
         logger.info("Coach tables ensured.")
     except Exception as e:
+        db_session.rollback()
         logger.warning("Coach tables patch skipped/failed: %s", e)
 
 
