@@ -29,6 +29,7 @@ from database.models.academy_branding import AcademyBranding
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
 from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
 __all__ = [
     # User models
     "User",
