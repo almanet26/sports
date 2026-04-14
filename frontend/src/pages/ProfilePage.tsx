@@ -58,7 +58,6 @@ export default function ProfilePage() {
       setPhotoUploading(false);
     }
   };
-
   // Profile completion for coaches
   const completionItems = [
     { label: 'Add bio', done: !!user?.profile_bio },
@@ -156,35 +155,48 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          {/* Top row: photo + bio + completion */}
-          <div className="grid grid-cols-1 md:grid-cols-[auto_1fr_220px] gap-4 mb-4">
-            {/* Profile Photo */}
-            <div className="flex flex-col items-center gap-2">
-              <div
-                className="relative w-24 h-24 cursor-pointer"
-                onClick={() => photoInputRef.current?.click()}
-                onMouseEnter={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '1'}
-                onMouseLeave={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '0'}
-              >
-                {profileImageUrl
-                  ? <img src={profileImageUrl} alt="profile" className="w-24 h-24 rounded-2xl object-cover" />
-                  : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
-                      {user?.name?.charAt(0)?.toUpperCase() || 'C'}
-                    </div>}
-                <div className="photo-overlay absolute inset-0 rounded-2xl bg-black/60 flex flex-col items-center justify-center gap-1 transition-opacity" style={{ opacity: 0 }}>
-                  {photoUploading
-                    ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <>
-                        <i className="fas fa-camera text-white text-lg"></i>
-                        <span className="text-white text-xs">Change</span>
-                      </>}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Left: photo + stats */}
+            <div className="space-y-3">
+              <div className={`rounded-2xl p-4 border ${cardBg} flex flex-col items-center gap-2`}>
+                <div
+                  className="relative w-20 h-20 cursor-pointer"
+                  onClick={() => photoInputRef.current?.click()}
+                  onMouseEnter={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '1'}
+                  onMouseLeave={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '0'}
+                >
+                  {profileImageUrl
+                    ? <img src={profileImageUrl} alt="profile" className="w-20 h-20 rounded-2xl object-cover" />
+                    : <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
+                        {user?.name?.charAt(0)?.toUpperCase() || 'C'}
+                      </div>}
+                  <div className="photo-overlay absolute inset-0 rounded-2xl bg-black/60 flex flex-col items-center justify-center gap-1 transition-opacity" style={{ opacity: 0 }}>
+                    {photoUploading
+                      ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      : <>
+                          <i className="fas fa-camera text-white text-lg"></i>
+                          <span className="text-white text-xs">Change</span>
+                        </>}
+                  </div>
                 </div>
+                <p className={`text-xs ${sub}`}>Profile Photo</p>
+                <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
               </div>
-              <p className={`text-xs ${sub}`}>Profile Photo</p>
-              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { label: 'Certifications', value: certifications.length },
+                  { label: 'Specialization', value: specialization.length > 0 ? specialization[0] : 'None' },
+                  { label: 'Rating', value: '4.8 ⭐' },
+                ].map(({ label, value }) => (
+                  <div key={label} className={`rounded-xl p-2 border ${cardBg} text-center`}>
+                    <p className={`text-xs ${sub}`}>{label}</p>
+                    <p className="text-sm font-semibold mt-0.5">{value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            {/* Bio */}
+            {/* Middle: bio */}
             <div className={`rounded-2xl p-4 border ${cardBg}`}>
               <p className="text-xs font-semibold mb-2 flex items-center gap-1">
                 <i className="fas fa-quote-left text-purple-400"></i>Professional Bio
@@ -194,7 +206,7 @@ export default function ProfilePage() {
               </p>
             </div>
 
-            {/* Completion */}
+            {/* Right: completion */}
             <div className="space-y-3">
               <div className={`rounded-2xl p-4 border ${cardBg}`}>
                 <p className="text-xs font-semibold mb-2">Profile Completion</p>
@@ -209,27 +221,13 @@ export default function ProfilePage() {
                 <ul className="space-y-1.5">
                   {completionItems.map(({ label, done }) => (
                     <li key={label} className={`text-xs flex items-center gap-2 ${done ? 'text-green-400' : sub}`}>
-                      <span className={`w-2 h-2 rounded-full flex-shrink-0 ${done ? 'bg-green-400' : 'bg-white/20'}`} />
+                      <span className={`w-2 h-2 rounded-full ${done ? 'bg-green-400' : 'bg-white/20'}`} />
                       {label}
                     </li>
                   ))}
                 </ul>
               </div>
             </div>
-          </div>
-
-          {/* Stats row */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Certifications', value: certifications.length },
-              { label: 'Specialization', value: specialization.length > 0 ? specialization[0] : 'None' },
-              { label: 'Rating', value: '4.8 ⭐' },
-            ].map(({ label, value }) => (
-              <div key={label} className={`rounded-xl p-3 border ${cardBg} text-center`}>
-                <p className={`text-xs ${sub}`}>{label}</p>
-                <p className="text-sm font-semibold mt-1">{value}</p>
-              </div>
-            ))}
           </div>
         </motion.div>
       )}
@@ -448,6 +446,34 @@ export default function ProfilePage() {
           )}
         </motion.div>
       )}
+
+      {/* Account Settings */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+        className={`rounded-3xl p-6 border ${glass}`}>
+        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
+          <i className="fas fa-cog text-green-400"></i>Account Settings
+        </h2>
+        <div className="space-y-3">
+          <div className={`flex items-center justify-between p-4 rounded-2xl border ${cardBg}`}>
+            <div>
+              <p className="text-sm font-medium flex items-center gap-2"><i className="fas fa-envelope-open-text text-blue-400"></i>Email Verification</p>
+              <p className={`text-xs mt-0.5 ${sub}`}>
+                {user?.is_verified ? <span className="text-green-400"><i className="fas fa-check-circle mr-1"></i>Your email is verified</span> : 'Verify your email address'}
+              </p>
+            </div>
+          </div>
+          <div className={`flex items-center justify-between p-4 rounded-2xl border border-red-500/20`}>
+            <div>
+              <p className="text-sm font-medium text-red-400 flex items-center gap-2"><i className="fas fa-sign-out-alt"></i>Danger Zone</p>
+              <p className={`text-xs mt-0.5 ${sub}`}>Sign out from your account</p>
+            </div>
+            <button onClick={() => { localStorage.clear(); window.location.href = '/login'; }}
+              className="px-4 py-2 bg-gradient-to-r from-red-500 to-red-600 rounded-xl text-sm font-medium transition-all">
+              <i className="fas fa-sign-out-alt mr-1"></i>Logout
+            </button>
+          </div>
+        </div>
+      </motion.div>
 
     </div>
   );
