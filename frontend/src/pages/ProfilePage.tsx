@@ -8,6 +8,9 @@ const SPECIALIZATIONS = ['Batting', 'Bowling', 'Fielding', 'Fitness', 'Mental', 
 export default function ProfilePage() {
   const { user, updateUser } = useAuthStore();
   const isCoach = user?.role === 'COACH';
+  const photoInputRef = useRef<HTMLInputElement>(null);
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [profileImageUrl, setProfileImageUrl] = useState(user?.profile_image_url || '');
 
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -28,6 +31,33 @@ export default function ProfilePage() {
   const [videoUploading, setVideoUploading] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState(user?.intro_video_url || '');
   const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await api.post('/auth/profile-image', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const url = res.data.profile_image_url;
+      setProfileImageUrl(url);
+      updateUser({ profile_image_url: url });
+    } catch {
+      // fallback: store as base64 preview locally
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const url = ev.target?.result as string;
+        setProfileImageUrl(url);
+        updateUser({ profile_image_url: url });
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   // Profile completion for coaches
   const completionItems = [
@@ -126,31 +156,28 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Left: photo + stats */}
-            <div className="space-y-3">
-              <div className={`rounded-2xl p-4 border ${cardBg} flex flex-col items-center gap-2`}>
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
-                  {user?.name?.charAt(0)?.toUpperCase() || 'C'}
+          {/* Top row: photo + bio + completion */}
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+            {/* Profile Photo */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="relative group cursor-pointer" onClick={() => photoInputRef.current?.click()}>
+                {profileImageUrl
+                  ? <img src={profileImageUrl} alt="profile" className="w-24 h-24 rounded-2xl object-cover" />
+                  : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
+                      {user?.name?.charAt(0)?.toUpperCase() || 'C'}
+                    </div>}
+                <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {photoUploading
+                    ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <i className="fas fa-camera text-white text-lg"></i>}
                 </div>
-                <p className={`text-xs ${sub}`}>Profile Photo</p>
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Certifications', value: certifications.length },
-                  { label: 'Specialization', value: specialization.length > 0 ? specialization[0] : 'None' },
-                  { label: 'Rating', value: '4.8 ⭐' },
-                ].map(({ label, value }) => (
-                  <div key={label} className={`rounded-xl p-2 border ${cardBg} text-center`}>
-                    <p className={`text-xs ${sub}`}>{label}</p>
-                    <p className="text-sm font-semibold mt-0.5">{value}</p>
-                  </div>
-                ))}
-              </div>
+              <p className={`text-xs ${sub}`}>Profile Photo</p>
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
             </div>
 
-            {/* Middle: bio */}
-            <div className={`rounded-2xl p-4 border ${cardBg}`}>
+            {/* Bio */}
+            <div className={`flex-1 rounded-2xl p-4 border ${cardBg}`}>
               <p className="text-xs font-semibold mb-2 flex items-center gap-1">
                 <i className="fas fa-quote-left text-purple-400"></i>Professional Bio
               </p>
@@ -159,8 +186,8 @@ export default function ProfilePage() {
               </p>
             </div>
 
-            {/* Right: completion */}
-            <div className="space-y-3">
+            {/* Completion */}
+            <div className="space-y-3 min-w-[180px]">
               <div className={`rounded-2xl p-4 border ${cardBg}`}>
                 <p className="text-xs font-semibold mb-2">Profile Completion</p>
                 <div className="w-full h-2 rounded-full bg-white/10 mb-1">
@@ -181,6 +208,20 @@ export default function ProfilePage() {
                 </ul>
               </div>
             </div>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Certifications', value: certifications.length },
+              { label: 'Specialization', value: specialization.length > 0 ? specialization[0] : 'None' },
+              { label: 'Rating', value: '4.8 ⭐' },
+            ].map(({ label, value }) => (
+              <div key={label} className={`rounded-xl p-3 border ${cardBg} text-center`}>
+                <p className={`text-xs ${sub}`}>{label}</p>
+                <p className="text-sm font-semibold mt-1">{value}</p>
+              </div>
+            ))}
           </div>
         </motion.div>
       )}
@@ -214,8 +255,12 @@ export default function ProfilePage() {
 
         {/* Avatar row */}
         <div className="flex items-center gap-4 mb-6">
-          <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold">
-            {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+          <div className="w-16 h-16 rounded-2xl overflow-hidden">
+            {profileImageUrl
+              ? <img src={profileImageUrl} alt="profile" className="w-full h-full object-cover" />
+              : <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold">
+                  {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                </div>}
           </div>
           <div>
             <p className="font-semibold">{user?.name}</p>
