@@ -114,6 +114,15 @@ if not _CLOUD_RUN:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
 
 
+def _ensure_coach_tables(db_session) -> None:
+    """Create coach-related tables if they don't exist (handles existing DBs)."""
+    try:
+        Base.metadata.create_all(bind=db_session.bind)
+        logger.info("Coach tables ensured.")
+    except Exception as e:
+        logger.warning("Coach tables patch skipped/failed: %s", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler - startup and shutdown events."""
@@ -134,6 +143,7 @@ async def lifespan(app: FastAPI):
         _ensure_users_schema(db)
         _ensure_videos_schema(db)
         _ensure_submission_status_enum(db)
+        _ensure_coach_tables(db)
         logger.info("Database tables ready.")
         
         db.close()
@@ -170,6 +180,7 @@ if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://localhost:8000",
         "https://sports-teal-two.vercel.app",  # Vercel production frontend
         "https://sports-l8at.vercel.app",        # Fork deployment
     ]
