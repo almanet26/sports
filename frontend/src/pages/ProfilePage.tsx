@@ -58,6 +58,7 @@ export default function ProfilePage() {
       setPhotoUploading(false);
     }
   };
+
   // Profile completion for coaches
   const completionItems = [
     { label: 'Add bio', done: !!user?.profile_bio },
@@ -155,49 +156,28 @@ export default function ProfilePage() {
             </button>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Left: photo + stats */}
-            <div className="space-y-3">
-              <div className={`rounded-2xl p-4 border ${cardBg} flex flex-col items-center gap-2`}>
-                <div
-                  className="relative w-20 h-20 cursor-pointer"
-                  onClick={() => photoInputRef.current?.click()}
-                  onMouseEnter={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '1'}
-                  onMouseLeave={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '0'}
-                >
-                  {profileImageUrl
-                    ? <img src={profileImageUrl} alt="profile" className="w-20 h-20 rounded-2xl object-cover" />
-                    : <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
-                        {user?.name?.charAt(0)?.toUpperCase() || 'C'}
-                      </div>}
-                  <div className="photo-overlay absolute inset-0 rounded-2xl bg-black/60 flex flex-col items-center justify-center gap-1 transition-opacity" style={{ opacity: 0 }}>
-                    {photoUploading
-                      ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      : <>
-                          <i className="fas fa-camera text-white text-lg"></i>
-                          <span className="text-white text-xs">Change</span>
-                        </>}
-                  </div>
+          {/* Top row: photo + bio + completion */}
+          <div className="flex flex-col md:flex-row gap-4 mb-4">
+            {/* Profile Photo */}
+            <div className="flex flex-col items-center gap-2">
+              <div className="relative group cursor-pointer" onClick={() => photoInputRef.current?.click()}>
+                {profileImageUrl
+                  ? <img src={profileImageUrl} alt="profile" className="w-24 h-24 rounded-2xl object-cover" />
+                  : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
+                      {user?.name?.charAt(0)?.toUpperCase() || 'C'}
+                    </div>}
+                <div className="absolute inset-0 rounded-2xl bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                  {photoUploading
+                    ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <i className="fas fa-camera text-white text-lg"></i>}
                 </div>
-                <p className={`text-xs ${sub}`}>Profile Photo</p>
-                <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
               </div>
-              <div className="grid grid-cols-3 gap-2">
-                {[
-                  { label: 'Certifications', value: certifications.length },
-                  { label: 'Specialization', value: specialization.length > 0 ? specialization[0] : 'None' },
-                  { label: 'Rating', value: '4.8 ⭐' },
-                ].map(({ label, value }) => (
-                  <div key={label} className={`rounded-xl p-2 border ${cardBg} text-center`}>
-                    <p className={`text-xs ${sub}`}>{label}</p>
-                    <p className="text-sm font-semibold mt-0.5">{value}</p>
-                  </div>
-                ))}
-              </div>
+              <p className={`text-xs ${sub}`}>Profile Photo</p>
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
             </div>
 
-            {/* Middle: bio */}
-            <div className={`rounded-2xl p-4 border ${cardBg}`}>
+            {/* Bio */}
+            <div className={`flex-1 rounded-2xl p-4 border ${cardBg}`}>
               <p className="text-xs font-semibold mb-2 flex items-center gap-1">
                 <i className="fas fa-quote-left text-purple-400"></i>Professional Bio
               </p>
@@ -206,8 +186,8 @@ export default function ProfilePage() {
               </p>
             </div>
 
-            {/* Right: completion */}
-            <div className="space-y-3">
+            {/* Completion */}
+            <div className="space-y-3 min-w-[180px]">
               <div className={`rounded-2xl p-4 border ${cardBg}`}>
                 <p className="text-xs font-semibold mb-2">Profile Completion</p>
                 <div className="w-full h-2 rounded-full bg-white/10 mb-1">
@@ -228,6 +208,20 @@ export default function ProfilePage() {
                 </ul>
               </div>
             </div>
+          </div>
+
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Certifications', value: certifications.length },
+              { label: 'Specialization', value: specialization.length > 0 ? specialization[0] : 'None' },
+              { label: 'Rating', value: '4.8 ⭐' },
+            ].map(({ label, value }) => (
+              <div key={label} className={`rounded-xl p-3 border ${cardBg} text-center`}>
+                <p className={`text-xs ${sub}`}>{label}</p>
+                <p className="text-sm font-semibold mt-1">{value}</p>
+              </div>
+            ))}
           </div>
         </motion.div>
       )}
