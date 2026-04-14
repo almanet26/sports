@@ -1,9 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from database.config import get_db
 from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
 from utils.auth import get_current_coach
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -114,3 +115,48 @@ def delete_session(
         raise HTTPException(status_code=404, detail="Session not found")
     db.delete(session)
     db.commit()
+
+
+# ── Availability ──────────────────────────────────────────────────────────────
+
+class AvailabilitySlotIn(BaseModel):
+    day_of_week: str
+    slot_time: str
+    is_available: bool = True
+
+
+class AvailabilitySaveBody(BaseModel):
+    slots: List[AvailabilitySlotIn]
+
+
+@router.get("/availability")
+def get_availability(
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    rows = db.query(CoachAvailability).filter(CoachAvailability.coach_id == coach.id).all()
+    return {
+        "slots": [
+            {"id": r.id, "day_of_week": r.day_of_week, "slot_time": r.slot_time, "is_available": r.is_available}
+            for r in rows
+        ]
+    }
+
+
+@router.post("/availability", status_code=200)
+def save_availability(
+    body: AvailabilitySaveBody,
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    # Delete existing and replace with new set
+    db.query(CoachAvailability).filter(CoachAvailability.coach_id == coach.id).delete()
+    for slot in body.slots:
+        db.add(CoachAvailability(
+            coach_id=coach.id,
+            day_of_week=slot.day_of_week,
+            slot_time=slot.slot_time,
+            is_available=slot.is_available,
+        ))
+    db.commit()
+    return {"message": "Availability saved", "count": len(body.slots)}

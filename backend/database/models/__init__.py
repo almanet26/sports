@@ -18,6 +18,7 @@ from database.models.batting import BattingAnalysis
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.subscription import Subscription
 from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
 __all__ = [
     # User models
     "User",
