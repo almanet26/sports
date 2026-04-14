@@ -162,6 +162,56 @@ async def complete_coach_profile(
     return _build_profile_response(current_user, sub)
 
 
+@router.post("/profile-image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace profile image for any user."""
+    ALLOWED_IMAGE = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid image format. Allowed: jpg, jpeg, png, webp, gif")
+
+    MAX_SIZE = 5 * 1024 * 1024  # 5MB
+    try:
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 5MB.")
+
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+        if gcs_bucket:
+            import google.cloud.storage as gcs_lib
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            gcs_client = gcs_lib.Client()
+            bucket = gcs_client.bucket(gcs_bucket)
+            blob = bucket.blob(f"profile_images/{unique_filename}")
+            blob.upload_from_string(content, content_type=file.content_type or "image/jpeg")
+            profile_image_url = f"https://storage.googleapis.com/{gcs_bucket}/profile_images/{unique_filename}"
+        else:
+            storage_dir = Path("storage/profile_images")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            file_path = storage_dir / unique_filename
+            with open(file_path, "wb") as buf:
+                buf.write(content)
+            profile_image_url = f"/static/profile_images/{unique_filename}"
+
+        current_user.profile_image_url = profile_image_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"Profile image uploaded for user: {current_user.email}")
+        return {"profile_image_url": profile_image_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Profile image upload failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
+
+
 @router.post("/coach-intro-video")
 async def upload_intro_video(
     file: UploadFile = File(...),
