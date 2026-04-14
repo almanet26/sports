@@ -6,7 +6,12 @@ from database.config import get_db
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
+from database.models.coach_content import CoachContent
 from utils.auth import get_current_coach
+import os
+import secrets
+from pathlib import Path
+from fastapi import UploadFile, File as FastAPIFile
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -264,4 +269,95 @@ def delete_training_plan(
     if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
     db.delete(plan)
+    db.commit()
+
+
+# ── Content ────────────────────────────────────────────────────────────────
+
+def _serialize_content(c: CoachContent) -> dict:
+    return {
+        "id": c.id,
+        "title": c.title,
+        "type": c.content_type,
+        "file_url": c.file_url,
+        "size": c.file_size or "",
+        "views": c.views,
+        "date": c.created_at.strftime("%Y-%m-%d") if c.created_at else "",
+    }
+
+
+@router.get("/content")
+def list_content(
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    items = (
+        db.query(CoachContent)
+        .filter(CoachContent.coach_id == coach.id)
+        .order_by(CoachContent.created_at.desc())
+        .all()
+    )
+    return {"items": [_serialize_content(i) for i in items]}
+
+
+@router.post("/content", status_code=201)
+async def upload_content(
+    title: str,
+    content_type: str = "video",
+    file: UploadFile = FastAPIFile(...),
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    MAX_SIZE = 500 * 1024 * 1024  # 500MB
+    content = await file.read()
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=413, detail="File too large. Max 500MB.")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+
+    gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+    if gcs_bucket:
+        import google.cloud.storage as gcs_lib
+        gcs_client = gcs_lib.Client()
+        bucket = gcs_client.bucket(gcs_bucket)
+        blob = bucket.blob(f"coach_content/{unique_filename}")
+        blob.upload_from_string(content, content_type=file.content_type or "application/octet-stream")
+        file_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_content/{unique_filename}"
+    else:
+        storage_dir = Path("storage/coach_content")
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        with open(storage_dir / unique_filename, "wb") as f_out:
+            f_out.write(content)
+        file_url = f"/static/coach_content/{unique_filename}"
+
+    size_mb = round(len(content) / (1024 * 1024), 1)
+    file_size = f"{size_mb} MB"
+
+    item = CoachContent(
+        coach_id=coach.id,
+        title=title,
+        content_type=content_type,
+        file_url=file_url,
+        file_size=file_size,
+    )
+    db.add(item)
+    db.commit()
+    db.refresh(item)
+    return _serialize_content(item)
+
+
+@router.delete("/content/{content_id}", status_code=204)
+def delete_content(
+    content_id: str,
+    db: Session = Depends(get_db),
+    coach=Depends(get_current_coach),
+):
+    item = db.query(CoachContent).filter(
+        CoachContent.id == content_id,
+        CoachContent.coach_id == coach.id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Content not found")
+    db.delete(item)
     db.commit()
