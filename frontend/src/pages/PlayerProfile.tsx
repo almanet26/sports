@@ -531,8 +531,8 @@ export default function PlayerProfile() {
                 { label: "Format", value: profile.preferredFormat },
               ].map((item, i) => (
                 <span key={item.label} className={`rounded-full border px-4 py-2 text-sm ${i % 3 === 0 ? "border-blue-400/20 bg-blue-400/10 text-blue-200"
-                    : i % 3 === 1 ? "border-violet-400/20 bg-violet-400/10 text-violet-200"
-                      : "border-amber-400/20 bg-amber-400/10 text-amber-200"
+                  : i % 3 === 1 ? "border-violet-400/20 bg-violet-400/10 text-violet-200"
+                    : "border-amber-400/20 bg-amber-400/10 text-amber-200"
                   }`}>
                   {item.label}: <span className={item.value ? "" : "opacity-50"}>{item.value || "Not set"}</span>
                 </span>
