@@ -440,7 +440,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       </AnimatePresence>
 
       {/* Main Content */}
-      <main className="lg:ml-72 pt-16 lg:pt-0 min-h-screen relative z-10">
+      <main className="lg:ml-72 pt-16 lg:pt-0 min-h-screen relative">
         <div className="p-6 lg:p-8 max-w-7xl mx-auto">
           {children || <Outlet />}
         </div>
