@@ -181,3 +181,20 @@ input:focus, select:focus, textarea:focus {
   background-size: 200% 200%;
   animation: gradient 8s ease infinite;
 }
+
+/* Player profile edit modal split layout (container-query based)
+   Prevents overlap when the modal is rendered inside a narrower container
+   (e.g., with a persistent sidebar or browser zoom changes). */
+.profile-form-split {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+  align-items: start;
+  container-type: inline-size;
+}
+
+@container (min-width: 1100px) {
+  .profile-form-split {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 0.7fr);
+  }
+}

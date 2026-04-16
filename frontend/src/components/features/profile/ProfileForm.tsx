@@ -39,7 +39,7 @@ const BOWLING_TYPE_OPTIONS = [
 
 function Field({ label, error, children }: { label: string; error?: string; children: ReactNode }) {
   return (
-    <label className="block space-y-2">
+    <label className="block min-w-0 space-y-2">
       <span className="text-sm font-medium text-slate-200">{label}</span>
       {children}
       {error ? <p className="text-xs text-rose-300">{error}</p> : null}
@@ -110,37 +110,41 @@ export default function ProfileForm({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/75 p-4 backdrop-blur-md"
+          className="fixed inset-0 z-[999] bg-slate-950/75 p-4 backdrop-blur-md"
           onClick={onClose}
         >
-          <motion.div
-            initial={{ opacity: 0, y: 24, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ duration: 0.2 }}
-            className="max-h-[92vh] w-full max-w-5xl overflow-y-auto rounded-[32px] border border-white/10 bg-[#07111f] p-6 shadow-[0_24px_120px_rgba(2,6,23,0.58)]"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <div className="fixed left-1/2 top-1/2 w-[min(90vw,1000px)] -translate-x-1/2 -translate-y-1/2">
+            <motion.div
+              initial={{ opacity: 0, y: 24, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 16, scale: 0.98 }}
+              transition={{ duration: 0.2 }}
+              className="max-h-[90vh] overflow-y-auto overflow-x-hidden rounded-[32px] border border-white/10 bg-[#07111f] p-6 shadow-[0_24px_120px_rgba(2,6,23,0.58)]"
+              onClick={(event) => event.stopPropagation()}
+            >
             <div className="flex items-start justify-between gap-4">
-              <div>
+              <div className="min-w-0">
                 <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Player Profile</p>
                 <h2 className="mt-2 text-2xl font-semibold text-white">Edit {displayName || "Player"} profile</h2>
-                <p className="mt-2 text-sm text-slate-400">
-                  Public handle preview: <span className="text-slate-200">{draft.username || displayUsername}</span>
+                <p className="mt-2 break-words text-sm text-slate-400">
+                  Public handle preview:{" "}
+                  <span className="inline-block max-w-full break-all text-slate-200">
+                    {draft.username || displayUsername}
+                  </span>
                 </p>
               </div>
               <button
                 type="button"
                 onClick={onClose}
                 disabled={isSaving}
-                className="rounded-full border border-white/10 bg-white/[0.04] p-2 text-slate-300 transition hover:text-white disabled:opacity-50"
+                className="shrink-0 rounded-full border border-white/10 bg-white/[0.04] p-2 text-slate-300 transition hover:text-white disabled:opacity-50"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
-            <div className="mt-6 grid gap-6 xl:grid-cols-[1.5fr_0.7fr]">
-              <div className="space-y-6">
+            <div className="profile-form-split mt-6">
+              <div className="min-w-0 space-y-6">
                 <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
                   <h3 className="text-lg font-semibold text-white">Identity</h3>
                   <div className="mt-4 grid gap-4 md:grid-cols-2">
@@ -225,7 +229,7 @@ export default function ProfileForm({
                 </section>
               </div>
 
-              <aside className="space-y-6">
+              <aside className="min-w-0 space-y-6">
                 <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-5">
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Completion Preview</p>
                   <p className="mt-3 text-4xl font-semibold text-white">{completionPreview.completionPercentage}%</p>
@@ -256,9 +260,9 @@ export default function ProfileForm({
 
                 <section className="rounded-[28px] border border-white/10 bg-slate-950/70 p-5">
                   <p className="text-sm text-slate-400">Email</p>
-                  <p className="mt-2 font-medium text-white">{draft.email || "No email available"}</p>
+                  <p className="mt-2 break-words font-medium text-white">{draft.email || "No email available"}</p>
                   <p className="mt-4 text-sm text-slate-400">Current handle</p>
-                  <p className="mt-2 font-medium text-white">{draft.username || displayUsername}</p>
+                  <p className="mt-2 break-all font-medium text-white">{draft.username || displayUsername}</p>
                 </section>
               </aside>
             </div>
@@ -272,7 +276,8 @@ export default function ProfileForm({
                 {isSaving ? "Saving..." : "Save Profile"}
               </button>
             </div>
-          </motion.div>
+            </motion.div>
+          </div>
         </motion.div>
       ) : null}
     </AnimatePresence>
