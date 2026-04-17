@@ -269,7 +269,7 @@ def db_health_check():
 
 
 # Include API Routers 
-from api.routes import auth, videos, player_videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
+from api.routes import auth, videos, player_videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches, coach_content
 from api.routes import plan, subscription, sessions
 
 # Authentication routes
@@ -280,6 +280,9 @@ app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
 app.include_router(plan.router, prefix="/api/v1", tags=["admin"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
+
+# Coach Content routes
+app.include_router(coach_content.router, prefix="/api/v1/coach", tags=["coach-content"])
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])

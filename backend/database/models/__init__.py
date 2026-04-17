@@ -20,7 +20,8 @@ from database.models.subscription import Subscription
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
-from database.models.coach_content import CoachContent
+from database.models.coach_content import CoachContent, ContentType
+
 __all__ = [
     # User models
     "User",
@@ -40,6 +41,9 @@ __all__ = [
     # Submissions 
     "VideoSubmission",
     "SubmissionStatus",
+    # Coach Content
+    "CoachContent",
+    "ContentType",
     # Enums
     "VideoVisibility",
     "VideoStatus",

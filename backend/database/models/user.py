@@ -65,6 +65,7 @@ class User(Base):
     # clips = relationship("Clip", back_populates="user")
     # player_connections = relationship("Connection", foreign_keys="Connection.player_id", back_populates="player")
     # coach_connections = relationship("Connection", foreign_keys="Connection.coach_id", back_populates="coach")
+    coach_contents = relationship("CoachContent", back_populates="coach")
 
     # Password management methods
     def set_password(self, password: str):
