@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,6 +21,13 @@ from database.models import (
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
+
+# Suppress noisy upstream protobuf deprecation warning from Google client internals.
+warnings.filterwarnings(
+    "ignore",
+    message=r"SymbolDatabase\.GetPrototype\(\) is deprecated\..*",
+    category=UserWarning,
+)
 
 
 def _ensure_users_schema(db_session) -> None:

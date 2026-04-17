@@ -490,16 +490,26 @@ def parse_and_render_markdown(pdf, text, base_font_size=11):
 class GeminiManager:
     def __init__(self):
         self.keys = []
+        seen = set()
+
+        def _maybe_add(val: str | None) -> None:
+            if not val:
+                return
+            key = val.strip()
+            # Gemini API keys are expected to be Google API keys (typically AIza*).
+            if "your_api_key" in key or len(key) < 20 or not key.startswith("AIza"):
+                return
+            if key in seen:
+                return
+            seen.add(key)
+            self.keys.append(key)
+
         for i in range(1, 6):
-            val = os.getenv(f"GEMINI_API_KEY_{i}")
-            if val and "your_api_key" not in val and len(val) > 10:
-                self.keys.append(val.strip())
-        
-        if not self.keys:
-            val = os.getenv("GEMINI_API_KEY")
-            if val and "your_api_key" not in val and len(val) > 10:
-                self.keys.append(val.strip())
-            
+            _maybe_add(os.getenv(f"GEMINI_API_KEY_{i}"))
+
+        _maybe_add(os.getenv("GEMINI_API_KEY"))
+        _maybe_add(os.getenv("GOOGLE_API_KEY"))
+
         self.current_index = 0
         self.model_name = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
@@ -525,6 +535,11 @@ class GeminiManager:
                         uploaded_video = client.files.get(name=uploaded_video.name)
                     contents.append(uploaded_video)
                 except Exception as e:
+                    err = str(e).lower()
+                    # If current key is invalid, rotate to next key and retry once.
+                    if ("api_key_invalid" in err or "api key not found" in err) and _retry_count < MAX_RETRIES:
+                        self.current_index += 1
+                        return self.call_gemini(prompt, video_path, _retry_count + 1)
                     return f"Video upload failed: {str(e)}. Falling back to text analysis."
 
             response = client.models.generate_content(
@@ -535,6 +550,10 @@ class GeminiManager:
         except Exception as e:
             err = str(e).lower()
             is_retryable = any(k in err for k in ("429", "rate", "resource_exhausted", "503", "unavailable", "deadline"))
+            is_auth_invalid = "api_key_invalid" in err or "api key not found" in err
+            if is_auth_invalid and _retry_count < MAX_RETRIES:
+                self.current_index += 1
+                return self.call_gemini(prompt, video_path, _retry_count + 1)
             if is_retryable and _retry_count < MAX_RETRIES:
                 wait = 2 ** (_retry_count + 1)  # 2s, 4s, 8s
                 logger.warning(f"Gemini rate-limited, retrying in {wait}s (attempt {_retry_count + 1}/{MAX_RETRIES})")

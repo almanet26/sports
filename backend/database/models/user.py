@@ -1,9 +1,10 @@
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database.config import Base, SessionLocal
+from database.models.enums import ROLE_VALUES
 
 from passlib.context import CryptContext
 import secrets
@@ -15,7 +16,12 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)   
-    role = Column(String, nullable=False)  # PLAYER, COACH, ADMIN
+    role = Column(
+        Enum(*ROLE_VALUES, name="user_role_enum", native_enum=False),
+        nullable=False,
+        default="free",
+        server_default="free",
+    )
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
@@ -41,7 +47,7 @@ class User(Base):
     coach_document_url = Column(String, nullable=True)
     
     # Authentication fields
-    is_active = Column(Boolean, default=True)
+    is_active = Column(Boolean, default=True, nullable=False, server_default="true")
     is_verified = Column(Boolean, default=False)
     email_verification_token = Column(String, nullable=True)
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
@@ -59,6 +65,10 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationships (commented out until other models are created)
+    subscription = relationship("Subscription", back_populates="user", uselist=False)
+    monthly_usages = relationship("MonthlyUsage", back_populates="user")
 
     # Relationships (commented out until other models are created)
     # videos = relationship("Video", back_populates="uploader")

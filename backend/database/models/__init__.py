@@ -17,6 +17,8 @@ from database.models.bowling import BowlingAnalysis
 from database.models.batting import BattingAnalysis
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.subscription import Subscription
+from database.models.monthly_usage import MonthlyUsage
+from database.models.plan_config import PlanConfig
 __all__ = [
     # User models
     "User",
@@ -36,6 +38,10 @@ __all__ = [
     # Submissions 
     "VideoSubmission",
     "SubmissionStatus",
+    # Subscriptions and quota
+    "Subscription",
+    "MonthlyUsage",
+    "PlanConfig",
     # Enums
     "VideoVisibility",
     "VideoStatus",

@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from database.config import DATABASE_URL, Base
 # Import all models to ensure they're registered with Base.metadata
-from database.models import user, video, submission, plan, subscription, batting, bowling, player_stats
+from database.models import user, video, submission, plan, subscription, monthly_usage, plan_config, batting, bowling, player_stats
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
