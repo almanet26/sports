@@ -12,6 +12,14 @@ Routes:
 """
 from . import auth, videos, jobs, requests, admin_coaches
 
+try:
+    from . import coach_content
+    COACH_CONTENT_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Coach content feature disabled due to import error: {e}")
+    coach_content = None
+    COACH_CONTENT_AVAILABLE = False
+
 
 try:
     from . import bowling
@@ -55,6 +63,7 @@ except Exception as e:
 
 __all__ = [
     "auth", "videos", "jobs", "requests", "admin_coaches",
+    "coach_content", "COACH_CONTENT_AVAILABLE",
     "bowling", "BOWLING_AVAILABLE",
     "batting", "BATTING_AVAILABLE",
     "submissions", "SUBMISSIONS_AVAILABLE",
