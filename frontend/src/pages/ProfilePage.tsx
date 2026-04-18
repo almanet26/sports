@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
-import { authApi, api } from '../lib/api';
+import { authApi, api, resolveMediaUrl } from '../lib/api';
 
 const SPECIALIZATIONS = ['Batting', 'Bowling', 'Fielding', 'Fitness', 'Mental', 'Wicketkeeping'];
 
@@ -45,6 +45,10 @@ export default function ProfilePage() {
       const url = res.data.profile_image_url;
       setProfileImageUrl(url);
       updateUser({ profile_image_url: url });
+      // Refresh the full profile to ensure consistency
+      await useAuthStore.getState().fetchProfile();
+      // Trigger storage event to update DashboardLayout
+      window.dispatchEvent(new Event('storage'));
     } catch {
       // fallback: store as base64 preview locally
       const reader = new FileReader();
@@ -167,7 +171,7 @@ export default function ProfilePage() {
                 onMouseLeave={e => (e.currentTarget.querySelector('.photo-overlay') as HTMLElement).style.opacity = '0'}
               >
                 {profileImageUrl
-                  ? <img src={profileImageUrl} alt="profile" className="w-24 h-24 rounded-2xl object-cover" />
+                  ? <img src={resolveMediaUrl(profileImageUrl)} alt="profile" className="w-24 h-24 rounded-2xl object-cover" />
                   : <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
                       {user?.name?.charAt(0)?.toUpperCase() || 'C'}
                     </div>}
@@ -265,7 +269,7 @@ export default function ProfilePage() {
         <div className="flex items-center gap-4 mb-6">
           <div className="w-16 h-16 rounded-2xl overflow-hidden">
             {profileImageUrl
-              ? <img src={profileImageUrl} alt="profile" className="w-full h-full object-cover" />
+              ? <img src={resolveMediaUrl(profileImageUrl)} alt="profile" className="w-full h-full object-cover" />
               : <div className="w-full h-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-2xl font-bold">
                   {user?.name?.charAt(0)?.toUpperCase() || 'U'}
                 </div>}

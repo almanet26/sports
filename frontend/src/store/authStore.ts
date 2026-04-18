@@ -187,6 +187,8 @@ export const useAuthStore = create<AuthState>()(
         if (!current) return;
         const updated = { ...current, ...partial };
         set({ user: updated });
+        // Also update localStorage directly to ensure persistence
+        localStorage.setItem('user_profile', JSON.stringify(updated));
       },
 
       // Clear error
