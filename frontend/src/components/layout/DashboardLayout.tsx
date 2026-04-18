@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { getStoredPlayerProfileSummary } from "../../services/playerProfile";
+import { resolveMediaUrl } from "../../lib/api";
 import logoImage from '/logo.webp';
 
 
@@ -85,7 +86,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     };
   }, [user]);
   const sidebarName = playerProfile.fullName || user?.name || user?.email || "User";
-  const sidebarAvatar = playerProfile.avatar || user?.profile_image_url || "";
+  const sidebarAvatar = resolveMediaUrl(playerProfile.avatar || user?.profile_image_url || "");
 
   React.useEffect(() => {
     document.body.className = theme === 'light' ? 'light-theme' : '';
@@ -195,9 +196,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     src={sidebarAvatar}
                     alt={sidebarName}
                     className="w-12 h-12 rounded-xl object-cover"
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none';
+                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                    }}
                   />
-                ) : (
+                ) : null}
+                {!sidebarAvatar || sidebarAvatar === resolveMediaUrl("") ? (
                   <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                    {sidebarName.charAt(0).toUpperCase() || "U"}
+                  </div>
+                ) : (
+                  <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                     {sidebarName.charAt(0).toUpperCase() || "U"}
                   </div>
                 )}
@@ -355,9 +365,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                           src={sidebarAvatar}
                           alt={sidebarName}
                           className="w-12 h-12 rounded-xl object-cover"
+                          onError={(e) => {
+                            e.currentTarget.style.display = 'none';
+                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                          }}
                         />
-                      ) : (
+                      ) : null}
+                      {!sidebarAvatar || sidebarAvatar === resolveMediaUrl("") ? (
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                          {sidebarName.charAt(0).toUpperCase() || "U"}
+                        </div>
+                      ) : (
+                        <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                           {sidebarName.charAt(0).toUpperCase() || "U"}
                         </div>
                       )}
