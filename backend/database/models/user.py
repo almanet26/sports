@@ -27,11 +27,13 @@ class User(Base):
     stripe_customer_id = Column(String, nullable=True)
     
     # Coach branding fields
-    certifications = Column(JSON, nullable=True)  # [{name, issuer, year}]
+    certifications = Column(JSON, nullable=True)  # [{name, issuer, year, certificate_url}]
     specialization = Column(JSON, nullable=True)  # ["Batting", "Bowling", ...]
     intro_video_url = Column(String, nullable=True)
     profile_image_url = Column(String, nullable=True)
     coach_category = Column(String, nullable=True)  # Under 12, Under 15, Under 18, etc.
+    date_of_birth = Column(String, nullable=True)  # YYYY-MM-DD format
+    years_of_experience = Column(Integer, nullable=True)
     
     # Subscription field (BASIC, SILVER, GOLD)
     subscription_plan = Column(String, default='BASIC', nullable=False)

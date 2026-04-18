@@ -45,12 +45,18 @@ def _ensure_users_schema(db_session) -> None:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_document_url TEXT"))
             if "stripe_customer_id" not in existing:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)"))
+            if "date_of_birth" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN date_of_birth VARCHAR(10)"))
+            if "years_of_experience" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN years_of_experience INTEGER"))
         else:
             # Safe on Postgres and no-ops when columns already exist.
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(50) DEFAULT 'BASIC'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_status VARCHAR(20) DEFAULT 'pending'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_document_url TEXT"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)"))
+            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR(10)"))
+            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS years_of_experience INTEGER"))
 
         db_session.execute(text("UPDATE users SET subscription_plan = 'BASIC' WHERE subscription_plan IS NULL"))
         db_session.commit()
