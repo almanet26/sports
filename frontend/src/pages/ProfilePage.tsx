@@ -21,13 +21,15 @@ export default function ProfilePage() {
     profile_bio: user?.profile_bio || '',
     team: user?.team || '',
     jerseyNumber: user?.jersey_number || '',
+    date_of_birth: user?.date_of_birth || '',
+    years_of_experience: user?.years_of_experience || '',
   });
 
   // Coach branding state
-  const [certifications, setCertifications] = useState<Array<{name: string; issuer: string; year: string}>>(user?.certifications || []);
+  const [certifications, setCertifications] = useState<Array<{name: string; issuer: string; year: string; certificate_url?: string}>>(user?.certifications || []);
   const [specialization, setSpecialization] = useState<string[]>(user?.specialization || []);
   const [addingCert, setAddingCert] = useState(false);
-  const [newCert, setNewCert] = useState({ name: '', issuer: '', year: '' });
+  const [newCert, setNewCert] = useState({ name: '', issuer: '', year: '', certificate_url: '' });
   const [videoUploading, setVideoUploading] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState(user?.intro_video_url || '');
   const videoInputRef = useRef<HTMLInputElement>(null);
@@ -81,6 +83,8 @@ export default function ProfilePage() {
         team: formData.team,
         gender: formData.gender,
         coach_category: formData.coach_category,
+        date_of_birth: formData.date_of_birth,
+        years_of_experience: formData.years_of_experience ? parseInt(formData.years_of_experience) : undefined,
         certifications,
         specialization,
       });
@@ -90,6 +94,8 @@ export default function ProfilePage() {
         team: formData.team,
         gender: formData.gender,
         coach_category: formData.coach_category,
+        date_of_birth: formData.date_of_birth,
+        years_of_experience: formData.years_of_experience ? parseInt(formData.years_of_experience) : undefined,
         certifications,
         specialization,
       });
@@ -127,7 +133,7 @@ export default function ProfilePage() {
   const addCert = () => {
     if (!newCert.name) return;
     setCertifications(prev => [...prev, newCert]);
-    setNewCert({ name: '', issuer: '', year: '' });
+    setNewCert({ name: '', issuer: '', year: '', certificate_url: '' });
     setAddingCert(false);
   };
 
@@ -315,8 +321,16 @@ export default function ProfilePage() {
                   : <p className={`px-4 py-3 rounded-xl border ${cardBg} text-sm`}>{user?.coach_category || 'Not provided'}</p>}
               </div>
               <div>
-                <label className={`block text-xs mb-1 ${sub}`}><i className="fas fa-user-shield mr-1"></i>Role</label>
-                <p className={`px-4 py-3 rounded-xl border ${cardBg} text-sm`}>{user?.role}</p>
+                <label className={`block text-xs mb-1 ${sub}`}><i className="fas fa-calendar mr-1"></i>Date of Birth</label>
+                {isEditing
+                  ? <input type="date" value={formData.date_of_birth} onChange={e => setFormData(f => ({ ...f, date_of_birth: e.target.value }))} className={inputCls} />
+                  : <p className={`px-4 py-3 rounded-xl border ${cardBg} text-sm`}>{user?.date_of_birth || 'Not provided'}</p>}
+              </div>
+              <div>
+                <label className={`block text-xs mb-1 ${sub}`}><i className="fas fa-award mr-1"></i>Years of Experience</label>
+                {isEditing
+                  ? <input type="number" min="0" value={formData.years_of_experience} onChange={e => setFormData(f => ({ ...f, years_of_experience: e.target.value }))} className={inputCls} placeholder="e.g., 5" />
+                  : <p className={`px-4 py-3 rounded-xl border ${cardBg} text-sm`}>{user?.years_of_experience ? `${user.years_of_experience} years` : 'Not provided'}</p>}
               </div>
             </>
           )}
@@ -365,6 +379,8 @@ export default function ProfilePage() {
                   <input placeholder="Year" value={newCert.year}
                     onChange={e => setNewCert(n => ({ ...n, year: e.target.value }))} className={inputCls} />
                 </div>
+                <input placeholder="Certificate URL (optional)" value={newCert.certificate_url}
+                  onChange={e => setNewCert(n => ({ ...n, certificate_url: e.target.value }))} className={inputCls} />
                 <div className="flex gap-2">
                   <button onClick={addCert} className="px-4 py-2 bg-gradient-to-r from-blue-500 to-purple-600 rounded-xl text-xs font-semibold">Add</button>
                   <button onClick={() => setAddingCert(false)} className="px-4 py-2 glass border border-white/20 rounded-xl text-xs">Cancel</button>
@@ -379,9 +395,15 @@ export default function ProfilePage() {
               : <div className="space-y-2">
                   {certifications.map((c, i) => (
                     <div key={i} className={`flex items-center justify-between px-4 py-3 rounded-xl border ${cardBg}`}>
-                      <div>
+                      <div className="flex-1">
                         <p className="text-sm font-medium">{c.name}</p>
                         <p className={`text-xs ${sub}`}>{c.issuer} {c.year && `· ${c.year}`}</p>
+                        {c.certificate_url && (
+                          <a href={c.certificate_url} target="_blank" rel="noopener noreferrer" 
+                            className="text-xs text-blue-400 hover:text-blue-300 flex items-center gap-1 mt-1">
+                            <i className="fas fa-external-link-alt"></i>View Certificate
+                          </a>
+                        )}
                       </div>
                       <button onClick={() => setCertifications(prev => prev.filter((_, j) => j !== i))}
                         className="text-red-400 hover:text-red-300 text-xs"><i className="fas fa-trash"></i></button>

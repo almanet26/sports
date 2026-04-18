@@ -85,6 +85,8 @@ class UserProfileResponse(BaseModel):
     profile_image_url: Optional[str] = None
     coach_category: Optional[str] = None
     coach_status: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    years_of_experience: Optional[int] = None
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime] = None
@@ -109,6 +111,8 @@ class ProfileUpdateRequest(BaseModel):
     intro_video_url: Optional[str] = None
     profile_image_url: Optional[str] = None
     coach_category: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    years_of_experience: Optional[int] = None
 
     model_config = ConfigDict(extra="ignore")
 
