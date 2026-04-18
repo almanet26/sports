@@ -115,8 +115,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       window.removeEventListener("storage", refresh);
     };
   }, [user]);
+  
   const sidebarName = playerProfile.fullName || user?.name || user?.email || "User";
-  const sidebarAvatar = resolveMediaUrl(playerProfile.avatar || user?.profile_image_url || "");
+  // Prioritize user.profile_image_url (from auth store) over playerProfile.avatar (from localStorage)
+  const sidebarAvatar = resolveMediaUrl(user?.profile_image_url || playerProfile.avatar || "");
 
   React.useEffect(() => {
     document.body.className = theme === 'light' ? 'light-theme' : '';
@@ -256,22 +258,23 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             >
               <div className="flex items-center gap-3">
                 {sidebarAvatar ? (
-                  <img
-                    src={sidebarAvatar}
-                    alt={sidebarName}
-                    className="w-12 h-12 rounded-xl object-cover"
-                    onError={(e) => {
-                      e.currentTarget.style.display = 'none';
-                      e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                    }}
-                  />
-                ) : null}
-                {!sidebarAvatar || sidebarAvatar === resolveMediaUrl("") ? (
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                    {sidebarName.charAt(0).toUpperCase() || "U"}
-                  </div>
+                  <>
+                    <img
+                      src={sidebarAvatar}
+                      alt={sidebarName}
+                      className="w-12 h-12 rounded-xl object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                        if (fallback) fallback.style.display = 'flex';
+                      }}
+                    />
+                    <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 items-center justify-center text-white font-bold text-lg">
+                      {sidebarName.charAt(0).toUpperCase() || "U"}
+                    </div>
+                  </>
                 ) : (
-                  <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                  <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                     {sidebarName.charAt(0).toUpperCase() || "U"}
                   </div>
                 )}
@@ -360,22 +363,23 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <div className="flex items-center gap-3">
                       {sidebarAvatar ? (
-                        <img
-                          src={sidebarAvatar}
-                          alt={sidebarName}
-                          className="w-12 h-12 rounded-xl object-cover"
-                          onError={(e) => {
-                            e.currentTarget.style.display = 'none';
-                            e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                          }}
-                        />
-                      ) : null}
-                      {!sidebarAvatar || sidebarAvatar === resolveMediaUrl("") ? (
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                          {sidebarName.charAt(0).toUpperCase() || "U"}
-                        </div>
+                        <>
+                          <img
+                            src={sidebarAvatar}
+                            alt={sidebarName}
+                            className="w-12 h-12 rounded-xl object-cover"
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallback = e.currentTarget.nextElementSibling as HTMLElement;
+                              if (fallback) fallback.style.display = 'flex';
+                            }}
+                          />
+                          <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 items-center justify-center text-white font-bold text-lg">
+                            {sidebarName.charAt(0).toUpperCase() || "U"}
+                          </div>
+                        </>
                       ) : (
-                        <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                           {sidebarName.charAt(0).toUpperCase() || "U"}
                         </div>
                       )}
