@@ -21,6 +21,7 @@ from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
 from database.models.coach_content import CoachContent, ContentType
+from database.models.message import Message
 
 __all__ = [
     # User models
@@ -44,6 +45,8 @@ __all__ = [
     # Coach Content
     "CoachContent",
     "ContentType",
+    # Messages
+    "Message",
     # Enums
     "VideoVisibility",
     "VideoStatus",

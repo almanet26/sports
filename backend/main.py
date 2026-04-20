@@ -16,6 +16,7 @@ from database.models import (
     Video, HighlightEvent, HighlightJob, MatchRequest, UserVote,
     BattingAnalysis,
     VideoSubmission,
+    Message,
 )
 from database.models.coach_content import CoachContent
 from database.models.coach_session import CoachTrainingSession
@@ -283,7 +284,8 @@ from api.routes import (
     storage, GCS_AVAILABLE, 
     worker, WORKER_AVAILABLE, 
     admin_coaches,
-    coach_content, COACH_CONTENT_AVAILABLE
+    coach_content, COACH_CONTENT_AVAILABLE,
+    messages, MESSAGES_AVAILABLE
 )
 from api.routes import plan, subscription, sessions
 
@@ -302,6 +304,13 @@ if coach_content is not None and COACH_CONTENT_AVAILABLE:
     logger.info("Coach content feature enabled")
 else:
     logger.warning("Coach content feature disabled")
+
+# Messages routes
+if messages is not None and MESSAGES_AVAILABLE:
+    app.include_router(messages.router, prefix="/api/v1", tags=["messages"])
+    logger.info("Messages feature enabled")
+else:
+    logger.warning("Messages feature disabled")
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])

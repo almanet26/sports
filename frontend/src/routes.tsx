@@ -212,6 +212,7 @@ export default function AppRouter() {
             <Route path="/player/subscription" element={<SubscriptionPage />} />
             <Route path="/browse-content" element={<BrowseContentPage />} />
             <Route path="/content/:id" element={<ContentDetailPage />} />
+            <Route path="/coach/messages" element={<CoachMessagesPage />} />
           </Route>
         </Route>
 
@@ -232,7 +233,6 @@ export default function AppRouter() {
                 <Route path="/coach/analytics" element={<CoachAnalyticsPage />} />
                 <Route path="/coach/reviews" element={<CoachReviewsPage />} />
                 <Route path="/coach/earnings" element={<CoachEarningsPage />} />
-                <Route path="/coach/messages" element={<CoachMessagesPage />} />
                 <Route path="/coach/content" element={<CoachContentPage />} />
                 <Route path="/coach/settings" element={<CoachSettingsPage />} />
               </Route>

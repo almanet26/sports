@@ -13,6 +13,14 @@ Routes:
 from . import auth, videos, jobs, requests, admin_coaches
 
 try:
+    from . import messages
+    MESSAGES_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Messages feature disabled due to import error: {e}")
+    messages = None
+    MESSAGES_AVAILABLE = False
+
+try:
     from . import coach_content
     COACH_CONTENT_AVAILABLE = True
 except Exception as e:
@@ -63,6 +71,7 @@ except Exception as e:
 
 __all__ = [
     "auth", "videos", "jobs", "requests", "admin_coaches",
+    "messages", "MESSAGES_AVAILABLE",
     "coach_content", "COACH_CONTENT_AVAILABLE",
     "bowling", "BOWLING_AVAILABLE",
     "batting", "BATTING_AVAILABLE",
