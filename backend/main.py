@@ -238,6 +238,7 @@ def db_health_check():
 
 # Include API Routers 
 from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
+from api.routes import match, notification
 from api.routes import plan, subscription
 
 # Authentication routes
@@ -260,6 +261,10 @@ app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 
 # Match request/voting routes
 app.include_router(requests.router, prefix="/api/v1", tags=["requests"])
+
+# Matches and notifications routes
+app.include_router(match.router, prefix="/api/v1", tags=["matches"])
+app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])

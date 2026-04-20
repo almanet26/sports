@@ -20,15 +20,25 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema - Add coach profile fields to users table."""
-    # Add gender column
-    op.add_column('users', sa.Column('gender', sa.String(), nullable=True))
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    columns = [col['name'] for col in inspector.get_columns('users')]
     
-    # Add coach branding fields
-    op.add_column('users', sa.Column('certifications', sa.JSON(), nullable=True))
-    op.add_column('users', sa.Column('specialization', sa.JSON(), nullable=True))
-    op.add_column('users', sa.Column('intro_video_url', sa.String(), nullable=True))
-    op.add_column('users', sa.Column('profile_image_url', sa.String(), nullable=True))
-    op.add_column('users', sa.Column('coach_category', sa.String(), nullable=True))
+    # Add gender column (if not exists)
+    if 'gender' not in columns:
+        op.add_column('users', sa.Column('gender', sa.String(), nullable=True))
+    
+    # Add coach branding fields (if not exist)
+    if 'certifications' not in columns:
+        op.add_column('users', sa.Column('certifications', sa.JSON(), nullable=True))
+    if 'specialization' not in columns:
+        op.add_column('users', sa.Column('specialization', sa.JSON(), nullable=True))
+    if 'intro_video_url' not in columns:
+        op.add_column('users', sa.Column('intro_video_url', sa.String(), nullable=True))
+    if 'profile_image_url' not in columns:
+        op.add_column('users', sa.Column('profile_image_url', sa.String(), nullable=True))
+    if 'coach_category' not in columns:
+        op.add_column('users', sa.Column('coach_category', sa.String(), nullable=True))
 
 
 def downgrade() -> None:

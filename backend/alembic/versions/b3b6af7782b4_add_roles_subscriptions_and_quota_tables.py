@@ -82,9 +82,13 @@ def upgrade() -> None:
     # Replace any legacy subscriptions table with the target schema.
     if "subscriptions" in table_names:
         op.drop_table("subscriptions")
+        # Refresh inspector after drop to reflect latest state
+        inspector = sa.inspect(op.get_bind())
+        table_names = set(inspector.get_table_names())
 
-    op.create_table(
-        "subscriptions",
+    if "subscriptions" not in table_names:
+        op.create_table(
+            "subscriptions",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.String(length=36), nullable=False),
         sa.Column("plan_key", sa.String(length=50), nullable=False),
@@ -119,11 +123,12 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", name="uq_subscriptions_user_id"),
-    )
-    op.create_index("ix_subscriptions_user_id", "subscriptions", ["user_id"], unique=False)
+        )
+        op.create_index("ix_subscriptions_user_id", "subscriptions", ["user_id"], unique=False)
 
-    op.create_table(
-        "monthly_usage",
+    if "monthly_usage" not in table_names:
+        op.create_table(
+            "monthly_usage",
         sa.Column("id", sa.Integer(), autoincrement=True, nullable=False),
         sa.Column("user_id", sa.String(length=36), nullable=False),
         sa.Column("year", sa.Integer(), nullable=False),
@@ -134,111 +139,41 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["user_id"], ["users.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("user_id", "year", "month", name="uq_monthly_usage_user_year_month"),
-    )
-    op.create_index("ix_monthly_usage_user_id", "monthly_usage", ["user_id"], unique=False)
+        )
+        op.create_index("ix_monthly_usage_user_id", "monthly_usage", ["user_id"], unique=False)
 
-    op.create_table(
-        "plan_config",
-        sa.Column("plan_key", sa.String(length=50), nullable=False),
-        sa.Column(
-            "role",
-            sa.Enum(*ROLE_VALUES, name="plan_config_role_enum", native_enum=False),
-            nullable=False,
-        ),
-        sa.Column("display_name", sa.String(length=100), nullable=False),
-        sa.Column("price_inr", sa.Integer(), nullable=False),
-        sa.Column("duration_days", sa.Integer(), nullable=False),
-        sa.Column("max_biomech_per_month", sa.Integer(), nullable=False),
-        sa.Column("max_ocr_hours_per_month", sa.Float(), nullable=False),
-        sa.Column("max_submissions_per_month", sa.Integer(), nullable=False),
-        sa.Column("max_players_in_dashboard", sa.Integer(), nullable=False),
-        sa.PrimaryKeyConstraint("plan_key"),
-    )
+    if "plan_config" not in table_names:
+        op.create_table(
+            "plan_config",
+            sa.Column("plan_key", sa.String(length=50), nullable=False),
+            sa.Column(
+                "role",
+                sa.Enum(*ROLE_VALUES, name="plan_config_role_enum", native_enum=False),
+                nullable=False,
+            ),
+            sa.Column("display_name", sa.String(length=100), nullable=False),
+            sa.Column("price_inr", sa.Integer(), nullable=False),
+            sa.Column("duration_days", sa.Integer(), nullable=False),
+            sa.Column("max_biomech_per_month", sa.Integer(), nullable=False),
+            sa.Column("max_ocr_hours_per_month", sa.Float(), nullable=False),
+            sa.Column("max_submissions_per_month", sa.Integer(), nullable=False),
+            sa.Column("max_players_in_dashboard", sa.Integer(), nullable=False),
+            sa.PrimaryKeyConstraint("plan_key"),
+        )
 
-    plan_config_table = sa.table(
-        "plan_config",
-        sa.column("plan_key", sa.String),
-        sa.column("role", sa.String),
-        sa.column("display_name", sa.String),
-        sa.column("price_inr", sa.Integer),
-        sa.column("duration_days", sa.Integer),
-        sa.column("max_biomech_per_month", sa.Integer),
-        sa.column("max_ocr_hours_per_month", sa.Float),
-        sa.column("max_submissions_per_month", sa.Integer),
-        sa.column("max_players_in_dashboard", sa.Integer),
-    )
-
-    op.bulk_insert(
-        plan_config_table,
-        [
-            {
-                "plan_key": "free",
-                "role": "free",
-                "display_name": "Free",
-                "price_inr": 0,
-                "duration_days": 90,
-                "max_biomech_per_month": 3,
-                "max_ocr_hours_per_month": 0.0,
-                "max_submissions_per_month": 0,
-                "max_players_in_dashboard": 0,
-            },
-            {
-                "plan_key": "basic",
-                "role": "basic",
-                "display_name": "Basic",
-                "price_inr": 299.0,
-                "duration_days": 90,
-                "max_biomech_per_month": 15,
-                "max_ocr_hours_per_month": 0.0,
-                "max_submissions_per_month": 5,
-                "max_players_in_dashboard": 0,
-            },
-            {
-                "plan_key": "platinum",
-                "role": "platinum",
-                "display_name": "Platinum",
-                "price_inr": 599.0,
-                "duration_days": 90,
-                "max_biomech_per_month": 50,
-                "max_ocr_hours_per_month": 0.0,
-                "max_submissions_per_month": 0,
-                "max_players_in_dashboard": 0,
-            },
-            {
-                "plan_key": "coach_starter",
-                "role": "coach_starter",
-                "display_name": "Coach Starter",
-                "price_inr": 1999.0,
-                "duration_days": 90,
-                "max_biomech_per_month": 999,
-                "max_ocr_hours_per_month": 50.0,
-                "max_submissions_per_month": 150,
-                "max_players_in_dashboard": 10,
-            },
-            {
-                "plan_key": "coach_pro",
-                "role": "coach_pro",
-                "display_name": "Coach Pro",
-                "price_inr": 4999.0,
-                "duration_days": 90,
-                "max_biomech_per_month": 999,
-                "max_ocr_hours_per_month": 150.0,
-                "max_submissions_per_month": 600,
-                "max_players_in_dashboard": 0,
-            },
-            {
-                "plan_key": "academy",
-                "role": "academy",
-                "display_name": "Academy",
-                "price_inr": 14999.0,
-                "duration_days": 90,
-                "max_biomech_per_month": 999,
-                "max_ocr_hours_per_month": 500.0,
-                "max_submissions_per_month": 1500,
-                "max_players_in_dashboard": 0,
-            },
-        ],
-    )
+    # Always ensure plan_config has all required rows (using raw SQL for reliability)
+    op.execute("DELETE FROM plan_config")
+    
+    op.execute("""
+        INSERT INTO plan_config (plan_key, role, display_name, price_inr, duration_days, max_biomech_per_month, max_ocr_hours_per_month, max_submissions_per_month, max_players_in_dashboard)
+        VALUES
+        ('free', 'free', 'Free', 0, 90, 3, 0.0, 0, 0),
+        ('basic', 'basic', 'Basic', 20000, 90, 15, 0.0, 5, 0),
+        ('platinum', 'platinum', 'Platinum', 50000, 365, 50, 0.0, 0, 0),
+        ('coach_starter', 'coach_starter', 'Coach Starter', 199900, 90, 999, 50.0, 150, 10),
+        ('coach_pro', 'coach_pro', 'Coach Pro', 499900, 180, 999, 150.0, 600, 0),
+        ('academy', 'academy', 'Academy', 1499900, 365, 999, 500.0, 1500, 0)
+    """)
 
 
 def downgrade() -> None:

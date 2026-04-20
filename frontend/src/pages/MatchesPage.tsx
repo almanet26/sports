@@ -7,8 +7,17 @@ export default function MatchesPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/api/matches/upcoming")
-      .then(res => setMatches(res.data))
+    api
+      .get("/matches/upcoming")
+      .then((res) => setMatches(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => {
+        if (err?.response?.status === 404) {
+          // Endpoint may be disabled in some backend builds.
+          setMatches([]);
+          return;
+        }
+        throw err;
+      })
       .finally(() => setLoading(false));
   }, []);
 

@@ -1,4 +1,3 @@
-
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 
 // Base URL from environment or default
@@ -11,8 +10,23 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
  */
 export function resolveMediaUrl(path: string | null | undefined): string {
   if (!path) return '';
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try {
+      const absolute = new URL(path);
+      if (absolute.pathname.startsWith('/storage/')) {
+        absolute.pathname = absolute.pathname.replace('/storage/', '/static/');
+        return absolute.toString();
+      }
+    } catch {
+      // Fall back to original path when URL parsing fails.
+    }
+    return path;
+  }
+  // Legacy DB rows may store /storage/... paths; backend serves these under /static/...
+  const normalizedPath = path.startsWith('/storage/')
+    ? path.replace('/storage/', '/static/')
+    : path;
+  return `${API_BASE_URL}${normalizedPath.startsWith('/') ? '' : '/'}${normalizedPath}`;
 }
 
 // Create axios instance
@@ -557,10 +571,10 @@ export const plansApi = {
     monthly_price: number;
     yearly_price: number;
     features: string;
-  }) => api.post('/plans', data),
+  }) => api.post('/plans/', data),
 
   // Get all plans
-  list: () => api.get('/plans'),
+  list: () => api.get('/plans/'),
 
   // Update plan
   update: (

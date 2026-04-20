@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import sys
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 
@@ -41,7 +41,7 @@ PLAN_ORDER = [
 
 
 def _build_email(plan_key: str) -> str:
-    return f"{plan_key}.test@sports.local"
+    return f"{plan_key}.test@sports.com"
 
 
 def _build_name(plan_key: str) -> str:
@@ -49,7 +49,7 @@ def _build_name(plan_key: str) -> str:
 
 
 def _ensure_user_and_subscription(db: Session, plan: PlanConfig) -> Dict[str, str]:
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     email = _build_email(plan.plan_key)
 
     user = db.query(User).filter(User.email == email).first()
