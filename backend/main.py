@@ -285,7 +285,8 @@ from api.routes import (
     worker, WORKER_AVAILABLE, 
     admin_coaches,
     coach_content, COACH_CONTENT_AVAILABLE,
-    messages, MESSAGES_AVAILABLE
+    messages, MESSAGES_AVAILABLE,
+    analytics, ANALYTICS_AVAILABLE
 )
 from api.routes import plan, subscription, sessions
 
@@ -311,6 +312,13 @@ if messages is not None and MESSAGES_AVAILABLE:
     logger.info("Messages feature enabled")
 else:
     logger.warning("Messages feature disabled")
+
+# Analytics routes
+if analytics is not None and ANALYTICS_AVAILABLE:
+    app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
+    logger.info("Analytics feature enabled")
+else:
+    logger.warning("Analytics feature disabled")
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
