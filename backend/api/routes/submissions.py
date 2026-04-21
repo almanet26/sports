@@ -759,6 +759,113 @@ def my_player_submissions(
     )
 
 
+#  PLAYER: Own Progress (self-view)
+@router.get("/player/progress")
+def player_own_progress(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Player views their own performance progress across all submissions."""
+    all_subs = (
+        db.query(VideoSubmission)
+        .filter(VideoSubmission.player_id == current_user.id)
+        .order_by(VideoSubmission.created_at.asc())
+        .all()
+    )
+
+    published_subs = [s for s in all_subs if s.status == SubmissionStatus.PUBLISHED]
+    batting_subs   = [s for s in all_subs if s.analysis_type == "BATTING"]
+    bowling_subs   = [s for s in all_subs if s.analysis_type == "BOWLING"]
+
+    total      = len(all_subs)
+    published  = len(published_subs)
+    completion = round((published / total) * 100) if total else 0
+
+    from datetime import date
+    last_sub_date = all_subs[-1].created_at.date() if all_subs else None
+    days_since    = (date.today() - last_sub_date).days if last_sub_date else None
+
+    flaw_counter: dict[str, int] = {}
+    for sub in published_subs:
+        source = sub.coach_final_text or sub.ai_draft_text or ""
+        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
+            flaws = extract_bowling_flaws(source)
+        elif BATTING_ENGINE_AVAILABLE:
+            flaws = extract_detected_flaws(source)
+        else:
+            flaws = []
+        for f in flaws:
+            name = f.get("flaw_name", "").strip()
+            if name:
+                flaw_counter[name] = flaw_counter.get(name, 0) + 1
+
+    flaw_frequency = [
+        {"flaw": k, "count": v}
+        for k, v in sorted(flaw_counter.items(), key=lambda x: -x[1])[:8]
+    ]
+
+    flaw_trend = None
+    if len(published_subs) >= 2:
+        def _flaw_count(sub):
+            source = sub.coach_final_text or sub.ai_draft_text or ""
+            if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
+                return len(extract_bowling_flaws(source))
+            elif BATTING_ENGINE_AVAILABLE:
+                return len(extract_detected_flaws(source))
+            return 0
+
+        first_count  = _flaw_count(published_subs[0])
+        latest_count = _flaw_count(published_subs[-1])
+        delta        = latest_count - first_count
+        trend        = "improving" if delta < 0 else ("declining" if delta > 0 else "stable")
+        flaw_trend   = {
+            "first_report_flaw_count":  first_count,
+            "latest_report_flaw_count": latest_count,
+            "delta":                    delta,
+            "trend":                    trend,
+        }
+
+    timeline = []
+    for sub in all_subs:
+        source = sub.coach_final_text or sub.ai_draft_text or ""
+        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
+            fc = len(extract_bowling_flaws(source))
+        elif BATTING_ENGINE_AVAILABLE:
+            fc = len(extract_detected_flaws(source))
+        else:
+            fc = 0
+        timeline.append({
+            "id":             sub.id,
+            "analysis_type":  sub.analysis_type,
+            "status":         sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status,
+            "created_at":     sub.created_at.isoformat() if sub.created_at else None,
+            "published_at":   sub.published_at.isoformat() if sub.published_at else None,
+            "flaw_count":     fc,
+            "pdf_report_url": _gcs_to_signed_url(sub.pdf_report_url),
+        })
+
+    return {
+        "player": {
+            "id":    current_user.id,
+            "name":  current_user.name,
+            "email": current_user.email,
+            "team":  current_user.team,
+        },
+        "summary": {
+            "total_submissions":          total,
+            "published_reports":          published,
+            "batting_submissions":         len(batting_subs),
+            "bowling_submissions":         len(bowling_subs),
+            "completion_rate":            completion,
+            "days_since_last_submission": days_since,
+            "improvement_trend":          flaw_trend["trend"] if flaw_trend else "insufficient_data",
+        },
+        "flaw_frequency":      flaw_frequency,
+        "flaw_trend":          flaw_trend,
+        "submission_timeline": timeline,
+    }
+
+
 #  COACH: Individual Player Progress
 @router.get("/coach/player/{player_id}/progress")
 def coach_player_progress(

@@ -16,6 +16,9 @@ interface NavItem {
 const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
+    { to: "/player/profile", icon: "fas fa-user-edit", label: "Profile" },
+    { to: "/player/performance", icon: "fas fa-chart-bar", label: "My Performance" },
+    { to: "/player/videos", icon: "fas fa-video", label: "My Videos" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'basic' },
@@ -23,7 +26,6 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/player/profile", icon: "fas fa-user-circle", label: "My Profile" },
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },

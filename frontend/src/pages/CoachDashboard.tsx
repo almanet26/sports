@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useThemeStore } from "../store/themeStore";
@@ -34,6 +34,11 @@ export default function CoachDashboard() {
   }, []);
 
   const myAthletes = athletes;
+  const athletesSectionRef = useRef<HTMLDivElement>(null);
+
+  const scrollToAthletes = () => {
+    athletesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   const stats = useMemo(
     () => [
@@ -158,6 +163,7 @@ export default function CoachDashboard() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.5, delay: i * 0.1 }}
             whileHover={{ scale: 1.05, y: -5 }}
+            onClick={s.title === "My Athletes" ? scrollToAthletes : undefined}
             className={`rounded-2xl p-6 border transition-all duration-300 group cursor-pointer ${
               theme === 'dark'
                 ? 'glass border-white/20 hover:border-white/30'
@@ -428,6 +434,7 @@ export default function CoachDashboard() {
 
       {/* My Athletes */}
       <motion.div
+        ref={athletesSectionRef}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}

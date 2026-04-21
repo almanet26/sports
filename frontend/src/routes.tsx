@@ -185,6 +185,7 @@ export default function AppRouter() {
             <Route path="/requests" element={<RequestsPage />} />
             <Route path="/settings" element={<ProfileDispatcher />} />
             <Route path="/stats" element={<StatsPage />} />
+            <Route path="/player/performance" element={<PlayerPerformance />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/billing" element={<BillingPage />} />
