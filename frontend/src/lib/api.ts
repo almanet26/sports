@@ -547,6 +547,10 @@ export const submissionsApi = {
   /** Coach: Individual player progress */
   playerProgress: (playerId: string) =>
     api.get<PlayerProgress>(`/submissions/coach/player/${playerId}/progress`),
+
+  /** Player: Own progress (self-view) */
+  myProgress: () =>
+    api.get<PlayerProgress>('/submissions/player/progress'),
 };
 
 // Cloud Storage — Direct-to-GCS Upload

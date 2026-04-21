@@ -110,7 +110,10 @@ storage/highlight/*.mp4
 **/*.webm
 storage/
 
-# API Keys
+# API Keys & Environment
+.env
+.env.local
+.env.*.local
 *_secrets.py
 secrets.json
 credentials.json

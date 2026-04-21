@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, Link } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   BarChart, Bar, LineChart, Line,
@@ -7,6 +7,7 @@ import {
 } from 'recharts';
 import { useThemeStore } from '../store/themeStore';
 import { submissionsApi, resolveMediaUrl, type PlayerProgress } from '../lib/api';
+import { useAuthStore } from '../store/authStore';
 
 const TREND_CONFIG = {
   improving:         { label: 'Improving',         color: 'text-green-400',  bg: 'bg-green-500/20',  border: 'border-green-500/30',  icon: 'fas fa-arrow-up' },
@@ -24,25 +25,30 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 export default function PlayerPerformance() {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
   const { theme } = useThemeStore();
   const dark = theme === 'dark';
+  const { user } = useAuthStore();
+  const isSelfView = !id; // no id param = player viewing own performance
 
   const [progress, setProgress] = useState<PlayerProgress | null>(null);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
 
   useEffect(() => {
-    if (!id) return;
-    submissionsApi.playerProgress(id)
+    const fetch = isSelfView
+      ? submissionsApi.myProgress()
+      : submissionsApi.playerProgress(id!);
+
+    fetch
       .then(({ data }) => setProgress(data))
       .catch((err) => {
-        const msg = err?.response?.data?.detail || 'Failed to load player progress.';
+        const msg = err?.response?.data?.detail || 'Failed to load performance data.';
         setError(msg);
       })
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, isSelfView]);
 
   if (loading) {
     return (
@@ -67,14 +73,15 @@ export default function PlayerPerformance() {
   const { player, summary, flaw_frequency, flaw_trend, submission_timeline } = progress;
   const trend = TREND_CONFIG[summary.improvement_trend] ?? TREND_CONFIG.insufficient_data;
 
-  // Timeline chart data — flaw count per submission
-  const timelineChartData = submission_timeline
-    .filter(s => s.status === 'PUBLISHED')
-    .map((s, i) => ({
-      label: `Report ${i + 1}`,
-      flaws: s.flaw_count,
-      date:  s.created_at ? new Date(s.created_at).toLocaleDateString() : '',
-    }));
+  // Timeline chart data — inverted so higher score = fewer flaws = better
+  const publishedTimeline = submission_timeline.filter(s => s.status === 'PUBLISHED');
+  const maxFlaws = Math.max(...publishedTimeline.map(s => s.flaw_count), 1);
+  const timelineChartData = publishedTimeline.map((s, i) => ({
+    label: `Report ${i + 1}`,
+    score: maxFlaws - s.flaw_count,
+    flaws: s.flaw_count,
+    date:  s.created_at ? new Date(s.created_at).toLocaleDateString() : '',
+  }));
 
   const summaryCards = [
     { label: 'Total Submissions', value: summary.total_submissions,  icon: 'fas fa-video',        color: 'from-blue-500 to-cyan-500' },
@@ -102,18 +109,31 @@ export default function PlayerPerformance() {
   return (
     <div className={dark ? 'text-white' : 'text-gray-900'}>
 
-      {/* Back */}
-      <motion.button
-        whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
-        onClick={() => navigate(-1)}
-        className={`mb-6 px-4 py-2 rounded-xl border transition-all flex items-center gap-2 text-sm ${
-          dark ? 'glass border-white/20 hover:bg-white/10' : 'bg-white border-gray-200 hover:bg-gray-50 shadow-sm'
-        }`}
-      >
-        <i className="fas fa-arrow-left"></i> Back
-      </motion.button>
+      {/* Header */}
+      {isSelfView ? (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className={`rounded-3xl p-6 mb-6 border ${dark ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg'}`}
+        >
+          <h1 className="text-3xl font-bold gradient-text">My Performance</h1>
+          <p className={`mt-1 text-sm ${dark ? 'text-white/60' : 'text-gray-500'}`}>
+            Your biomechanics analysis history and improvement trends
+          </p>
+        </motion.div>
+      ) : (
+        <motion.button
+          whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+          onClick={() => navigate(-1)}
+          className={`mb-6 px-4 py-2 rounded-xl border transition-all flex items-center gap-2 text-sm ${
+            dark ? 'glass border-white/20 hover:bg-white/10' : 'bg-white border-gray-200 hover:bg-gray-50 shadow-sm'
+          }`}
+        >
+          <i className="fas fa-arrow-left"></i> Back
+        </motion.button>
+      )}
 
-      {/* Player Header */}
+      {/* Player Header — only shown in coach view */}
+      {!isSelfView && (
       <motion.div
         initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
         className={`rounded-3xl p-6 mb-8 border ${dark ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg'}`}
@@ -150,6 +170,7 @@ export default function PlayerPerformance() {
           </div>
         </div>
       </motion.div>
+      )}
 
       {/* Summary Cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
@@ -183,8 +204,8 @@ export default function PlayerPerformance() {
               <i className="fas fa-chart-line text-white"></i>
             </div>
             <div>
-              <p className="font-semibold">Flaw Count Over Time</p>
-              <p className={`text-xs ${dark ? 'text-white/50' : 'text-gray-500'}`}>Lower is better</p>
+              <p className="font-semibold">Performance Over Time</p>
+              <p className={`text-xs ${dark ? 'text-white/50' : 'text-gray-500'}`}>Higher is better</p>
             </div>
           </div>
           {timelineChartData.length < 2 ? (
@@ -195,15 +216,21 @@ export default function PlayerPerformance() {
             <div className="h-56">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={timelineChartData}>
+                  <defs>
+                    <linearGradient id="perfGradient" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#3B82F6" />
+                      <stop offset="100%" stopColor="#10B981" />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
                   <XAxis dataKey="label" stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 11 }} />
-                  <YAxis stroke="rgba(255,255,255,0.5)" tick={{ fontSize: 11 }} allowDecimals={false} />
+                  <YAxis stroke="rgba(255,255,255,0.5)" tick={false} axisLine={false} tickLine={false} domain={[0, maxFlaws]} />
                   <Tooltip
                     contentStyle={{ backgroundColor: 'rgba(0,0,0,0.85)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: '10px', color: 'white' }}
-                    formatter={(v) => [`${v} flaws`, 'Flaws']}
+                    formatter={(_v, _n, props) => [`${props.payload.flaws} flaws`, 'Flaws']}
                     labelFormatter={(l, p) => p?.[0]?.payload?.date || l}
                   />
-                  <Line type="monotone" dataKey="flaws" stroke="#3B82F6" strokeWidth={3} dot={{ r: 5, fill: '#3B82F6' }} />
+                  <Line type="monotone" dataKey="score" stroke="url(#perfGradient)" strokeWidth={3} dot={{ r: 5, fill: '#10B981' }} activeDot={{ r: 7 }} />
                 </LineChart>
               </ResponsiveContainer>
             </div>

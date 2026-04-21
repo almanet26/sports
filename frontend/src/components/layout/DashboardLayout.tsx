@@ -22,7 +22,7 @@ const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
     { to: "/player/profile", icon: "fas fa-user-edit", label: "Profile" },
-    { to: "/stats", icon: "fas fa-chart-bar", label: "My Performance" },
+    { to: "/player/performance", icon: "fas fa-chart-bar", label: "My Performance" },
     { to: "/player/videos", icon: "fas fa-video", label: "My Videos" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
@@ -32,6 +32,8 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/coach/messages", icon: "fas fa-comments", label: "Messages" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
+    { to: "/player/performance", icon: "fas fa-chart-bar", label: "My Performance" },
+
     { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
     { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
     { to: "/settings", icon: "fas fa-cog", label: "Settings" },

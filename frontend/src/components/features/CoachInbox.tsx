@@ -4,9 +4,9 @@
  */
 import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { useThemeStore } from '../../store/themeStore';
-import { submissionsApi, resolveMediaUrl, type SubmissionSummary } from '../../lib/api';
+import { submissionsApi, resolveMediaUrl, type SubmissionSummary, type CoachAthlete } from '../../lib/api';
 import { api } from '../../lib/api';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string; bg: string }> = {
@@ -28,6 +28,9 @@ export default function CoachInbox() {
   const [analyzing, setAnalyzing] = useState<string | null>(null);
   const [accepting, setAccepting] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [athletes, setAthletes] = useState<CoachAthlete[]>([]);
+  const [athletesLoading, setAthletesLoading] = useState(false);
+  const [athleteIds, setAthleteIds] = useState<Set<string>>(new Set());
 
   const fetchInbox = useCallback(async () => {
     setLoading(true);
@@ -45,6 +48,27 @@ export default function CoachInbox() {
     fetchInbox();
   }, [fetchInbox]);
 
+  useEffect(() => {
+    submissionsApi.coachAthletes()
+      .then(({ data }) => {
+        setAthletes(data.athletes);
+        setAthleteIds(new Set(data.athletes.map((a) => a.id)));
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (filter !== 'ACCEPTED') return;
+    setAthletesLoading(true);
+    submissionsApi.coachAthletes()
+      .then(({ data }) => {
+        setAthletes(data.athletes);
+        setAthleteIds(new Set(data.athletes.map((a) => a.id)));
+      })
+      .catch(() => {})
+      .finally(() => setAthletesLoading(false));
+  }, [filter]);
+
   // Accept submission (moves player to My Athletes)
   const handleAccept = async (id: string) => {
     setAccepting(id);
@@ -52,6 +76,10 @@ export default function CoachInbox() {
     try {
       await api.post(`/submissions/${id}/accept`);
       await fetchInbox();
+      // Refresh athlete IDs so Accept button hides immediately
+      submissionsApi.coachAthletes()
+        .then(({ data }) => setAthleteIds(new Set(data.athletes.map((a) => a.id))))
+        .catch(() => {});
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Accept failed';
       setError(msg);
@@ -121,8 +149,70 @@ export default function CoachInbox() {
         </div>
       )}
 
+      {/* Athletes list — shown only when ACCEPTED tab is active */}
+      {filter === 'ACCEPTED' && (
+        <div className={`rounded-2xl border overflow-hidden ${dark ? 'glass border-white/10' : 'bg-white border-gray-200 shadow-lg'}`}>
+          <div className={`px-6 py-4 border-b ${dark ? 'border-white/10 bg-white/5' : 'border-gray-100 bg-gray-50'}`}>
+            <p className={`font-semibold ${dark ? 'text-white' : 'text-gray-800'}`}>
+              <i className="fas fa-users mr-2 text-teal-400"></i>
+              My Athletes
+            </p>
+            <p className={`text-xs mt-0.5 ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+              Players with at least one accepted submission
+            </p>
+          </div>
+          {athletesLoading ? (
+            <div className="flex justify-center py-12">
+              <i className="fas fa-spinner fa-spin text-2xl text-teal-400"></i>
+            </div>
+          ) : athletes.length === 0 ? (
+            <div className={`text-center py-12 ${dark ? 'text-white/30' : 'text-gray-400'}`}>
+              <i className="fas fa-users text-4xl mb-3 block"></i>
+              <p className="text-sm">No athletes yet. Accept submissions to add players here.</p>
+            </div>
+          ) : (
+            <div className={`divide-y ${dark ? 'divide-white/5' : 'divide-gray-100'}`}>
+              {athletes.map((athlete, i) => (
+                <Link key={athlete.id} to={`/coach/player/${athlete.id}`} className="block">
+                  <motion.div
+                    initial={{ opacity: 0, x: -10 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ delay: i * 0.05 }}
+                    whileHover={{ x: 4 }}
+                    className={`flex items-center justify-between px-6 py-4 transition-colors ${
+                      dark ? 'hover:bg-white/5' : 'hover:bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-teal-400 to-blue-500 flex items-center justify-center text-white font-bold">
+                        {athlete.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p className={`font-medium ${dark ? 'text-white' : 'text-gray-800'}`}>{athlete.name}</p>
+                        <p className={`text-xs ${dark ? 'text-white/40' : 'text-gray-500'}`}>{athlete.team || athlete.email}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-6">
+                      <div className="text-right hidden sm:block">
+                        <p className="text-sm font-bold text-green-400">{athlete.published_reports}</p>
+                        <p className={`text-xs ${dark ? 'text-white/40' : 'text-gray-400'}`}>Reports</p>
+                      </div>
+                      <div className="text-right hidden sm:block">
+                        <p className={`text-sm font-bold ${dark ? 'text-white' : 'text-gray-700'}`}>{athlete.total_submissions}</p>
+                        <p className={`text-xs ${dark ? 'text-white/40' : 'text-gray-400'}`}>Submissions</p>
+                      </div>
+                      <i className={`fas fa-chevron-right text-xs ${dark ? 'text-white/30' : 'text-gray-400'}`}></i>
+                    </div>
+                  </motion.div>
+                </Link>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Table */}
-      {loading ? (
+      {filter !== 'ACCEPTED' && (loading ? (
         <div className="flex items-center justify-center py-20">
           <i className="fas fa-spinner fa-spin text-3xl text-purple-400"></i>
         </div>
@@ -183,7 +273,7 @@ export default function CoachInbox() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex gap-2">
-                          {sub.status === 'PENDING' && (
+                          {sub.status === 'PENDING' && !athleteIds.has(sub.player_id) && (
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
@@ -242,7 +332,7 @@ export default function CoachInbox() {
             </table>
           </div>
         </div>
-      )}
+      ))}
     </div>
   );
 }
