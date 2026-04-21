@@ -13,6 +13,14 @@ Routes:
 from . import auth, videos, jobs, requests, admin_coaches
 
 try:
+    from . import analytics
+    ANALYTICS_AVAILABLE = True
+except Exception as e:
+    print(f"Warning: Analytics feature disabled due to import error: {e}")
+    analytics = None
+    ANALYTICS_AVAILABLE = False
+
+try:
     from . import messages
     MESSAGES_AVAILABLE = True
 except Exception as e:
@@ -71,6 +79,7 @@ except Exception as e:
 
 __all__ = [
     "auth", "videos", "jobs", "requests", "admin_coaches",
+    "analytics", "ANALYTICS_AVAILABLE",
     "messages", "MESSAGES_AVAILABLE",
     "coach_content", "COACH_CONTENT_AVAILABLE",
     "bowling", "BOWLING_AVAILABLE",
