@@ -13,52 +13,54 @@ from database.models.video import Video, HighlightJob, VideoStatus
 from schemas.video import JobTriggerRequest, JobStatusResponse, JobResultResponse
 from services.ocr_task import run_ocr_processing
 from utils.auth import get_current_user, require_role
+from dependencies.feature_gate import require_feature
+from dependencies.quota_gate import quota_check, increment_usage
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 logger = logging.getLogger(__name__)
 
 
 @router.post("/trigger", response_model=JobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
-def trigger_ocr_job(
+async def trigger_ocr_job(
     request: JobTriggerRequest,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_role(["ADMIN", "COACH"])),
+    current_user: User = Depends(require_feature("ocr_highlights")),
+    _quota: tuple = Depends(quota_check("ocr_highlights")),
 ):
     """
     Trigger OCR processing for a video.
-    
-    **Access Control:** ADMIN and COACH (Premium) only.
-    
-    This endpoint:
-    1. Validates the video exists and belongs to the user (or user is admin)
-    2. Creates a HighlightJob record if not exists
-    3. Triggers the background OCR processing task
+
+    Access: coach_starter tier and above (require_feature gate).
+    Quota:  ocr_hours_used tracked monthly (quota_check gate).
+
+    Reserves estimated OCR hours at dispatch time based on video duration;
+    the worker reconciles actual consumption via POST /internal/usage/report.
     """
     # Fetch video
     video = db.query(Video).filter(Video.id == request.video_id).first()
     if not video:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="Video not found"
+            detail="Video not found",
         )
-    
-    # Check ownership (unless admin)
-    if current_user.role != "ADMIN" and video.uploaded_by != current_user.id:
+
+    # Ownership check — only the uploader may trigger processing.
+    if video.uploaded_by != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="You don't have permission to process this video"
+            detail="You don't have permission to process this video",
         )
-    
-    # Check if already processing
+
+    # Refuse to re-queue a job that is actively running.
     existing_job = db.query(HighlightJob).filter(HighlightJob.video_id == video.id).first()
     if existing_job and existing_job.status == VideoStatus.PROCESSING.value:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Video is already being processed"
+            detail="Video is already being processed",
         )
-    
-    # Create or reset job
+
+    # Create or reset job record.
     if existing_job:
         existing_job.status = VideoStatus.PENDING.value
         existing_job.progress_percent = 0
@@ -72,15 +74,27 @@ def trigger_ocr_job(
             status=VideoStatus.PENDING.value,
         )
         db.add(job)
-    
+
     db.commit()
     db.refresh(job)
-    
-    logger.info(f"Triggering OCR job for video {video.id} by user {current_user.email}")
-    
-    # Trigger background processing
+
+    logger.info("Triggering OCR job — video=%s user=%s", video.id, current_user.email)
+
+    # Dispatch background OCR task.
     background_tasks.add_task(run_ocr_processing, video.id, request.config)
-    
+
+    # Reserve estimated OCR hours immediately at dispatch.
+    # The worker will reconcile the actual value via POST /internal/usage/report.
+    estimated_hours = (video.duration_seconds or 0) / 3600.0
+    if estimated_hours > 0:
+        await increment_usage(current_user.id, "ocr_hours_used", estimated_hours, db)
+        logger.info(
+            "Reserved %.4f OCR hours for user=%s video=%s",
+            estimated_hours,
+            current_user.id,
+            video.id,
+        )
+
     return JobStatusResponse(
         id=job.id,
         video_id=job.video_id,

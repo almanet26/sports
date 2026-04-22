@@ -304,6 +304,13 @@ if WORKER_AVAILABLE and worker is not None:
 else:
     logger.warning("Internal worker endpoint disabled")
 
+# Usage tracking — internal callback + user-facing billing dashboard
+from api.routes.usage import internal_router as usage_internal_router
+from api.routes.usage import billing_router as usage_billing_router
+
+app.include_router(usage_internal_router, prefix="/internal/usage", tags=["internal"])
+app.include_router(usage_billing_router, prefix="/api/v1/billing", tags=["billing"])
+
 
 # Entry Point 
 if __name__ == "__main__":

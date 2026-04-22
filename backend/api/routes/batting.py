@@ -33,6 +33,8 @@ from schemas.batting import (
     DetectedFlaw,
 )
 from utils.auth import get_current_user
+from dependencies.feature_gate import require_feature
+from dependencies.quota_gate import quota_check, increment_usage
 from scripts.batting_engine import (
     BattingPoseAnalyzer,
     BattingGeminiManager,
@@ -73,7 +75,8 @@ async def analyze_batting(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature("biomechanics_analysis")),
+    _quota: tuple = Depends(quota_check("biomechanics_analysis")),
 ):
     """
     Upload a batting video for biomechanics analysis.
@@ -148,7 +151,7 @@ async def analyze_batting(
 
         summary_stats = display_df.describe().T
 
-        # Persist to DB 
+        # Persist to DB
         analysis = create_batting_analysis(
             db,
             player_id=current_user.id,
@@ -163,6 +166,9 @@ async def analyze_batting(
             ai_feedback=feedback_text,
             report_url=report_url,
         )
+
+        # Charge quota only after the analysis persists successfully.
+        await increment_usage(current_user.id, "biomech_count", 1, db)
 
         return BattingAnalysisResponse(
             id=analysis.id,
