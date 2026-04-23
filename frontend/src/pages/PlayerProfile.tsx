@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { CheckCircle2, X } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
+import { submissionsApi, type PlayerProgress } from "../lib/api";
 import {
   getPlayerProfile,
   type PlayerProfileApiResponse,
@@ -134,7 +135,7 @@ function buildInitial(user: ReturnType<typeof useAuthStore.getState>["user"]): P
     bio: user?.profile_bio ?? "",
     matchCount: 0, highlightCount: 0, currentLevel: "Beginner",
     performanceSnapshot: DEFAULT_SNAPSHOT,
-    recentActivity: ["Joined PitchVision", "Opened player dashboard"],
+    recentActivity: [],
     completionPercentage: 0, missingFields: [], profileCompleted: false,
   };
 }
@@ -195,6 +196,83 @@ function apiToState(api: PlayerProfileApiResponse, base: PlayerProfileState): Pl
   return merged;
 }
 
+interface RecentActivityItem {
+  id: string;
+  title: string;
+  detail: string;
+  timestamp: number;
+}
+
+function formatActivityDate(value: string | null | undefined) {
+  if (!value) return "Recently";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Recently";
+
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffDays <= 0) return "Today";
+  if (diffDays === 1) return "Yesterday";
+  if (diffDays < 7) return `${diffDays} days ago`;
+
+  return date.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function buildRecentActivityItems(
+  user: ReturnType<typeof useAuthStore.getState>["user"],
+  videos: PlayerVideoItem[],
+  progress: PlayerProgress | null,
+) {
+  const items: RecentActivityItem[] = [];
+
+  for (const video of videos) {
+    const date = new Date(video.createdAt || 0);
+    const timestamp = Number.isNaN(date.getTime()) ? 0 : date.getTime();
+
+    items.push({
+      id: `video-${video.id}`,
+      title: `Uploaded ${video.title}`,
+      detail: `${formatActivityDate(video.createdAt)} | Private video added to your gallery`,
+      timestamp,
+    });
+  }
+
+  for (const submission of progress?.submission_timeline || []) {
+    const date = new Date(submission.created_at || 0);
+    const timestamp = Number.isNaN(date.getTime()) ? 0 : date.getTime();
+    const analysisType = submission.analysis_type?.toLowerCase() || "analysis";
+    const status = submission.status.replace(/_/g, " ").toLowerCase();
+
+    items.push({
+      id: `submission-${submission.id}`,
+      title: `Submitted ${analysisType} video`,
+      detail: `${formatActivityDate(submission.created_at)} | Status: ${status}`,
+      timestamp,
+    });
+  }
+
+  if (user?.created_at) {
+    const joinedDate = new Date(user.created_at);
+    const timestamp = Number.isNaN(joinedDate.getTime()) ? 0 : joinedDate.getTime();
+
+    items.push({
+      id: `joined-${user.id || user.email || "player"}`,
+      title: "Joined PitchVision",
+      detail: `${formatActivityDate(user.created_at)} | Your player account was created`,
+      timestamp,
+    });
+  }
+
+  return items
+    .sort((left, right) => right.timestamp - left.timestamp)
+    .slice(0, 4);
+}
+
 // ── Component ────────────────────────────────────────────────────────────────
 
 export default function PlayerProfile() {
@@ -205,6 +283,7 @@ export default function PlayerProfile() {
   const [profile, setProfile] = useState<PlayerProfileState>(() => loadLocal(user));
   const [draft, setDraft] = useState<PlayerProfileState>(() => loadLocal(user));
   const [videos, setVideos] = useState<PlayerVideoItem[]>([]);
+  const [progress, setProgress] = useState<PlayerProgress | null>(null);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
@@ -221,6 +300,15 @@ export default function PlayerProfile() {
       setVideos(data.videos ?? []);
     } catch {
       // videos stay empty — not a fatal error
+    }
+  }, []);
+
+  const loadProgress = useCallback(async () => {
+    try {
+      const response = await submissionsApi.myProgress();
+      setProgress(response.data);
+    } catch {
+      // progress stays empty — not a fatal error
     }
   }, []);
 
@@ -242,12 +330,12 @@ export default function PlayerProfile() {
     setProfile(local);
     setDraft(local);
 
-    Promise.allSettled([getPlayerProfile(), loadVideos()]).then(([profileResult]) => {
+    Promise.allSettled([getPlayerProfile(), loadVideos(), loadProgress()]).then(([profileResult]) => {
       if (profileResult.status === "fulfilled" && profileResult.value) {
         applyApiProfile(profileResult.value);
       }
     });
-  }, [user, applyApiProfile, loadVideos]);
+  }, [user, applyApiProfile, loadProgress, loadVideos]);
 
   // Auto-dismiss success toast
   useEffect(() => {
@@ -276,6 +364,11 @@ export default function PlayerProfile() {
     const sorted = [...videos].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
     return sorted.slice(0, 2);
   }, [videos]);
+
+  const recentActivityItems = useMemo(
+    () => buildRecentActivityItems(user, videos, progress),
+    [user, videos, progress],
+  );
 
   // ── Edit modal ──────────────────────────────────────────────────────────
 
@@ -387,6 +480,7 @@ export default function PlayerProfile() {
       await uploadPlayerVideo(file);
       await Promise.all([
         loadVideos(),
+        loadProgress(),
         getPlayerProfile().then((d) => { if (d) applyApiProfile(d); }),
       ]);
       setToast({ msg: "Video uploaded successfully.", type: "success" });
@@ -408,6 +502,7 @@ export default function PlayerProfile() {
       await deletePlayerVideo(videoId);
       await Promise.all([
         loadVideos(),
+        loadProgress(),
         getPlayerProfile().then((d) => { if (d) applyApiProfile(d); }),
       ]);
       setToast({ msg: "Video deleted successfully.", type: "success" });
@@ -590,15 +685,15 @@ export default function PlayerProfile() {
               </div>
             </div>
             <div className="space-y-3">
-              {profile.recentActivity.length > 0 ? (
-                profile.recentActivity.map((item, index) => (
-                  <div key={`${item}-${index}`} className="flex items-start gap-4 rounded-[20px] border border-white/10 bg-slate-950/70 p-4">
+              {recentActivityItems.length > 0 ? (
+                recentActivityItems.map((item) => (
+                  <div key={item.id} className="flex items-start gap-4 rounded-[20px] border border-white/10 bg-slate-950/70 p-4">
                     <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-blue-500">
                       <span className="text-white text-sm">↯</span>
                     </div>
                     <div>
-                      <p className="font-medium text-white">{item}</p>
-                      <p className="mt-1 text-sm text-slate-400">Player activity updates appear here as you use PitchVision.</p>
+                      <p className="font-medium text-white">{item.title}</p>
+                      <p className="mt-1 text-sm text-slate-400">{item.detail}</p>
                     </div>
                   </div>
                 ))
