@@ -1,8 +1,8 @@
-import { useMemo } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import { motion } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useThemeStore } from "../store/themeStore";
-
+import { submissionsApi, api, type CoachAthlete } from "../lib/api";
 import {
   LineChart,
   Line,
@@ -22,14 +22,47 @@ import {
 
 export default function CoachDashboard() {
   const { theme } = useThemeStore();
+
+  const [athletes, setAthletes] = useState<CoachAthlete[]>([]);
+  const [athletesLoading, setAthletesLoading] = useState(true);
+  const [reviewStats, setReviewStats] = useState<{ average_rating: number; total_reviews: number } | null>(null);
+  const [recentReviews, setRecentReviews] = useState<any[]>([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+
+  useEffect(() => {
+    submissionsApi.coachAthletes()
+      .then(({ data }) => setAthletes(data.athletes))
+      .catch(() => {})
+      .finally(() => setAthletesLoading(false));
+    
+    // Fetch review stats and recent reviews
+    Promise.all([
+      api.get('/coach/reviews/stats'),
+      api.get('/coach/reviews')
+    ])
+      .then(([statsRes, reviewsRes]) => {
+        setReviewStats(statsRes.data);
+        setRecentReviews(reviewsRes.data.slice(0, 3)); // Get top 3 recent reviews
+      })
+      .catch(() => {})
+      .finally(() => setReviewsLoading(false));
+  }, []);
+
+  const myAthletes = athletes;
+  const athletesSectionRef = useRef<HTMLDivElement>(null);
+
+  const scrollToAthletes = () => {
+    athletesSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   const stats = useMemo(
     () => [
-      { title: "My Athletes", value: "24", icon: "fas fa-running", color: "from-blue-500 to-cyan-500", change: "+3 this week" },
+      { title: "My Athletes", value: String(athletes.length), icon: "fas fa-running", color: "from-blue-500 to-cyan-500", change: "Players accepted" },
       { title: "Training Sessions", value: "156", icon: "fas fa-dumbbell", color: "from-green-500 to-emerald-500", change: "+12 this month" },
       { title: "Avg Improvement", value: "18%", icon: "fas fa-chart-line", color: "from-purple-500 to-pink-500", change: "+5% vs last month" },
       { title: "Active Programs", value: "8", icon: "fas fa-clipboard-list", color: "from-orange-500 to-red-500", change: "2 new programs" },
     ],
-    []
+    [athletes.length]
   );
 
   const athleteProgress = useMemo(
@@ -63,16 +96,6 @@ export default function CoachDashboard() {
       { skill: "Endurance", A: 75, B: 88, fullMark: 100 },
       { skill: "Mental", A: 88, B: 70, fullMark: 100 },
       { skill: "Tactical", A: 80, B: 85, fullMark: 100 },
-    ],
-    []
-  );
-
-  const myAthletes = useMemo(
-    () => [
-      { id: "1", name: "Alex Rodriguez", sport: "Batsman", level: "Advanced", progress: 85, lastSession: "2 hours ago", status: "Active" },
-      { id: "2", name: "Maya Patel", sport: "Bowler", level: "Intermediate", progress: 72, lastSession: "1 day ago", status: "Active" },
-      { id: "3", name: "James Wilson", sport: "All-rounder", level: "Beginner", progress: 58, lastSession: "3 days ago", status: "Needs Attention" },
-      { id: "4", name: "Sofia Chen", sport: "Wicketkeeper", level: "Advanced", progress: 91, lastSession: "5 hours ago", status: "Excellent" },
     ],
     []
   );
@@ -155,6 +178,7 @@ export default function CoachDashboard() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             transition={{ duration: 0.5, delay: i * 0.1 }}
             whileHover={{ scale: 1.05, y: -5 }}
+            onClick={s.title === "My Athletes" ? scrollToAthletes : undefined}
             className={`rounded-2xl p-6 border transition-all duration-300 group cursor-pointer ${
               theme === 'dark'
                 ? 'glass border-white/20 hover:border-white/30'
@@ -306,7 +330,7 @@ export default function CoachDashboard() {
         </div>
       </motion.div>
 
-      {/* Training Schedule & Leaderboard */}
+      {/* Training Schedule & Reviews */}
       <div className="grid lg:grid-cols-2 gap-6 mb-8">
         {/* Training Schedule */}
         <motion.div
@@ -366,10 +390,10 @@ export default function CoachDashboard() {
           </div>
         </motion.div>
 
-        {/* Leaderboard */}
+        {/* Recent Reviews */}
         <motion.div
           initial={{ opacity: 0, x: 20 }}
-          animate={{ opacity: 1, x: 0 }}
+          animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6 }}
           className={`rounded-3xl p-6 border ${
             theme === 'dark'
@@ -377,22 +401,47 @@ export default function CoachDashboard() {
               : 'bg-white border-gray-200 shadow-lg'
           }`}
         >
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 flex items-center justify-center">
-              <i className="fas fa-trophy text-white"></i>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 flex items-center justify-center">
+                <i className="fas fa-star text-white"></i>
+              </div>
+              <div>
+                <p className="font-semibold text-lg">Recent Reviews</p>
+                <p className={`text-sm ${
+                  theme === 'dark' ? 'text-white/60' : 'text-gray-600'
+                }`}>
+                  {reviewsLoading ? 'Loading...' : reviewStats ? `${reviewStats.average_rating.toFixed(1)} ⭐ (${reviewStats.total_reviews} reviews)` : 'No reviews yet'}
+                </p>
+              </div>
             </div>
-            <div>
-              <p className="font-semibold text-lg">Leaderboard</p>
-              <p className={`text-sm ${
-                theme === 'dark' ? 'text-white/60' : 'text-gray-600'
-              }`}>Top performers this month</p>
-            </div>
+            <Link
+              to="/coach/reviews"
+              className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+                theme === 'dark'
+                  ? 'border-white/20 text-white/60 hover:text-white hover:bg-white/10'
+                  : 'border-gray-300 text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+              }`}
+            >
+              View All
+            </Link>
           </div>
 
           <div className="space-y-3">
-            {leaderboard.map((player, i) => (
+            {reviewsLoading ? (
+              <div className="flex justify-center py-8">
+                <div className="w-8 h-8 border-4 border-yellow-500/30 border-t-yellow-500 rounded-full animate-spin" />
+              </div>
+            ) : recentReviews.length === 0 ? (
+              <div className={`text-center py-8 rounded-2xl border border-dashed ${
+                theme === 'dark' ? 'border-white/10 text-white/30' : 'border-gray-200 text-gray-400'
+              }`}>
+                <i className="fas fa-star text-3xl mb-2 block"></i>
+                <p className="text-sm">No reviews yet. Players will leave reviews after sessions.</p>
+              </div>
+            ) : recentReviews.map((review, i) => (
               <motion.div
-                key={player.rank}
+                key={review.id}
                 initial={{ opacity: 0, x: 20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.1 }}
@@ -402,19 +451,34 @@ export default function CoachDashboard() {
                     : 'bg-gray-50 border-gray-200 hover:border-yellow-400'
                 }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="text-2xl">{player.badge}</span>
-                    <div>
-                      <p className="font-medium">{player.name}</p>
-                      <p className={`text-xs ${
-                        theme === 'dark' ? 'text-white/60' : 'text-gray-600'
-                      }`}>Rank #{player.rank}</p>
-                    </div>
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold flex-shrink-0">
+                    {review.player_name.charAt(0)}
                   </div>
-                  <div className="text-right">
-                    <p className="text-lg font-bold text-yellow-400">{player.score}</p>
-                    <p className="text-xs text-green-400">{player.improvement}</p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between mb-1">
+                      <p className="font-medium text-sm truncate">{review.player_name}</p>
+                      <div className="flex gap-0.5">
+                        {[1, 2, 3, 4, 5].map((star) => (
+                          <i
+                            key={star}
+                            className={`fas fa-star text-xs ${
+                              star <= review.rating ? 'text-yellow-400' : theme === 'dark' ? 'text-white/20' : 'text-gray-300'
+                            }`}
+                          ></i>
+                        ))}
+                      </div>
+                    </div>
+                    <p className={`text-xs line-clamp-2 ${
+                      theme === 'dark' ? 'text-white/60' : 'text-gray-600'
+                    }`}>
+                      {review.comment || 'No comment provided'}
+                    </p>
+                    <p className={`text-xs mt-1 ${
+                      theme === 'dark' ? 'text-white/40' : 'text-gray-400'
+                    }`}>
+                      {new Date(review.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                    </p>
                   </div>
                 </div>
               </motion.div>
@@ -423,8 +487,54 @@ export default function CoachDashboard() {
         </motion.div>
       </div>
 
+      {/* Leaderboard */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.6 }}
+        className={`rounded-3xl p-6 border mb-8 ${
+          theme === 'dark'
+            ? 'glass border-white/20'
+            : 'bg-white border-gray-200 shadow-lg'
+        }`}
+      >
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
+            <i className="fas fa-trophy text-white"></i>
+          </div>
+          <div>
+            <p className="font-semibold text-lg">Top Performers</p>
+            <p className={`text-sm ${
+              theme === 'dark' ? 'text-white/60' : 'text-gray-600'
+            }`}>Athletes with highest improvement this month</p>
+          </div>
+        </div>
+
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {leaderboard.map((player, i) => (
+            <motion.div
+              key={player.rank}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className={`rounded-xl p-4 border transition-all text-center ${
+                theme === 'dark'
+                  ? 'glass border-white/10 hover:border-purple-500/30'
+                  : 'bg-gray-50 border-gray-200 hover:border-purple-400'
+              }`}
+            >
+              <span className="text-4xl mb-2 block">{player.badge}</span>
+              <p className="font-medium text-sm mb-1">{player.name}</p>
+              <p className="text-lg font-bold text-yellow-400 mb-1">{player.score}</p>
+              <p className="text-xs text-green-400">{player.improvement}</p>
+            </motion.div>
+          ))}
+        </div>
+      </motion.div>
+
       {/* My Athletes */}
       <motion.div
+        ref={athletesSectionRef}
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.6 }}
@@ -434,88 +544,100 @@ export default function CoachDashboard() {
             : 'bg-white border-gray-200 shadow-lg'
         }`}
       >
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center text-xl">
-            <i className="fas fa-users text-white"></i>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center text-xl">
+              <i className="fas fa-users text-white"></i>
+            </div>
+            <div>
+              <p className="font-semibold text-lg">My Athletes</p>
+              <p className={`text-sm ${
+                theme === 'dark' ? 'text-white/60' : 'text-gray-600'
+              }`}>
+                {athletesLoading ? 'Loading…' : `${athletes.length} athlete${athletes.length !== 1 ? 's' : ''} accepted`}
+              </p>
+            </div>
           </div>
-          <div>
-            <p className="font-semibold text-lg">My Athletes</p>
-            <p className={`text-sm ${
-              theme === 'dark' ? 'text-white/60' : 'text-gray-600'
-            }`}>Current training roster and progress</p>
-          </div>
+          <Link
+            to="/coach/submissions"
+            className={`text-xs px-3 py-1.5 rounded-lg border transition-all ${
+              theme === 'dark'
+                ? 'border-white/20 text-white/60 hover:text-white hover:bg-white/10'
+                : 'border-gray-300 text-gray-500 hover:text-gray-800 hover:bg-gray-100'
+            }`}
+          >
+            <i className="fas fa-inbox mr-1"></i>View Inbox
+          </Link>
         </div>
 
         <div className="space-y-3">
-          {myAthletes.map((athlete, i) => (
-            <Link
-              key={i}
-              to={`/coach/players`}
-              className="block"
-            >
+          {athletesLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="w-8 h-8 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+          ) : myAthletes.length === 0 ? (
+            <div className={`text-center py-8 rounded-2xl border border-dashed ${
+              theme === 'dark' ? 'border-white/10 text-white/30' : 'border-gray-200 text-gray-400'
+            }`}>
+              <i className="fas fa-users text-3xl mb-2 block"></i>
+              <p className="text-sm">No athletes yet. Accept submissions from your inbox.</p>
+            </div>
+          ) : myAthletes.map((athlete, i) => (
+            <Link key={athlete.id} to={`/coach/player/${athlete.id}`} className="block">
               <motion.div
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: i * 0.1 }}
                 whileHover={{ scale: 1.02 }}
-                className={`rounded-2xl p-4 border transition-all duration-300 group cursor-pointer ${
+                className={`rounded-2xl p-4 border transition-all duration-300 cursor-pointer ${
                   theme === 'dark'
                     ? 'glass border-white/10 hover:border-blue-500/50'
                     : 'bg-gray-50 border-gray-200 hover:border-blue-400 shadow-sm hover:shadow-md'
                 }`}
               >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold">
-                    {athlete.name.charAt(0)}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                      {athlete.name.charAt(0)}
+                    </div>
+                    <div>
+                      <p className="font-semibold">{athlete.name}</p>
+                      <p className={`text-xs ${theme === 'dark' ? 'text-white/50' : 'text-gray-500'}`}>
+                        {athlete.team || athlete.email}
+                      </p>
+                    </div>
                   </div>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right hidden sm:block">
+                      <p className="text-sm font-bold text-green-400">{athlete.published_reports}</p>
+                      <p className={`text-xs ${theme === 'dark' ? 'text-white/40' : 'text-gray-400'}`}>Reports</p>
+                    </div>
+                    <div className="text-right hidden sm:block">
+                      <p className="text-sm font-bold">{athlete.total_submissions}</p>
+                      <p className={`text-xs ${theme === 'dark' ? 'text-white/40' : 'text-gray-400'}`}>Submissions</p>
+                    </div>
+                    <i className={`fas fa-chevron-right text-xs ${theme === 'dark' ? 'text-white/30' : 'text-gray-400'}`}></i>
+                  </div>
+                </div>
+                {/* Progress bar: published / total */}
+                {athlete.total_submissions > 0 && (
                   <div>
-                    <p className="font-medium">{athlete.name}</p>
-                    <p className={`text-xs ${
-                      theme === 'dark' ? 'text-white/60' : 'text-gray-600'
-                    }`}>{athlete.sport} • {athlete.level}</p>
+                    <div className="flex justify-between mb-1">
+                      <span className={`text-xs ${theme === 'dark' ? 'text-white/40' : 'text-gray-400'}`}>Report completion</span>
+                      <span className={`text-xs font-medium ${theme === 'dark' ? 'text-white/60' : 'text-gray-600'}`}>
+                        {Math.round((athlete.published_reports / athlete.total_submissions) * 100)}%
+                      </span>
+                    </div>
+                    <div className={`h-1.5 rounded-full overflow-hidden ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`}>
+                      <motion.div
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.round((athlete.published_reports / athlete.total_submissions) * 100)}%` }}
+                        transition={{ duration: 1, delay: 0.3 + i * 0.1 }}
+                        className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-500"
+                      />
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-6">
-                  <div className="text-right">
-                    <p className="text-sm font-medium">{athlete.progress}%</p>
-                    <p className={`text-xs ${
-                      theme === 'dark' ? 'text-white/50' : 'text-gray-500'
-                    }`}>Progress</p>
-                  </div>
-                  <div className="text-right hidden sm:block">
-                    <p className={`text-sm ${
-                      theme === 'dark' ? 'text-white/80' : 'text-gray-700'
-                    }`}>{athlete.lastSession}</p>
-                    <p className={`text-xs ${
-                      theme === 'dark' ? 'text-white/50' : 'text-gray-500'
-                    }`}>Last Active</p>
-                  </div>
-                  <span className={`text-xs px-3 py-1 rounded-full ${
-                    athlete.status === 'Excellent' ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
-                    athlete.status === 'Active' ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
-                    'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
-                  }`}>
-                    {athlete.status}
-                  </span>
-                </div>
-              </div>
-              
-              {/* Progress Bar */}
-              <div className={`mt-4 h-2 rounded-full overflow-hidden ${
-                theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'
-              }`}>
-                <motion.div
-                  initial={{ width: 0 }}
-                  animate={{ width: `${athlete.progress}%` }}
-                  transition={{ duration: 1, delay: 0.5 + i * 0.1 }}
-                  className={`h-full rounded-full ${
-                    athlete.progress >= 80 ? 'bg-gradient-to-r from-green-500 to-emerald-500' :
-                    athlete.progress >= 60 ? 'bg-gradient-to-r from-blue-500 to-cyan-500' :
-                    'bg-gradient-to-r from-yellow-500 to-orange-500'
-                  }`}
-                />
-              </div>
+                )}
               </motion.div>
             </Link>
           ))}
