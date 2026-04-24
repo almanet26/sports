@@ -17,6 +17,8 @@ from database.models import (
     BattingAnalysis,
     VideoSubmission,
     Message,
+    Transaction,
+    Review,
 )
 from database.models.coach_content import CoachContent
 from database.models.coach_session import CoachTrainingSession
@@ -289,6 +291,13 @@ from api.routes import (
     analytics, ANALYTICS_AVAILABLE
 )
 from api.routes import plan, subscription, sessions
+try:
+    from api.routes import earnings, reviews
+    EARNINGS_AVAILABLE = True
+    REVIEWS_AVAILABLE = True
+except ImportError:
+    EARNINGS_AVAILABLE = False
+    REVIEWS_AVAILABLE = False
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
@@ -319,6 +328,20 @@ if analytics is not None and ANALYTICS_AVAILABLE:
     logger.info("Analytics feature enabled")
 else:
     logger.warning("Analytics feature disabled")
+
+# Earnings routes
+if EARNINGS_AVAILABLE:
+    app.include_router(earnings.router, prefix="/api/v1/coach", tags=["earnings"])
+    logger.info("Earnings feature enabled")
+else:
+    logger.warning("Earnings feature disabled")
+
+# Reviews routes
+if REVIEWS_AVAILABLE:
+    app.include_router(reviews.router, prefix="/api/v1/coach", tags=["reviews"])
+    logger.info("Reviews feature enabled")
+else:
+    logger.warning("Reviews feature disabled")
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
