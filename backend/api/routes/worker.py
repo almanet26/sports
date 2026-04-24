@@ -36,6 +36,7 @@ from database.crud.submission import (
     save_analysis_results,
 )
 from services.ocr_task import run_ocr_processing
+from services.usage_service import report_ocr_usage
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -97,7 +98,65 @@ _batting_analyzer = BattingPoseAnalyzer() if BATTING_ENGINE_AVAILABLE and BATTIN
 _batting_gemini = BattingGeminiManager() if BATTING_ENGINE_AVAILABLE else None
 
 
-# Request / Response 
+# ---------------------------------------------------------------------------
+# OCR quota refund helper
+# ---------------------------------------------------------------------------
+
+def _refund_reserved_ocr_hours(
+    db: Session,
+    sub: "VideoSubmission",
+    blob_name: str,
+) -> None:
+    """
+    Reverse the OCR-hour reservation that was made at dispatch time.
+
+    Called from the except block when an ocr_highlights pipeline job fails.
+    We look up the Video record by (file_path == blob_name, uploaded_by == player_id)
+    to recover the original duration estimate, then apply a negative delta via
+    report_ocr_usage.  report_ocr_usage uses MAX(0, current + delta) so the
+    counter never goes below zero even if concurrency or a retry already
+    decremented it.
+    """
+    try:
+        video = (
+            db.query(Video)
+            .filter(
+                Video.file_path == blob_name,
+                Video.uploaded_by == sub.player_id,
+            )
+            .first()
+        )
+        if video is None or not video.duration_seconds:
+            logger.warning(
+                "OCR refund skipped — no video row for blob=%s player=%s",
+                blob_name,
+                sub.player_id,
+            )
+            return
+
+        reserved_hours = video.duration_seconds / 3600.0
+        if reserved_hours <= 0:
+            return
+
+        # Negative delta — reduces the counter that was reserved at dispatch.
+        report_ocr_usage(sub.player_id, -reserved_hours, db)
+        logger.info(
+            "Refunded %.4f reserved OCR hours — player=%s blob=%s",
+            reserved_hours,
+            sub.player_id,
+            blob_name,
+        )
+    except Exception as refund_exc:
+        # Refund is best-effort; log but don't mask the original error.
+        logger.error(
+            "OCR hours refund failed — player=%s blob=%s error=%s",
+            sub.player_id,
+            blob_name,
+            refund_exc,
+        )
+
+
+# Request / Response
 class ProcessVideoRequest(BaseModel):
     submission_id: str
     blob_name: str
@@ -208,9 +267,10 @@ def process_video(
     db: Session = SessionLocal()
     tmp_video_path: str | None = None
     tmp_report_path: str | None = None
+    sub: VideoSubmission | None = None   # initialised here so the except block can reference it
 
     try:
-        # 0. Look up submission 
+        # 0. Look up submission
         sub = get_submission_by_id(db, body.submission_id)
         if sub is None:
             raise HTTPException(status_code=404, detail="Submission not found")
@@ -281,7 +341,15 @@ def process_video(
         raise
     except Exception as exc:
         logger.exception("Worker error for submission %s: %s", body.submission_id, exc)
-        # Roll back to PENDING so processing can be retried
+
+        # ── Refund reserved OCR hours if this was an OCR pipeline job ────────
+        # The dispatch endpoint (POST /jobs/trigger) reserved estimated hours
+        # at enqueue time.  If the job fails, those hours must be returned so
+        # the user's quota is not permanently consumed for work that never ran.
+        if sub is not None and body.pipeline == "ocr_highlights":
+            _refund_reserved_ocr_hours(db, sub, body.blob_name)
+
+        # ── Roll submission back to PENDING so it can be retried ─────────────
         try:
             sub_rollback = get_submission_by_id(db, body.submission_id)
             if sub_rollback and sub_rollback.status == SubmissionStatus.PROCESSING:
@@ -289,6 +357,7 @@ def process_video(
                 db.commit()
         except Exception:
             pass
+
         raise HTTPException(status_code=500, detail=f"Processing failed: {exc}") from exc
 
     finally:

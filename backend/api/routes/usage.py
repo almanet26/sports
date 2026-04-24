@@ -27,6 +27,7 @@ from database.models.monthly_usage import MonthlyUsage
 from database.models.plan_config import PlanConfig
 from database.models.subscription import Subscription
 from database.models.user import User
+from dependencies.feature_gate import get_active_subscription
 from dependencies.quota_gate import increment_usage
 from services.usage_service import get_or_create_monthly_usage, report_ocr_usage
 from utils.auth import get_current_user
@@ -166,12 +167,8 @@ def get_billing_usage(
     quota snapshot.  Creates a monthly_usage row if this is the user's first
     request this month.
     """
-    # ── Subscription ────────────────────────────────────────────────────────
-    sub: Optional[Subscription] = (
-        db.query(Subscription)
-        .filter(Subscription.user_id == current_user.id)
-        .first()
-    )
+    # ── Subscription (lazy expiry handled inside get_active_subscription) ───
+    sub: Optional[Subscription] = get_active_subscription(current_user, db)
 
     if sub is None:
         plan_key = "free"

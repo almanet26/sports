@@ -34,7 +34,7 @@ from schemas.batting import (
 )
 from utils.auth import get_current_user
 from dependencies.feature_gate import require_feature
-from dependencies.quota_gate import quota_check, increment_usage
+from dependencies.quota_gate import quota_check, increment_usage_atomic
 from scripts.batting_engine import (
     BattingPoseAnalyzer,
     BattingGeminiManager,
@@ -167,8 +167,19 @@ async def analyze_batting(
             report_url=report_url,
         )
 
-        # Charge quota only after the analysis persists successfully.
-        await increment_usage(current_user.id, "biomech_count", 1, db)
+        # Charge quota atomically after the analysis persists.
+        # This single UPDATE enforces the limit under concurrent submissions — if two requests passed quota_check at the same time, only those whose count + 1 still fits under the limit will commit here.
+        charged = increment_usage_atomic(
+            current_user.id, "biomech_count", "max_biomech_per_month", 1, db
+        )
+        if not charged:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "quota_exceeded",
+                    "reason": "Monthly biomechanics limit reached (concurrent request).",
+                },
+            )
 
         return BattingAnalysisResponse(
             id=analysis.id,

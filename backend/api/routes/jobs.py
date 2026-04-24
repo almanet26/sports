@@ -14,7 +14,7 @@ from schemas.video import JobTriggerRequest, JobStatusResponse, JobResultRespons
 from services.ocr_task import run_ocr_processing
 from utils.auth import get_current_user, require_role
 from dependencies.feature_gate import require_feature
-from dependencies.quota_gate import quota_check, increment_usage
+from dependencies.quota_gate import quota_check, increment_usage_atomic
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 logger = logging.getLogger(__name__)
@@ -84,10 +84,21 @@ async def trigger_ocr_job(
     background_tasks.add_task(run_ocr_processing, video.id, request.config)
 
     # Reserve estimated OCR hours immediately at dispatch.
-    # The worker will reconcile the actual value via POST /internal/usage/report.
+    # Uses the atomic check-and-increment so two simultaneous trigger requests cannot both succeed when the user is near their monthly OCR limit.
     estimated_hours = (video.duration_seconds or 0) / 3600.0
     if estimated_hours > 0:
-        await increment_usage(current_user.id, "ocr_hours_used", estimated_hours, db)
+        charged = increment_usage_atomic(
+            current_user.id, "ocr_hours_used", "max_ocr_hours_per_month", estimated_hours, db
+        )
+        if not charged:
+            # Undo the already-committed job record reset and reject.
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "quota_exceeded",
+                    "reason": "Monthly OCR hours limit reached (concurrent request).",
+                },
+            )
         logger.info(
             "Reserved %.4f OCR hours for user=%s video=%s",
             estimated_hours,

@@ -311,6 +311,21 @@ from api.routes.usage import billing_router as usage_billing_router
 app.include_router(usage_internal_router, prefix="/internal/usage", tags=["internal"])
 app.include_router(usage_billing_router, prefix="/api/v1/billing", tags=["billing"])
 
+# Phase 4 player-facing features
+from api.routes.report import router as report_router
+from api.routes.chat import router as chat_router
+from api.routes.benchmarks import router as benchmarks_router
+from api.routes.profile import router as profile_router
+
+app.include_router(report_router,     prefix="/api/v1", tags=["report"])
+app.include_router(chat_router,       prefix="/api/v1", tags=["chat"])
+app.include_router(benchmarks_router, prefix="/api/v1", tags=["benchmarks"])
+app.include_router(profile_router,    prefix="/api/v1", tags=["profile"])
+    
+# Subscription expiry cron — POST /internal/cron/expire-subscriptions
+from services.subscription_expiry import register_expiry_endpoint
+register_expiry_endpoint(app)
+
 
 # Entry Point 
 if __name__ == "__main__":

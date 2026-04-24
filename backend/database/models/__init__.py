@@ -19,6 +19,9 @@ from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.subscription import Subscription
 from database.models.monthly_usage import MonthlyUsage
 from database.models.plan_config import PlanConfig
+from database.models.chat_history import ChatHistory
+from database.models.pro_benchmark import ProBenchmark
+from database.models.player_profile import PlayerProfile
 __all__ = [
     # User models
     "User",
@@ -42,6 +45,10 @@ __all__ = [
     "Subscription",
     "MonthlyUsage",
     "PlanConfig",
+    # Phase 4 player features
+    "ChatHistory",
+    "ProBenchmark",
+    "PlayerProfile",
     # Enums
     "VideoVisibility",
     "VideoStatus",

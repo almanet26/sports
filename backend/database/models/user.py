@@ -66,9 +66,16 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Relationships (commented out until other models are created)
-    subscription = relationship("Subscription", back_populates="user", uselist=False)
+    # One-to-many: every plan the user has ever subscribed to, newest first.
+    # Use get_active_subscription() from dependencies/feature_gate.py to fetch the single currently-valid subscription rather than this relationship.
+    subscriptions = relationship(
+        "Subscription",
+        back_populates="user",
+        order_by="Subscription.started_at.desc()",
+    )
     monthly_usages = relationship("MonthlyUsage", back_populates="user")
+    chat_messages = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
+    player_profile = relationship("PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     # Relationships (commented out until other models are created)
     # videos = relationship("Video", back_populates="uploader")

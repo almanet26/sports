@@ -129,7 +129,92 @@ def quota_check(feature_key: str):
 
 
 # ---------------------------------------------------------------------------
-# increment_usage — atomic upsert increment
+# increment_usage_atomic — race-safe check-and-increment
+# ---------------------------------------------------------------------------
+
+def increment_usage_atomic(
+    user_id: str,
+    field: str,
+    limit_col: str,
+    amount: float | int,
+    db: Session,
+) -> bool:
+    """
+    Atomically increment `field` by `amount` **only if** the resulting value
+    would not exceed the plan limit stored in `limit_col` on plan_config.
+
+    The entire check + write is a single SQL UPDATE with a correlated subquery,
+    so there is no window for two concurrent requests to both pass the quota
+    check and both commit.
+
+    Returns True  — increment applied, quota was not exceeded.
+    Returns False — rowcount == 0, meaning the quota limit was already reached
+                    (or no plan_config row exists for the user's role).
+                    Callers should raise HTTP 429.
+
+    Args:
+        field:     column on monthly_usage  ("biomech_count" | "ocr_hours_used" | "submission_count")
+        limit_col: column on plan_config    ("max_biomech_per_month" | "max_ocr_hours_per_month" | ...)
+        amount:    positive value to add
+    """
+    _valid = {"biomech_count", "ocr_hours_used", "submission_count"}
+    if field not in _valid:
+        raise ValueError(f"increment_usage_atomic: invalid field '{field}'")
+
+    today = date.today()
+    year, month = today.year, today.month
+
+    from database.config import IS_SQLITE  # late import avoids circular
+
+    # Guarantee the row exists before the conditional UPDATE.
+    # Both the INSERT and the UPDATE run inside the same transaction — no
+    # intermediate commit — so the row cannot disappear between the two.
+    if IS_SQLITE:
+        db.execute(
+            text(
+                "INSERT OR IGNORE INTO monthly_usage "
+                "(user_id, year, month, biomech_count, ocr_hours_used, submission_count) "
+                "VALUES (:uid, :y, :m, 0, 0, 0)"
+            ),
+            {"uid": user_id, "y": year, "m": month},
+        )
+    else:
+        db.execute(
+            text(
+                "INSERT INTO monthly_usage "
+                "(user_id, year, month, biomech_count, ocr_hours_used, submission_count) "
+                "VALUES (:uid, :y, :m, 0, 0, 0) "
+                "ON CONFLICT (user_id, year, month) DO NOTHING"
+            ),
+            {"uid": user_id, "y": year, "m": month},
+        )
+
+    # Single-statement atomic check + increment.
+    # If `field + amount > limit` the WHERE predicate is false → rowcount == 0.
+    # Handles limit == 0 naturally (0 + amount > 0 → false → blocked).
+    # Handles missing plan_config row (NULL limit) → NULL comparison → false → blocked.
+    result = db.execute(
+        text(
+            f"UPDATE monthly_usage "
+            f"SET    {field} = {field} + :amount "
+            f"WHERE  user_id = :uid "
+            f"  AND  year    = :y "
+            f"  AND  month   = :m "
+            f"  AND  {field} + :amount <= ("
+            f"           SELECT {limit_col} "
+            f"           FROM   plan_config "
+            f"           WHERE  role = (SELECT role FROM users WHERE id = :uid)"
+            f"       )"
+        ),
+        {"amount": amount, "uid": user_id, "y": year, "m": month},
+    )
+    db.commit()
+    return result.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
+# increment_usage — unconditional atomic upsert (used for reconciliation /
+# worker callbacks where the quota was already checked at dispatch)
 # ---------------------------------------------------------------------------
 
 async def increment_usage(

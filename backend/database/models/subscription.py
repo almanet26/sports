@@ -4,11 +4,14 @@ from sqlalchemy.sql import func
 from database.config import Base
 from database.models.enums import ROLE_VALUES, SUBSCRIPTION_STATUS_VALUES
 
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True, index=True)
+    # unique=True removed — a user may have multiple rows (subscription history).
+    # All queries must filter by status='active' and expires_at > NOW() to obtain the current subscription.  Use get_active_subscription() from dependencies/feature_gate.py rather than querying directly.
+    user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     plan_key = Column(String(50), nullable=False)
     role = Column(
@@ -37,5 +40,5 @@ class Subscription(Base):
         onupdate=func.now(),
     )
 
-    user = relationship("User", back_populates="subscription")
-    
+    # One user → many subscription history rows.
+    user = relationship("User", back_populates="subscriptions")
