@@ -30,6 +30,7 @@ def upgrade():
         SET user_role = CASE 
             WHEN role IN ('coach_starter', 'coach_pro', 'academy') THEN 'COACH'
             WHEN role IN ('free', 'basic', 'platinum') THEN 'PLAYER'
+            WHEN email LIKE '%admin%' THEN 'ADMIN'
             ELSE 'PLAYER'
         END
     """)
