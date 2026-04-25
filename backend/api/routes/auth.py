@@ -297,6 +297,34 @@ def update_current_user(
     return current_user
 
 
+@router.get("/coaches/public")
+def get_public_coaches(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all verified coaches with their public profile info including intro video."""
+    coaches = (
+        db.query(User)
+        .filter(User.role == "COACH", User.coach_status == "verified", User.is_active == True)
+        .all()
+    )
+    return {
+        "coaches": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "profile_bio": c.profile_bio,
+                "specialization": c.specialization,
+                "intro_video_url": c.intro_video_url,
+                "profile_image_url": c.profile_image_url,
+                "coach_category": c.coach_category,
+                "years_of_experience": c.years_of_experience,
+            }
+            for c in coaches
+        ]
+    }
+
+
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
 def change_password(
     data: dict,
