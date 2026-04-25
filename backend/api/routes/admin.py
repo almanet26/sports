@@ -112,7 +112,7 @@ def list_users(
     )
 
 
-@router.get("/users/{user_id}", response_model=UserDetailResponse)
+@router.get("/users/{user_id}")
 def get_user_details(
     user_id: str,
     current_user: User = Depends(require_admin),
@@ -121,7 +121,55 @@ def get_user_details(
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-    return UserDetailResponse.model_validate(user)
+
+    base = UserDetailResponse.model_validate(user).model_dump()
+
+    # Player: submissions
+    if user.role == 'PLAYER':
+        from database.models.submission import VideoSubmission
+        subs = db.query(VideoSubmission).filter(VideoSubmission.player_id == user_id).order_by(VideoSubmission.created_at.desc()).all()
+        base['submissions'] = [
+            {
+                'id': s.id,
+                'analysis_type': s.analysis_type,
+                'status': s.status.value if hasattr(s.status, 'value') else s.status,
+                'coach_name': s.coach.name if s.coach else None,
+                'created_at': s.created_at.isoformat() if s.created_at else None,
+                'pdf_report_url': s.pdf_report_url,
+            }
+            for s in subs
+        ]
+
+    # Coach: submissions received + reviews
+    if user.role == 'COACH':
+        from database.models.submission import VideoSubmission
+        from database.models.coach_review import CoachReview
+        subs = db.query(VideoSubmission).filter(VideoSubmission.coach_id == user_id).order_by(VideoSubmission.created_at.desc()).all()
+        base['submissions_received'] = [
+            {
+                'id': s.id,
+                'analysis_type': s.analysis_type,
+                'status': s.status.value if hasattr(s.status, 'value') else s.status,
+                'player_name': s.player.name if s.player else None,
+                'created_at': s.created_at.isoformat() if s.created_at else None,
+            }
+            for s in subs
+        ]
+        reviews = db.query(CoachReview).filter(CoachReview.coach_id == user_id).all()
+        base['reviews'] = [
+            {
+                'player_name': db.query(User).filter(User.id == r.player_id).first().name if db.query(User).filter(User.id == r.player_id).first() else 'Unknown',
+                'rating': r.rating,
+                'comment': r.comment,
+                'created_at': r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in reviews
+        ]
+        avg = round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0
+        base['average_rating'] = avg
+        base['total_reviews'] = len(reviews)
+
+    return base
 
 
 @router.patch("/users/{user_id}", response_model=UserSummaryResponse)
