@@ -23,6 +23,10 @@ from database.models import (
     VideoSubmission,
     VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
     AdminAuditLog,
+    Message,
+    Transaction,
+    Review,
+    Match,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -300,6 +304,9 @@ from api.routes import subscription
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
+
+# Match routes
+app.include_router(match.router, prefix="/api/v1", tags=["matches"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])

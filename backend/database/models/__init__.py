@@ -29,6 +29,11 @@ from database.models.academy_branding import AcademyBranding
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
 from database.models.coach_content import CoachContent, ContentType
+from database.models.message import Message
+from database.models.transaction import Transaction, TransactionType, TransactionStatus
+from database.models.review import Review
+from database.models.coach_review import CoachReview
+from database.models.match import Match
 
 # New player & coach feature models — wrapped in try/except so missing
 # tables on older DB instances don't crash startup.
@@ -94,6 +99,17 @@ __all__ = [
     # Coach Content
     "CoachContent",
     "ContentType",
+    # Messages
+    "Message",
+    # Transactions
+    "Transaction",
+    "TransactionType",
+    "TransactionStatus",
+    # Reviews
+    "Review",
+    "CoachReview",
+    # Matches
+    "Match",
     # Enums
     "VideoVisibility",
     "VideoStatus",
