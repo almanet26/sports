@@ -692,6 +692,57 @@ export const subscriptionApi = {
 
 };
 
+// Reviews API
+export const reviewsApi = {
+  getCoachReviews: (coachId: string) =>
+    api.get<{ reviews: ReviewItem[]; total: number; average_rating: number }>(`/reviews/coach/${coachId}`),
+
+  submitReview: (data: { coach_id: string; rating: number; comment?: string }) =>
+    api.post('/reviews', data),
+
+  getMyCoaches: () =>
+    api.get<{ coaches: MyCoach[] }>('/reviews/player/my-coaches'),
+};
+
+export interface ReviewItem {
+  id: string;
+  player_id: string;
+  player_name: string;
+  rating: number;
+  comment?: string;
+  created_at: string;
+}
+
+export interface MyCoach {
+  id: string;
+  name: string;
+  email: string;
+  specialization?: string[];
+  existing_review?: { rating: number; comment?: string } | null;
+}
+
+// Earnings API
+export interface EarningTransaction {
+  id: string;
+  player: string;
+  type: string;
+  amount: number;
+  date: string;
+  status: 'paid' | 'pending';
+}
+
+export interface EarningsData {
+  total_earned: number;
+  pending: number;
+  this_month: number;
+  transactions: EarningTransaction[];
+  chart_data: { month: string; earnings: number }[];
+}
+
+export const earningsApi = {
+  getMyEarnings: () => api.get<EarningsData>('/earnings'),
+};
+
 // Admin API
 export const adminApi = {
   // Get admin stats

@@ -1,141 +1,92 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from sqlalchemy import func, extract
+from datetime import datetime, timezone
+
 from database.config import get_db
-from database.models import Transaction, TransactionStatus, User
+from database.models.submission import VideoSubmission
+from database.models.subscription import Subscription
+from database.models.plan import Plan
+from database.models.user import User
 from utils.auth import get_current_user
-from pydantic import BaseModel
-from typing import List
-from datetime import datetime, timedelta
 
-router = APIRouter()
+router = APIRouter(prefix="/earnings")
 
-
-class TransactionResponse(BaseModel):
-    id: str
-    player_name: str
-    player_email: str
-    transaction_type: str
-    amount: float
-    status: str
-    description: str | None
-    created_at: datetime
-    paid_at: datetime | None
-
-    class Config:
-        from_attributes = True
+COACH_REVENUE_SHARE = 0.7  # 70% of plan price goes to coach
 
 
-class EarningsStatsResponse(BaseModel):
-    total_earned: float
-    pending: float
-    this_month: float
-    total_transactions: int
-
-
-class MonthlyEarningsResponse(BaseModel):
-    month: str
-    earnings: float
-
-
-@router.get("/earnings/stats", response_model=EarningsStatsResponse)
-def get_earnings_stats(
+@router.get("")
+def get_coach_earnings(
+    db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
 ):
-    """Get earnings statistics for coach"""
-    if current_user.role != "COACH":
-        raise HTTPException(status_code=403, detail="Only coaches can access earnings")
-    
-    # Total earned (paid transactions)
-    total_earned = db.query(func.sum(Transaction.amount)).filter(
-        Transaction.coach_id == current_user.id,
-        Transaction.status == TransactionStatus.PAID
-    ).scalar() or 0.0
-    
-    # Pending amount
-    pending = db.query(func.sum(Transaction.amount)).filter(
-        Transaction.coach_id == current_user.id,
-        Transaction.status == TransactionStatus.PENDING
-    ).scalar() or 0.0
-    
-    # This month earnings
-    now = datetime.utcnow()
-    this_month = db.query(func.sum(Transaction.amount)).filter(
-        Transaction.coach_id == current_user.id,
-        Transaction.status == TransactionStatus.PAID,
-        extract('year', Transaction.paid_at) == now.year,
-        extract('month', Transaction.paid_at) == now.month
-    ).scalar() or 0.0
-    
-    # Total transactions
-    total_transactions = db.query(func.count(Transaction.id)).filter(
-        Transaction.coach_id == current_user.id
-    ).scalar() or 0
-    
-    return {
-        "total_earned": total_earned,
-        "pending": pending,
-        "this_month": this_month,
-        "total_transactions": total_transactions
-    }
+    # Get all unique players who submitted to this coach
+    player_ids = (
+        db.query(VideoSubmission.player_id)
+        .filter(VideoSubmission.coach_id == current_user.id)
+        .distinct()
+        .all()
+    )
+    player_ids = [p[0] for p in player_ids]
 
+    transactions = []
+    total_earned = 0.0
+    pending = 0.0
+    now = datetime.now(timezone.utc)
 
-@router.get("/earnings/monthly", response_model=List[MonthlyEarningsResponse])
-def get_monthly_earnings(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get monthly earnings for last 6 months"""
-    if current_user.role != "COACH":
-        raise HTTPException(status_code=403, detail="Only coaches can access earnings")
-    
-    # Get last 6 months data
-    results = []
-    now = datetime.utcnow()
-    
-    for i in range(5, -1, -1):
-        target_date = now - timedelta(days=30 * i)
-        month_name = target_date.strftime("%b")
-        
-        earnings = db.query(func.sum(Transaction.amount)).filter(
-            Transaction.coach_id == current_user.id,
-            Transaction.status == TransactionStatus.PAID,
-            extract('year', Transaction.paid_at) == target_date.year,
-            extract('month', Transaction.paid_at) == target_date.month
-        ).scalar() or 0.0
-        
-        results.append({"month": month_name, "earnings": earnings})
-    
-    return results
+    for pid in player_ids:
+        player = db.query(User).filter(User.id == pid).first()
+        if not player:
+            continue
 
+        sub = db.query(Subscription).filter(Subscription.user_id == pid).first()
+        if not sub:
+            continue
 
-@router.get("/earnings/transactions", response_model=List[TransactionResponse])
-def get_transactions(
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Get all transactions for coach"""
-    if current_user.role != "COACH":
-        raise HTTPException(status_code=403, detail="Only coaches can access earnings")
-    
-    transactions = db.query(Transaction).filter(
-        Transaction.coach_id == current_user.id
-    ).order_by(Transaction.created_at.desc()).all()
-    
-    result = []
-    for t in transactions:
-        player = db.query(User).filter(User.id == t.player_id).first()
-        result.append({
-            "id": t.id,
-            "player_name": player.name if player else "Unknown",
-            "player_email": player.email if player else "",
-            "transaction_type": t.transaction_type.value,
-            "amount": t.amount,
-            "status": t.status.value,
-            "description": t.description,
-            "created_at": t.created_at,
-            "paid_at": t.paid_at
+        plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+        if not plan:
+            continue
+
+        amount = round(plan.monthly_price * COACH_REVENUE_SHARE, 2)
+        end_dt = sub.end_date
+        if end_dt and end_dt.tzinfo is None:
+            end_dt = end_dt.replace(tzinfo=timezone.utc)
+
+        is_active = end_dt and end_dt > now
+        tx_status = "paid" if is_active else "pending"
+
+        if tx_status == "paid":
+            total_earned += amount
+        else:
+            pending += amount
+
+        transactions.append({
+            "id": str(sub.id),
+            "player": player.name,
+            "type": plan.name,
+            "amount": amount,
+            "date": sub.start_date.isoformat() if sub.start_date else None,
+            "status": tx_status,
         })
-    
-    return result
+
+    # Monthly breakdown (last 6 months)
+    from collections import defaultdict
+    monthly: dict = defaultdict(float)
+    for tx in transactions:
+        if tx["date"] and tx["status"] == "paid":
+            month_key = tx["date"][:7]  # YYYY-MM
+            monthly[month_key] += tx["amount"]
+
+    chart_data = [
+        {"month": k, "earnings": round(v, 2)}
+        for k, v in sorted(monthly.items())[-6:]
+    ]
+
+    this_month = monthly.get(now.strftime("%Y-%m"), 0.0)
+
+    return {
+        "total_earned": round(total_earned, 2),
+        "pending": round(pending, 2),
+        "this_month": round(this_month, 2),
+        "transactions": transactions,
+        "chart_data": chart_data,
+    }
