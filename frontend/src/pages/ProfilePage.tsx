@@ -432,27 +432,35 @@ export default function ProfilePage() {
           {/* Intro Video */}
           <div>
             <p className="text-sm font-medium mb-2 flex items-center gap-1"><i className="fas fa-video text-white/40"></i>Intro Video</p>
-            {introVideoUrl
-              ? <div className={`rounded-2xl p-4 border ${cardBg} flex items-center justify-between`}>
-                  <div className="flex items-center gap-3">
-                    <i className="fas fa-check-circle text-green-400"></i>
-                    <p className="text-sm text-green-400">Intro video uploaded</p>
-                  </div>
+            {introVideoUrl ? (
+              <div className={`rounded-2xl border ${cardBg} overflow-hidden`}>
+                <video
+                  controls
+                  className="w-full max-h-64 bg-black"
+                  src={resolveMediaUrl(introVideoUrl)}
+                />
+                <div className="flex items-center justify-between px-4 py-3">
+                  <p className="text-xs text-green-400 flex items-center gap-2">
+                    <i className="fas fa-check-circle"></i>Intro video uploaded
+                  </p>
                   <button onClick={() => videoInputRef.current?.click()}
                     className="px-3 py-1 rounded-xl text-xs border border-white/20 hover:bg-white/10 transition-all">
                     Replace
                   </button>
                 </div>
-              : <div onClick={() => videoInputRef.current?.click()}
-                  className={`rounded-2xl p-8 border ${cardBg} flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-white/30 transition-all`}>
-                  {videoUploading
-                    ? <span className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    : <>
-                        <i className="fas fa-cloud-upload-alt text-3xl text-white/30"></i>
-                        <p className="text-sm text-white/60">Click to upload intro video</p>
-                        <p className="text-xs text-white/30">MP4, MOV, AVI — max 100MB</p>
-                      </>}
-                </div>}
+              </div>
+            ) : (
+              <div onClick={() => videoInputRef.current?.click()}
+                className={`rounded-2xl p-8 border ${cardBg} flex flex-col items-center justify-center gap-2 cursor-pointer hover:border-white/30 transition-all`}>
+                {videoUploading
+                  ? <span className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  : <>
+                      <i className="fas fa-cloud-upload-alt text-3xl text-white/30"></i>
+                      <p className="text-sm text-white/60">Click to upload intro video</p>
+                      <p className="text-xs text-white/30">MP4, MOV, AVI — max 100MB</p>
+                    </>}
+              </div>
+            )}
             <input ref={videoInputRef} type="file" accept="video/*" className="hidden" onChange={handleVideoUpload} />
           </div>
 
