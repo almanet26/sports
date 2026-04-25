@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../store/themeStore';
-import { api } from '../lib/api';
+import { api, resolveMediaUrl } from '../lib/api';
 
 interface User {
   id: string;
@@ -199,7 +199,15 @@ function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () 
                       {profile.intro_video_url && (
                         <div className="mt-3">
                           <p className={`text-xs mb-1 ${sub}`}>Intro Video</p>
-                          <video controls className="w-full rounded-xl max-h-48 bg-black" src={profile.intro_video_url} />
+                          <video
+                            controls
+                            className="w-full rounded-xl max-h-48 bg-black"
+                            src={resolveMediaUrl(profile.intro_video_url)}
+                            onError={e => {
+                              const el = e.currentTarget.parentElement;
+                              if (el) el.innerHTML = '<p class="text-xs text-yellow-400 mt-1"><i class="fas fa-exclamation-triangle mr-1"></i>Video file not found on server.</p>';
+                            }}
+                          />
                         </div>
                       )}
                     </div>
