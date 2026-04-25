@@ -89,7 +89,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   }, [user]);
   
   const sidebarName = playerProfile.fullName || user?.name || user?.email || "User";
-  // Prioritize user.profile_image_url (from auth store) over playerProfile.avatar (from localStorage)
   const sidebarAvatar = resolveMediaUrl(user?.profile_image_url || playerProfile.avatar || "");
 
   React.useEffect(() => {
@@ -195,34 +194,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 }`}
             >
               <div className="flex items-center gap-3">
-                {sidebarAvatar ? (
-                  <>
-                    <img
-                      src={sidebarAvatar}
-                      alt={sidebarName}
-                      className="w-12 h-12 rounded-xl object-cover"
-                      onError={(e) => {
-                        e.currentTarget.style.display = 'none';
-                        const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                        if (fallback) fallback.style.display = 'flex';
-                      }}
-                    />
-                    <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 items-center justify-center text-white font-bold text-lg">
-                      {sidebarName.charAt(0).toUpperCase() || "U"}
-                    </div>
-                  </>
-                ) : (
-                  <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                    {sidebarName.charAt(0).toUpperCase() || "U"}
-                  </div>
-                )}
+                <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                  {sidebarAvatar
+                    ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }}/>
+                    : sidebarName.charAt(0).toUpperCase() || 'U'
+                  }
+                </div>
                 <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'
-                    }`}>
+                  <p className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     {sidebarName}
                   </p>
-                  <p className={`text-xs truncate ${theme === 'dark' ? 'text-white/45' : 'text-gray-500'
-                    }`}>
+                  <p className={`text-xs truncate ${theme === 'dark' ? 'text-white/45' : 'text-gray-500'}`}>
                     {user?.email || "No email available"}
                   </p>
                   <div className="mt-1">
@@ -365,27 +347,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <div className="p-4 border-b border-white/10">
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <div className="flex items-center gap-3">
-                      {sidebarAvatar ? (
-                        <>
-                          <img
-                            src={sidebarAvatar}
-                            alt={sidebarName}
-                            className="w-12 h-12 rounded-xl object-cover"
-                            onError={(e) => {
-                              e.currentTarget.style.display = 'none';
-                              const fallback = e.currentTarget.nextElementSibling as HTMLElement;
-                              if (fallback) fallback.style.display = 'flex';
-                            }}
-                          />
-                          <div className="hidden w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 items-center justify-center text-white font-bold text-lg">
-                            {sidebarName.charAt(0).toUpperCase() || "U"}
-                          </div>
-                        </>
-                      ) : (
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                          {sidebarName.charAt(0).toUpperCase() || "U"}
-                        </div>
-                      )}
+                      <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                        {sidebarAvatar
+                          ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }}/>
+                          : sidebarName.charAt(0).toUpperCase() || 'U'
+                        }
+                      </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-white truncate">
                           {sidebarName}
