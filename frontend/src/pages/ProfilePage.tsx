@@ -32,6 +32,7 @@ export default function ProfilePage() {
   const [newCert, setNewCert] = useState({ name: '', issuer: '', year: '', certificate_url: '' });
   const [videoUploading, setVideoUploading] = useState(false);
   const [introVideoUrl, setIntroVideoUrl] = useState(user?.intro_video_url || '');
+  const [videoError, setVideoError] = useState(false);
   const videoInputRef = useRef<HTMLInputElement>(null);
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,6 +120,7 @@ export default function ProfilePage() {
       });
       const url = res.data.intro_video_url;
       setIntroVideoUrl(url);
+      setVideoError(false);
       updateUser({ intro_video_url: url });
     } catch (err) {
       console.error('Video upload failed:', err);
@@ -442,29 +444,35 @@ export default function ProfilePage() {
             <p className="text-sm font-medium mb-2 flex items-center gap-1"><i className="fas fa-video text-white/40"></i>Intro Video</p>
             {introVideoUrl ? (
               <div className={`rounded-2xl border ${cardBg} overflow-hidden`}>
-                <video
-                  controls
-                  className="w-full max-h-64 bg-black"
-                  src={resolveMediaUrl(introVideoUrl)}
-                  onError={e => {
-                    // File missing — clear preview so coach knows to re-upload
-                    (e.currentTarget.parentElement as HTMLElement).innerHTML = `
-                      <div class="p-4 flex items-center justify-between">
-                        <p class="text-sm text-yellow-400 flex items-center gap-2">
-                          <i class="fas fa-exclamation-triangle"></i>Video file not found. Please re-upload.
-                        </p>
-                      </div>`;
-                  }}
-                />
-                <div className="flex items-center justify-between px-4 py-3">
-                  <p className="text-xs text-green-400 flex items-center gap-2">
-                    <i className="fas fa-check-circle"></i>Intro video uploaded
-                  </p>
-                  <button onClick={() => videoInputRef.current?.click()}
-                    className="px-3 py-1 rounded-xl text-xs border border-white/20 hover:bg-white/10 transition-all">
-                    Replace
-                  </button>
-                </div>
+                {videoError ? (
+                  <div className="p-4 flex items-center justify-between">
+                    <p className="text-sm text-yellow-400 flex items-center gap-2">
+                      <i className="fas fa-exclamation-triangle"></i>Video file not found. Please re-upload.
+                    </p>
+                    <button onClick={() => videoInputRef.current?.click()}
+                      className="px-3 py-1 rounded-xl text-xs border border-white/20 hover:bg-white/10 transition-all">
+                      Re-upload
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <video
+                      controls
+                      className="w-full max-h-64 bg-black"
+                      src={resolveMediaUrl(introVideoUrl)}
+                      onError={() => setVideoError(true)}
+                    />
+                    <div className="flex items-center justify-between px-4 py-3">
+                      <p className="text-xs text-green-400 flex items-center gap-2">
+                        <i className="fas fa-check-circle"></i>Intro video uploaded
+                      </p>
+                      <button onClick={() => videoInputRef.current?.click()}
+                        className="px-3 py-1 rounded-xl text-xs border border-white/20 hover:bg-white/10 transition-all">
+                        Replace
+                      </button>
+                    </div>
+                  </>
+                )}
               </div>
             ) : (
               <div onClick={() => videoInputRef.current?.click()}
