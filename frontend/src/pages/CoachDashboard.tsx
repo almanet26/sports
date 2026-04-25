@@ -151,7 +151,8 @@ export default function CoachDashboard() {
   );
 
   return (
-    <div className={theme === 'dark' ? 'text-white' : 'text-gray-900'}>
+    <>
+      <div className={theme === 'dark' ? 'text-white' : 'text-gray-900'}>
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -192,71 +193,6 @@ export default function CoachDashboard() {
                   </span>
                 )}
               </button>
-
-              <AnimatePresence>
-                {bellOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                    transition={{ duration: 0.15 }}
-                    className={`absolute right-0 top-12 w-80 rounded-2xl border shadow-2xl z-50 overflow-hidden ${
-                      theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-gray-200 text-gray-900'
-                    }`}
-                  >
-                    <div className={`flex items-center justify-between px-4 py-3 border-b ${
-                      theme === 'dark' ? 'border-white/10' : 'border-gray-100'
-                    }`}>
-                      <p className="font-semibold text-sm">Notifications</p>
-                      {unreadCount > 0 && (
-                        <button onClick={handleMarkAllRead} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
-                          Mark all read
-                        </button>
-                      )}
-                    </div>
-
-                    <div className="max-h-80 overflow-y-auto">
-                      {notifications.length === 0 ? (
-                        <div className={`p-6 text-center text-sm ${
-                          theme === 'dark' ? 'text-white/40' : 'text-gray-400'
-                        }`}>
-                          <i className="fas fa-bell-slash text-2xl mb-2 block"></i>
-                          No notifications yet
-                        </div>
-                      ) : notifications.map(n => (
-                        <div
-                          key={n.id}
-                          onClick={() => !n.is_read && handleMarkRead(n.id)}
-                          className={`flex gap-3 px-4 py-3 border-b cursor-pointer transition-all ${
-                            theme === 'dark' ? 'border-white/5 hover:bg-white/5' : 'border-gray-50 hover:bg-gray-50'
-                          } ${!n.is_read ? theme === 'dark' ? 'bg-blue-500/5' : 'bg-blue-50' : ''}`}
-                        >
-                          <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center ${
-                            n.type === 'submission' ? 'bg-blue-500/20 text-blue-400' :
-                            n.type === 'review' ? 'bg-yellow-500/20 text-yellow-400' :
-                            'bg-gray-500/20 text-gray-400'
-                          }`}>
-                            <i className={`fas ${
-                              n.type === 'submission' ? 'fa-paper-plane' :
-                              n.type === 'review' ? 'fa-star' : 'fa-bell'
-                            } text-xs`}></i>
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-semibold truncate">{n.title}</p>
-                            <p className={`text-xs mt-0.5 line-clamp-2 ${
-                              theme === 'dark' ? 'text-white/50' : 'text-gray-500'
-                            }`}>{n.message}</p>
-                            <p className={`text-[10px] mt-1 ${
-                              theme === 'dark' ? 'text-white/30' : 'text-gray-400'
-                            }`}>{new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
-                          </div>
-                          {!n.is_read && <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1"></div>}
-                        </div>
-                      ))}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
           </div>
         </div>
@@ -736,6 +672,73 @@ export default function CoachDashboard() {
           ))}
         </div>
       </motion.div>
-    </div>
+      </div>
+
+    {/* Notification Dropdown — fixed overlay so it never overlaps page content */}
+    <AnimatePresence>
+      {bellOpen && (
+        <motion.div
+          ref={bellRef}
+          initial={{ opacity: 0, y: -8, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -8, scale: 0.95 }}
+          transition={{ duration: 0.15 }}
+          className={`fixed top-20 right-6 w-80 rounded-2xl border shadow-2xl z-[999] overflow-hidden ${
+            theme === 'dark' ? 'bg-[#0d1117] border-white/20 text-white' : 'bg-white border-gray-200 text-gray-900'
+          }`}
+        >
+          <div className={`flex items-center justify-between px-4 py-3 border-b ${
+            theme === 'dark' ? 'border-white/10' : 'border-gray-100'
+          }`}>
+            <p className="font-semibold text-sm">Notifications</p>
+            {unreadCount > 0 && (
+              <button onClick={handleMarkAllRead} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                Mark all read
+              </button>
+            )}
+          </div>
+          <div className="max-h-80 overflow-y-auto">
+            {notifications.length === 0 ? (
+              <div className={`p-6 text-center text-sm ${
+                theme === 'dark' ? 'text-white/40' : 'text-gray-400'
+              }`}>
+                <i className="fas fa-bell-slash text-2xl mb-2 block"></i>
+                No notifications yet
+              </div>
+            ) : notifications.map(n => (
+              <div
+                key={n.id}
+                onClick={() => !n.is_read && handleMarkRead(n.id)}
+                className={`flex gap-3 px-4 py-3 border-b cursor-pointer transition-all ${
+                  theme === 'dark' ? 'border-white/5 hover:bg-white/5' : 'border-gray-50 hover:bg-gray-50'
+                } ${!n.is_read ? theme === 'dark' ? 'bg-blue-500/5' : 'bg-blue-50' : ''}`}
+              >
+                <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center ${
+                  n.type === 'submission' ? 'bg-blue-500/20 text-blue-400' :
+                  n.type === 'review' ? 'bg-yellow-500/20 text-yellow-400' :
+                  'bg-gray-500/20 text-gray-400'
+                }`}>
+                  <i className={`fas ${
+                    n.type === 'submission' ? 'fa-paper-plane' :
+                    n.type === 'review' ? 'fa-star' : 'fa-bell'
+                  } text-xs`}></i>
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-semibold truncate">{n.title}</p>
+                  <p className={`text-xs mt-0.5 line-clamp-2 ${
+                    theme === 'dark' ? 'text-white/50' : 'text-gray-500'
+                  }`}>{n.message}</p>
+                  <p className={`text-[10px] mt-1 ${
+                    theme === 'dark' ? 'text-white/30' : 'text-gray-400'
+                  }`}>{new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+                {!n.is_read && <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1"></div>}
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+    </>
   );
 }
