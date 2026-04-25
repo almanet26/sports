@@ -903,4 +903,28 @@ export const scoutingApi = {
     api.delete(`/scouting/shortlist/${playerId}`),
 };
 
+// ── Notifications API ─────────────────────────────────────────────────────────
+export interface NotificationItem {
+  id: string;
+  type: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export const notificationsApi = {
+  /** Get all notifications for current user */
+  getAll: () =>
+    api.get<{ notifications: NotificationItem[]; unread_count: number }>('/notifications'),
+
+  /** Mark a notification as read */
+  markRead: (notificationId: string) =>
+    api.put(`/notifications/${notificationId}/read`),
+
+  /** Mark all notifications as read */
+  markAllRead: () =>
+    api.put('/notifications/mark-all-read'),
+};
+
 export default api;
