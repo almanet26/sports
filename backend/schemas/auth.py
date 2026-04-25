@@ -144,6 +144,7 @@ class ProfileUpdateRequest(BaseModel):
     coach_category: Optional[str] = None
     date_of_birth: Optional[str] = None
     years_of_experience: Optional[int] = None
+    notification_preferences: Optional[dict] = None
 
     model_config = ConfigDict(extra='ignore')
 

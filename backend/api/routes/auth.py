@@ -297,6 +297,46 @@ def update_current_user(
     return current_user
 
 
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from utils.auth import verify_password, get_password_hash
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+
+    if not verify_password(current_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters")
+
+    current_user.password_hash = get_password_hash(new_password)
+    db.commit()
+    return None
+
+
+@router.get("/notifications")
+def get_notification_preferences(
+    current_user: User = Depends(get_current_user),
+):
+    default = {"email_submissions": True, "email_published": True, "email_messages": False, "push_all": True}
+    return current_user.notification_preferences or default
+
+
+@router.put("/notifications")
+def update_notification_preferences(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.notification_preferences = data
+    db.commit()
+    db.refresh(current_user)
+    return current_user.notification_preferences
+
+
 @router.post("/coach-intro-video", response_model=IntroVideoResponse)
 async def upload_intro_video(
     file: UploadFile = File(...),

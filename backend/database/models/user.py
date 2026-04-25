@@ -35,6 +35,14 @@ class User(Base):
     date_of_birth = Column(String, nullable=True)  # YYYY-MM-DD format
     years_of_experience = Column(Integer, nullable=True)
     
+    # Notification preferences
+    notification_preferences = Column(JSON, nullable=True, default=lambda: {
+        "email_submissions": True,
+        "email_published": True,
+        "email_messages": False,
+        "push_all": True,
+    })
+
     # Subscription field (BASIC, SILVER, GOLD)
     subscription_plan = Column(String, default='BASIC', nullable=False)
     

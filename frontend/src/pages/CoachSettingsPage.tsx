@@ -1,30 +1,38 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../store/themeStore';
 import { useAuthStore } from '../store/authStore';
 import { api } from '../lib/api';
 import { useNavigate } from 'react-router-dom';
 
+const DEFAULT_NOTIFS = {
+  email_submissions: true,
+  email_published: true,
+  email_messages: false,
+  push_all: true,
+};
+
 export default function CoachSettingsPage() {
   const { theme } = useThemeStore();
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
 
+  // Password
   const [pwForm, setPwForm] = useState({ current: '', newPw: '', confirm: '' });
   const [pwLoading, setPwLoading] = useState(false);
   const [pwMsg, setPwMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showPw, setShowPw] = useState({ current: false, newPw: false, confirm: false });
 
+  // Notifications
+  const [notifs, setNotifs] = useState(DEFAULT_NOTIFS);
+  const [notifsLoading, setNotifsLoading] = useState(true);
+  const [notifsMsg, setNotifsMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [savingNotifs, setSavingNotifs] = useState(false);
+
+  // Delete
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleting, setDeleting] = useState(false);
-
-  const [notifs, setNotifs] = useState({
-    email_submissions: true,
-    email_published: true,
-    email_messages: false,
-    push_all: true,
-  });
 
   const glass = theme === 'dark' ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg';
   const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200';
@@ -32,6 +40,13 @@ export default function CoachSettingsPage() {
   const inputCls = `w-full px-4 py-3 rounded-xl border text-sm focus:outline-none transition-all ${
     theme === 'dark' ? 'glass border-white/10 text-white focus:border-blue-500' : 'bg-white border-gray-300 focus:border-blue-400'
   }`;
+
+  useEffect(() => {
+    api.get('/auth/notifications')
+      .then(r => setNotifs({ ...DEFAULT_NOTIFS, ...r.data }))
+      .catch(console.error)
+      .finally(() => setNotifsLoading(false));
+  }, []);
 
   const handleChangePassword = async () => {
     setPwMsg(null);
@@ -55,6 +70,18 @@ export default function CoachSettingsPage() {
     } catch (err: any) {
       setPwMsg({ type: 'error', text: err.response?.data?.detail || 'Failed to change password.' });
     } finally { setPwLoading(false); }
+  };
+
+  const handleSaveNotifs = async () => {
+    setSavingNotifs(true);
+    setNotifsMsg(null);
+    try {
+      await api.put('/auth/notifications', notifs);
+      setNotifsMsg({ type: 'success', text: 'Preferences saved.' });
+      setTimeout(() => setNotifsMsg(null), 3000);
+    } catch {
+      setNotifsMsg({ type: 'error', text: 'Failed to save preferences.' });
+    } finally { setSavingNotifs(false); }
   };
 
   const handleDeleteAccount = async () => {
@@ -93,7 +120,6 @@ export default function CoachSettingsPage() {
         <h2 className="font-semibold mb-4 flex items-center gap-2">
           <i className="fas fa-lock text-blue-400"></i>Change Password
         </h2>
-
         <div className="space-y-3">
           {[
             { key: 'current', label: 'Current Password', show: showPw.current, toggle: () => setShowPw(s => ({ ...s, current: !s.current })) },
@@ -118,7 +144,6 @@ export default function CoachSettingsPage() {
             </div>
           ))}
         </div>
-
         <AnimatePresence>
           {pwMsg && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -128,7 +153,6 @@ export default function CoachSettingsPage() {
             </motion.div>
           )}
         </AnimatePresence>
-
         <button onClick={handleChangePassword} disabled={pwLoading}
           className="mt-4 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold text-sm disabled:opacity-50 flex items-center gap-2 hover:opacity-90 transition-opacity">
           {pwLoading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><i className="fas fa-save" />Update Password</>}
@@ -147,14 +171,34 @@ export default function CoachSettingsPage() {
               <p className="font-medium text-sm">Account Email</p>
               <p className={`text-xs mt-0.5 ${sub}`}>{user?.email}</p>
             </div>
-            <span className="text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">Verified</span>
+            <span className={`text-xs px-2 py-1 rounded-full border ${user?.is_verified ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}`}>
+              {user?.is_verified ? 'Verified' : 'Unverified'}
+            </span>
+          </div>
+          <div className={`flex items-center justify-between p-4 rounded-xl border ${cardBg}`}>
+            <div>
+              <p className="font-medium text-sm">Coach Status</p>
+              <p className={`text-xs mt-0.5 ${sub}`}>Your current verification status</p>
+            </div>
+            <span className={`text-xs px-2 py-1 rounded-full border capitalize ${
+              user?.coach_status === 'verified' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+              user?.coach_status === 'pending' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+              user?.coach_status === 'rejected' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+              'bg-gray-500/20 text-gray-400 border-gray-500/30'
+            }`}>
+              {user?.coach_status || 'N/A'}
+            </span>
           </div>
           <div className={`flex items-center justify-between p-4 rounded-xl border ${cardBg}`}>
             <div>
               <p className="font-medium text-sm">Profile Visibility</p>
-              <p className={`text-xs mt-0.5 ${sub}`}>Your profile is visible to players on the platform</p>
+              <p className={`text-xs mt-0.5 ${sub}`}>
+                {user?.coach_status === 'verified' ? 'Your profile is visible to players on the platform' : 'Visible after verification'}
+              </p>
             </div>
-            <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">Public</span>
+            <span className={`text-xs px-2 py-1 rounded-full border ${user?.coach_status === 'verified' ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'}`}>
+              {user?.coach_status === 'verified' ? 'Public' : 'Hidden'}
+            </span>
           </div>
         </div>
       </motion.div>
@@ -165,22 +209,44 @@ export default function CoachSettingsPage() {
         <h2 className="font-semibold mb-4 flex items-center gap-2">
           <i className="fas fa-bell text-yellow-400"></i>Notification Preferences
         </h2>
-        <div className="space-y-4">
-          {[
-            { key: 'email_submissions', label: 'New video submissions', desc: 'When a player submits a video to you' },
-            { key: 'email_published', label: 'Report published', desc: 'When you publish a player report' },
-            { key: 'email_messages', label: 'New messages', desc: 'When a player sends you a message' },
-            { key: 'push_all', label: 'Push notifications', desc: 'All in-app notifications' },
-          ].map(({ key, label, desc }) => (
-            <div key={key} className={`flex items-center justify-between p-4 rounded-xl border ${cardBg}`}>
-              <div>
-                <p className="font-medium text-sm">{label}</p>
-                <p className={`text-xs mt-0.5 ${sub}`}>{desc}</p>
-              </div>
-              <Toggle checked={notifs[key as keyof typeof notifs]} onChange={() => setNotifs(n => ({ ...n, [key]: !n[key as keyof typeof notifs] }))} />
+        {notifsLoading ? (
+          <p className={`text-sm ${sub}`}>Loading...</p>
+        ) : (
+          <>
+            <div className="space-y-4 mb-4">
+              {[
+                { key: 'email_submissions', label: 'New video submissions', desc: 'When a player submits a video to you' },
+                { key: 'email_published', label: 'Report published', desc: 'When you publish a player report' },
+                { key: 'email_messages', label: 'New messages', desc: 'When a player sends you a message' },
+                { key: 'push_all', label: 'Push notifications', desc: 'All in-app notifications' },
+              ].map(({ key, label, desc }) => (
+                <div key={key} className={`flex items-center justify-between p-4 rounded-xl border ${cardBg}`}>
+                  <div>
+                    <p className="font-medium text-sm">{label}</p>
+                    <p className={`text-xs mt-0.5 ${sub}`}>{desc}</p>
+                  </div>
+                  <Toggle
+                    checked={notifs[key as keyof typeof notifs]}
+                    onChange={() => setNotifs(n => ({ ...n, [key]: !n[key as keyof typeof notifs] }))}
+                  />
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
+            <AnimatePresence>
+              {notifsMsg && (
+                <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                  className={`mb-3 p-3 rounded-xl text-sm border ${notifsMsg.type === 'success' ? 'bg-green-500/10 border-green-500/30 text-green-400' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                  <i className={`fas ${notifsMsg.type === 'success' ? 'fa-check-circle' : 'fa-exclamation-circle'} mr-2`}></i>
+                  {notifsMsg.text}
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <button onClick={handleSaveNotifs} disabled={savingNotifs}
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 text-white font-semibold text-sm disabled:opacity-50 flex items-center gap-2 hover:opacity-90 transition-opacity">
+              {savingNotifs ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><i className="fas fa-save" />Save Preferences</>}
+            </button>
+          </>
+        )}
       </motion.div>
 
       {/* Danger Zone */}
