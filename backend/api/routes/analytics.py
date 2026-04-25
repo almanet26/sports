@@ -14,6 +14,144 @@ from utils.auth import get_current_user
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 
+@router.get("/coach/dashboard")
+def get_coach_dashboard(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Single endpoint returning all coach dashboard data."""
+    if current_user.role != "COACH":
+        raise HTTPException(status_code=403, detail="Only coaches can access this")
+
+    from database.models.submission import VideoSubmission, SubmissionStatus
+    from database.models.coach_session import CoachTrainingSession
+    from database.models.coach_training_plan import CoachTrainingPlan
+    from database.models.coach_review import CoachReview
+    from collections import defaultdict
+
+    # ── Stats ──────────────────────────────────────────────────────────────
+    total_sessions = db.query(func.count(CoachTrainingSession.id)).filter(
+        CoachTrainingSession.coach_id == current_user.id
+    ).scalar() or 0
+
+    active_plans = db.query(func.count(CoachTrainingPlan.id)).filter(
+        CoachTrainingPlan.coach_id == current_user.id
+    ).scalar() or 0
+
+    all_subs = db.query(VideoSubmission).filter(
+        VideoSubmission.coach_id == current_user.id
+    ).all()
+    published = [s for s in all_subs if s.status == SubmissionStatus.PUBLISHED]
+    avg_improvement = round((len(published) / len(all_subs) * 100) if all_subs else 0, 1)
+
+    # ── Athlete progress (weekly submission counts last 6 weeks) ───────────
+    from datetime import date, timedelta
+    today = date.today()
+    weekly = []
+    for w in range(5, -1, -1):
+        start = today - timedelta(weeks=w + 1)
+        end = today - timedelta(weeks=w)
+        count = sum(1 for s in all_subs if s.created_at and start <= s.created_at.date() < end)
+        pub = sum(1 for s in published if s.created_at and start <= s.created_at.date() < end)
+        weekly.append({
+            "week": f"W{6 - w}",
+            "performance": min(60 + count * 5, 100),
+            "technique": min(65 + pub * 8, 100),
+            "fitness": min(55 + count * 4, 100),
+        })
+
+    # ── Training focus (submissions by type) ──────────────────────────────
+    batting = sum(1 for s in all_subs if s.analysis_type == "BATTING")
+    bowling = sum(1 for s in all_subs if s.analysis_type == "BOWLING")
+    sports_analysis = [
+        {"sport": "Batting", "sessions": batting, "improvement": min(20 + batting * 2, 40)},
+        {"sport": "Bowling", "sessions": bowling, "improvement": min(15 + bowling * 2, 40)},
+        {"sport": "Fielding", "sessions": 0, "improvement": 0},
+        {"sport": "Fitness", "sessions": 0, "improvement": 0},
+    ]
+
+    # ── Upcoming sessions ─────────────────────────────────────────────────
+    upcoming = db.query(CoachTrainingSession).filter(
+        CoachTrainingSession.coach_id == current_user.id
+    ).order_by(CoachTrainingSession.session_date.asc(), CoachTrainingSession.session_time.asc()).limit(4).all()
+
+    training_sessions = [
+        {
+            "id": s.id,
+            "title": s.topic,
+            "athlete": "All Players",
+            "date": s.session_date,
+            "time": s.session_time,
+            "status": "Scheduled",
+            "type": s.session_type,
+        }
+        for s in upcoming
+    ]
+
+    # ── Top performers (athletes by published reports) ────────────────────
+    player_stats: dict = defaultdict(lambda: {"published": 0, "total": 0, "name": ""})
+    for s in all_subs:
+        pid = s.player_id
+        player_stats[pid]["total"] += 1
+        if s.status == SubmissionStatus.PUBLISHED:
+            player_stats[pid]["published"] += 1
+        if s.player:
+            player_stats[pid]["name"] = s.player.name
+
+    badges = ["🥇", "🥈", "🥉", "⭐"]
+    leaderboard = sorted(
+        [{"id": pid, "name": v["name"], "score": v["published"], "total": v["total"]}
+         for pid, v in player_stats.items() if v["name"]],
+        key=lambda x: -x["score"]
+    )[:4]
+    for i, p in enumerate(leaderboard):
+        p["badge"] = badges[i] if i < len(badges) else "⭐"
+        p["improvement"] = f"+{p['score']} reports"
+
+    # ── Skills radar (batting vs bowling ratio) ───────────────────────────
+    total = batting + bowling or 1
+    bat_pct = round(batting / total * 100)
+    bowl_pct = round(bowling / total * 100)
+    skills_radar = [
+        {"skill": "Batting", "A": bat_pct, "B": bowl_pct, "fullMark": 100},
+        {"skill": "Bowling", "A": bowl_pct, "B": bat_pct, "fullMark": 100},
+        {"skill": "Reports", "A": min(len(published) * 10, 100), "B": min(len(all_subs) * 5, 100), "fullMark": 100},
+        {"skill": "Players", "A": min(len(player_stats) * 15, 100), "B": min(len(player_stats) * 10, 100), "fullMark": 100},
+        {"skill": "Sessions", "A": min(total_sessions * 8, 100), "B": min(active_plans * 12, 100), "fullMark": 100},
+        {"skill": "Plans", "A": min(active_plans * 12, 100), "B": min(total_sessions * 8, 100), "fullMark": 100},
+    ]
+
+    # ── Reviews ───────────────────────────────────────────────────────────
+    reviews = db.query(CoachReview).filter(CoachReview.coach_id == current_user.id).all()
+    recent_reviews = []
+    for r in sorted(reviews, key=lambda x: x.created_at or datetime.min, reverse=True)[:3]:
+        player = db.query(User).filter(User.id == r.player_id).first()
+        recent_reviews.append({
+            "id": r.id,
+            "player_name": player.name if player else "Unknown",
+            "rating": r.rating,
+            "comment": r.comment,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        })
+    avg_rating = round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0
+
+    return {
+        "stats": {
+            "total_sessions": total_sessions,
+            "active_plans": active_plans,
+            "avg_improvement": avg_improvement,
+            "total_athletes": len(player_stats),
+        },
+        "athlete_progress": weekly,
+        "sports_analysis": sports_analysis,
+        "skills_radar": skills_radar,
+        "training_sessions": training_sessions,
+        "leaderboard": leaderboard,
+        "recent_reviews": recent_reviews,
+        "review_stats": {"average_rating": avg_rating, "total_reviews": len(reviews)},
+    }
+
+
 @router.get("/coach/stats")
 def get_coach_stats(
     current_user: User = Depends(get_current_user),
