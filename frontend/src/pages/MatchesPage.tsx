@@ -15,15 +15,22 @@ import {
   Target,
   Trophy,
   X,
+  Trash2,
+  Edit,
+  AlertCircle,
+  Clock,
+  MoreVertical,
+  CheckCircle,
+  CalendarClock,
 } from "lucide-react";
-import api from "../lib/api";
+import { matchesAPI, Match, CreateMatchData, UpdateMatchData } from "../lib/matchesApi";
 
 type MatchType = "Practice" | "Tournament" | "Friendly";
 type MatchStatus = "Upcoming" | "Today" | "Completed" | "Cancelled" | "Rescheduled";
 type ReminderOption = "1 Day Before" | "2 Hours Before" | "30 Minutes Before";
 type ViewMode = "list" | "calendar";
 type FilterId = "all" | "thisWeek" | "thisMonth" | "tournament" | "practice" | "home" | "away";
-type MatchLocationType = "Home" | "Away";
+type MatchLocationType = "Home" | "Away" | "Neutral";
 
 interface MatchFormState {
   opponent: string;
@@ -33,41 +40,10 @@ interface MatchFormState {
   matchType: MatchType;
   role: string;
   notes: string;
-}
-
-interface MatchStats {
-  runs: number;
-  wickets: number;
-  catches: number;
-  result: "Won" | "Lost";
-}
-
-interface MatchItem {
-  id: string;
-  opponent: string;
-  venue: string;
-  date: string;
-  time: string;
-  matchType: MatchType;
-  role: string;
-  notes: string;
-  status?: MatchStatus;
   locationType: MatchLocationType;
-  reminder?: ReminderOption;
-  stats?: MatchStats;
-  isUserCreated?: boolean;
 }
 
-interface ServerMatch {
-  id: number;
-  team_a?: string;
-  team_b?: string;
-  match_date?: string;
-  venue?: string;
-}
 
-const STORAGE_KEY = "pitchvision-upcoming-matches";
-const REMINDER_KEY = "pitchvision-match-reminders";
 
 const DEFAULT_FORM: MatchFormState = {
   opponent: "",
@@ -77,6 +53,7 @@ const DEFAULT_FORM: MatchFormState = {
   matchType: "Practice",
   role: "",
   notes: "",
+  locationType: "Home",
 };
 
 const FILTERS: Array<{ id: FilterId; label: string }> = [
@@ -115,6 +92,32 @@ function formatTimeInput(date: Date) {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+function convertTo12Hour(time24: string): { hour: string; minute: string; period: "AM" | "PM" } {
+  if (!time24) return { hour: "12", minute: "00", period: "PM" };
+  
+  const [hours, minutes] = time24.split(":");
+  let hour = parseInt(hours, 10);
+  const period: "AM" | "PM" = hour >= 12 ? "PM" : "AM";
+  
+  if (hour === 0) hour = 12;
+  else if (hour > 12) hour -= 12;
+  
+  return {
+    hour: hour.toString(),
+    minute: minutes || "00",
+    period,
+  };
+}
+
+function convertTo24Hour(hour: string, minute: string, period: "AM" | "PM"): string {
+  let hour24 = parseInt(hour, 10);
+  
+  if (period === "AM" && hour24 === 12) hour24 = 0;
+  else if (period === "PM" && hour24 !== 12) hour24 += 12;
+  
+  return `${pad(hour24)}:${minute}`;
+}
+
 function addDays(base: Date, days: number, hour: number, minute = 0) {
   const next = new Date(base);
   next.setDate(base.getDate() + days);
@@ -126,14 +129,6 @@ function startOfDay(date: Date) {
   const next = new Date(date);
   next.setHours(0, 0, 0, 0);
   return next;
-}
-
-function isSameDay(left: Date, right: Date) {
-  return (
-    left.getFullYear() === right.getFullYear() &&
-    left.getMonth() === right.getMonth() &&
-    left.getDate() === right.getDate()
-  );
 }
 
 function combineDateTime(date: string, time: string) {
@@ -155,12 +150,20 @@ function formatReadableTime(date: Date) {
   }).format(date);
 }
 
-function getDerivedStatus(match: MatchItem, now: Date): MatchStatus {
-  if (match.status === "Cancelled" || match.status === "Rescheduled") {
-    return match.status;
+function isSameDay(left: Date, right: Date) {
+  return (
+    left.getFullYear() === right.getFullYear() &&
+    left.getMonth() === right.getMonth() &&
+    left.getDate() === right.getDate()
+  );
+}
+
+function getDerivedStatus(match: Match, now: Date): MatchStatus {
+  if (match.match_status === "Cancelled" || match.match_status === "Rescheduled") {
+    return match.match_status;
   }
 
-  const matchDate = combineDateTime(match.date, match.time);
+  const matchDate = combineDateTime(match.match_date, match.match_time);
   if (Number.isNaN(matchDate.getTime())) {
     return "Upcoming";
   }
@@ -176,13 +179,13 @@ function getDerivedStatus(match: MatchItem, now: Date): MatchStatus {
   return "Upcoming";
 }
 
-function getCountdownLabel(match: MatchItem, now: Date) {
+function getCountdownLabel(match: Match, now: Date) {
   const status = getDerivedStatus(match, now);
   if (status === "Completed") return "Match completed";
   if (status === "Cancelled") return "Cancelled by organiser";
   if (status === "Rescheduled") return "Rescheduled fixture";
 
-  const matchDate = combineDateTime(match.date, match.time);
+  const matchDate = combineDateTime(match.match_date, match.match_time);
   const dayDiff = Math.ceil(
     (startOfDay(matchDate).getTime() - startOfDay(now).getTime()) / 86400000
   );
@@ -193,150 +196,46 @@ function getCountdownLabel(match: MatchItem, now: Date) {
   return `Starts in ${dayDiff} Days`;
 }
 
-function getLocationType(venue: string): MatchLocationType {
-  const normalized = venue.toLowerCase();
-  return normalized.includes("home") || normalized.includes("pitchvision") || normalized.includes("academy")
-    ? "Home"
-    : "Away";
-}
 
-function toLocalMatch(serverMatch: ServerMatch): MatchItem {
-  const parsedDate = serverMatch.match_date ? new Date(serverMatch.match_date) : new Date();
-  const fallbackOpponent = serverMatch.team_b || serverMatch.team_a || "Opponent XI";
-
-  return {
-    id: `server-${serverMatch.id}`,
-    opponent: fallbackOpponent,
-    venue: serverMatch.venue || "Venue to be confirmed",
-    date: formatDateInput(parsedDate),
-    time: formatTimeInput(parsedDate),
-    matchType: "Tournament",
-    role: "Playing XI",
-    notes: "Imported from scheduled fixtures.",
-    locationType: getLocationType(serverMatch.venue || ""),
-  };
-}
-
-function buildDemoMatches(now: Date): MatchItem[] {
-  const squadSession = addDays(now, 2, 18, 30);
-  const cityLeague = addDays(now, 0, 19, 0);
-  const nets = addDays(now, -1, 16, 0);
-  const warmup = addDays(now, 4, 17, 30);
-  const academyCup = addDays(now, 7, 9, 30);
-
-  return [
-    {
-      id: "demo-upcoming",
-      opponent: "Rising Strikers",
-      venue: "PitchVision High Performance Centre",
-      date: formatDateInput(squadSession),
-      time: formatTimeInput(squadSession),
-      matchType: "Practice",
-      role: "Opening Batter",
-      notes: "Powerplay simulation and short-ball prep.",
-      locationType: "Home",
-      reminder: "2 Hours Before",
-    },
-    {
-      id: "demo-today",
-      opponent: "City Challengers",
-      venue: "Metro Oval",
-      date: formatDateInput(cityLeague),
-      time: formatTimeInput(cityLeague),
-      matchType: "Tournament",
-      role: "Vice Captain",
-      notes: "Arrive 75 minutes early for strategy review.",
-      locationType: "Away",
-      reminder: "30 Minutes Before",
-    },
-    {
-      id: "demo-completed",
-      opponent: "Northern Knights",
-      venue: "Home Turf Arena",
-      date: formatDateInput(nets),
-      time: formatTimeInput(nets),
-      matchType: "Friendly",
-      role: "Middle Order",
-      notes: "Post-match debrief with the analyst team.",
-      locationType: "Home",
-      stats: {
-        runs: 42,
-        wickets: 1,
-        catches: 2,
-        result: "Won",
-      },
-    },
-    {
-      id: "demo-rescheduled",
-      opponent: "Thunder Bolts",
-      venue: "West End Cricket Ground",
-      date: formatDateInput(warmup),
-      time: formatTimeInput(warmup),
-      matchType: "Friendly",
-      role: "Finisher",
-      notes: "Shifted due to weather alert from last week.",
-      locationType: "Away",
-      status: "Rescheduled",
-    },
-    {
-      id: "demo-cancelled",
-      opponent: "Academy Cup Qualifier",
-      venue: "Riverfront Stadium",
-      date: formatDateInput(academyCup),
-      time: formatTimeInput(academyCup),
-      matchType: "Tournament",
-      role: "Squad Rotation",
-      notes: "Cancelled after venue maintenance notice.",
-      locationType: "Away",
-      status: "Cancelled",
-    },
-  ];
-}
 
 export default function MatchesPage() {
-  const [serverMatches, setServerMatches] = useState<MatchItem[]>([]);
-  const [customMatches, setCustomMatches] = useState<MatchItem[]>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        return JSON.parse(stored) as MatchItem[];
-      } catch (error) {
-        console.error("Failed to parse saved matches", error);
-      }
-    }
-    return [];
-  });
-  const [reminders, setReminders] = useState<Record<string, ReminderOption>>(() => {
-    const stored = localStorage.getItem(REMINDER_KEY);
-    if (stored) {
-      try {
-        return JSON.parse(stored) as Record<string, ReminderOption>;
-      } catch (error) {
-        console.error("Failed to parse match reminders", error);
-      }
-    }
-    return {};
-  });
+  const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingMatch, setEditingMatch] = useState<Match | null>(null);
   const [form, setForm] = useState<MatchFormState>(DEFAULT_FORM);
   const [activeFilter, setActiveFilter] = useState<FilterId>("all");
   const [viewMode, setViewMode] = useState<ViewMode>("list");
   const [now, setNow] = useState(() => new Date());
-  const [expandedMatchId, setExpandedMatchId] = useState<string | null>("demo-completed");
-  const [openReminderId, setOpenReminderId] = useState<string | null>(null);
+  const [expandedMatchId, setExpandedMatchId] = useState<number | null>(null);
+  const [openReminderId, setOpenReminderId] = useState<number | null>(null);
+  const [openActionMenuId, setOpenActionMenuId] = useState<number | null>(null);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<number | null>(null);
+  const [timePickerOpen, setTimePickerOpen] = useState(false);
+  const [tempTime, setTempTime] = useState({ hour: "12", minute: "00", period: "PM" as "AM" | "PM" });
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const current = new Date();
     return new Date(current.getFullYear(), current.getMonth(), 1);
   });
 
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(customMatches));
-  }, [customMatches]);
+  const fetchMatches = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await matchesAPI.getAllMatches();
+      setMatches(data);
+    } catch (err: any) {
+      console.error("Failed to fetch matches:", err);
+      setError(err.response?.data?.detail || "Failed to load matches");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    localStorage.setItem(REMINDER_KEY, JSON.stringify(reminders));
-  }, [reminders]);
+    fetchMatches();
+  }, []);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -346,57 +245,13 @@ export default function MatchesPage() {
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    let ignore = false;
-
-    api
-      .get<ServerMatch[]>("/matches/upcoming")
-      .then((response) => {
-        if (!ignore) {
-          setServerMatches((response.data || []).map(toLocalMatch));
-        }
-      })
-      .catch((error) => {
-        console.error("Failed to fetch upcoming matches", error);
-      })
-      .finally(() => {
-        if (!ignore) {
-          setLoading(false);
-        }
-      });
-
-    return () => {
-      ignore = true;
-    };
-  }, []);
-
-  const demoMatches = useMemo(() => buildDemoMatches(now), [now]);
-
   const allMatches = useMemo(() => {
-    const mergedCustomMatches = customMatches.map((match) => ({
-      ...match,
-      reminder: reminders[match.id] || match.reminder,
-    }));
-
-    const mergedServerMatches = serverMatches.map((match) => ({
-      ...match,
-      reminder: reminders[match.id] || match.reminder,
-    }));
-
-    const sourceMatches =
-      mergedServerMatches.length > 0 || mergedCustomMatches.length > 0
-        ? [...mergedCustomMatches, ...mergedServerMatches]
-        : demoMatches.map((match) => ({
-            ...match,
-            reminder: reminders[match.id] || match.reminder,
-          }));
-
-    return sourceMatches.sort(
+    return matches.sort(
       (left, right) =>
-        combineDateTime(left.date, left.time).getTime() -
-        combineDateTime(right.date, right.time).getTime()
+        combineDateTime(left.match_date, left.match_time).getTime() -
+        combineDateTime(right.match_date, right.match_time).getTime()
     );
-  }, [customMatches, demoMatches, reminders, serverMatches]);
+  }, [matches]);
 
   const filteredMatches = useMemo(() => {
     const currentWeekStart = startOfDay(now);
@@ -404,7 +259,7 @@ export default function MatchesPage() {
     currentWeekEnd.setDate(currentWeekStart.getDate() + 7);
 
     return allMatches.filter((match) => {
-      const matchDate = combineDateTime(match.date, match.time);
+      const matchDate = combineDateTime(match.match_date, match.match_time);
 
       switch (activeFilter) {
         case "thisWeek":
@@ -415,13 +270,13 @@ export default function MatchesPage() {
             matchDate.getFullYear() === now.getFullYear()
           );
         case "tournament":
-          return match.matchType === "Tournament";
+          return match.match_type === "Tournament";
         case "practice":
-          return match.matchType === "Practice";
+          return match.match_type === "Practice";
         case "home":
-          return match.locationType === "Home";
+          return match.location_type === "Home";
         case "away":
-          return match.locationType === "Away";
+          return match.location_type === "Away";
         default:
           return true;
       }
@@ -462,8 +317,8 @@ export default function MatchesPage() {
   }, [calendarMonth]);
 
   const matchesByDay = useMemo(() => {
-    return filteredMatches.reduce<Record<string, MatchItem[]>>((accumulator, match) => {
-      const key = match.date;
+    return filteredMatches.reduce<Record<string, Match[]>>((accumulator, match) => {
+      const key = match.match_date;
       accumulator[key] = accumulator[key] || [];
       accumulator[key].push(match);
       return accumulator;
@@ -483,33 +338,113 @@ export default function MatchesPage() {
     setForm((current) => ({ ...current, [key]: value }));
   };
 
-  const handleScheduleMatch = () => {
+  const handleScheduleMatch = async () => {
     if (!form.opponent || !form.date || !form.time || !form.venue || !form.role) {
       return;
     }
 
-    const createdMatch: MatchItem = {
-      id: `custom-${Date.now()}`,
-      opponent: form.opponent,
-      date: form.date,
-      time: form.time,
-      venue: form.venue,
-      matchType: form.matchType,
-      role: form.role,
-      notes: form.notes,
-      locationType: getLocationType(form.venue),
-      isUserCreated: true,
-    };
+    try {
+      const matchData: CreateMatchData = {
+        opponent: form.opponent,
+        match_type: form.matchType,
+        match_date: form.date,
+        match_time: form.time,
+        venue: form.venue,
+        location_type: form.locationType,
+        player_role: form.role,
+        notes: form.notes,
+      };
 
-    setCustomMatches((current) => [createdMatch, ...current]);
-    setCalendarMonth(new Date(`${createdMatch.date}T12:00:00`));
-    setForm(DEFAULT_FORM);
-    setIsModalOpen(false);
+      if (editingMatch) {
+        await matchesAPI.updateMatch(editingMatch.id, matchData);
+      } else {
+        await matchesAPI.createMatch(matchData);
+      }
+
+      await fetchMatches();
+      setCalendarMonth(new Date(`${form.date}T12:00:00`));
+      setForm(DEFAULT_FORM);
+      setEditingMatch(null);
+      setIsModalOpen(false);
+    } catch (err: any) {
+      console.error("Failed to save match:", err);
+      alert(err.response?.data?.detail || "Failed to save match");
+    }
   };
 
-  const setReminder = (matchId: string, option: ReminderOption) => {
-    setReminders((current) => ({ ...current, [matchId]: option }));
-    setOpenReminderId(null);
+  const handleUpdateReminder = async (matchId: number, reminder: ReminderOption) => {
+    try {
+      await matchesAPI.updateMatch(matchId, { reminder });
+      await fetchMatches();
+      setOpenReminderId(null);
+    } catch (err: any) {
+      console.error("Failed to update reminder:", err);
+    }
+  };
+
+  const handleTimeChange = (field: "hour" | "minute" | "period", value: string) => {
+    const newTime = { ...tempTime, [field]: value };
+    setTempTime(newTime);
+    const time24 = convertTo24Hour(newTime.hour, newTime.minute, newTime.period);
+    handleFormChange("time", time24);
+  };
+
+  const handleModalOpen = () => {
+    setIsModalOpen(true);
+    const time12 = convertTo12Hour(form.time || "12:00");
+    setTempTime(time12);
+  };
+
+  const handleEditMatch = (match: Match) => {
+    setEditingMatch(match);
+    const time12 = convertTo12Hour(match.match_time);
+    setTempTime(time12);
+    setForm({
+      opponent: match.opponent,
+      date: match.match_date,
+      time: match.match_time,
+      venue: match.venue,
+      matchType: match.match_type,
+      role: match.player_role || "",
+      notes: match.notes || "",
+      locationType: match.location_type,
+    });
+    setIsModalOpen(true);
+    setOpenActionMenuId(null);
+  };
+
+  const handleDeleteMatch = async (matchId: number) => {
+    try {
+      await matchesAPI.deleteMatch(matchId);
+      await fetchMatches();
+      setDeleteConfirmId(null);
+      setOpenActionMenuId(null);
+    } catch (err: any) {
+      console.error("Failed to delete match:", err);
+      alert(err.response?.data?.detail || "Failed to delete match");
+    }
+  };
+
+  const handleMarkCompleted = async (matchId: number) => {
+    try {
+      await matchesAPI.updateMatch(matchId, { match_status: "Completed" });
+      await fetchMatches();
+      setOpenActionMenuId(null);
+    } catch (err: any) {
+      console.error("Failed to mark match as completed:", err);
+      alert(err.response?.data?.detail || "Failed to update match");
+    }
+  };
+
+  const handleRescheduleMatch = async (matchId: number) => {
+    try {
+      await matchesAPI.updateMatch(matchId, { match_status: "Rescheduled" });
+      await fetchMatches();
+      setOpenActionMenuId(null);
+    } catch (err: any) {
+      console.error("Failed to reschedule match:", err);
+      alert(err.response?.data?.detail || "Failed to update match");
+    }
   };
 
   return (
@@ -541,7 +476,7 @@ export default function MatchesPage() {
             <motion.button
               whileHover={{ scale: 1.02, y: -1 }}
               whileTap={{ scale: 0.98 }}
-              onClick={() => setIsModalOpen(true)}
+              onClick={handleModalOpen}
               className="inline-flex items-center gap-2 rounded-2xl px-5 py-3 text-sm font-semibold bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 shadow-[0_0_35px_rgba(99,102,241,0.35)] hover:shadow-[0_0_45px_rgba(99,102,241,0.45)]"
             >
               <Plus className="w-4 h-4" />
@@ -552,8 +487,21 @@ export default function MatchesPage() {
       </motion.div>
 
       {loading ? (
-        <div className="flex justify-center py-20">
+        <div className="flex flex-col items-center justify-center py-20">
           <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+          <p className="mt-4 text-white/60">Loading matches...</p>
+        </div>
+      ) : error ? (
+        <div className="flex flex-col items-center justify-center py-20">
+          <AlertCircle className="w-16 h-16 text-rose-400 mb-4" />
+          <p className="text-xl font-semibold text-white mb-2">Failed to load matches</p>
+          <p className="text-white/60 mb-4">{error}</p>
+          <button
+            onClick={fetchMatches}
+            className="rounded-2xl bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-semibold text-white"
+          >
+            Try Again
+          </button>
         </div>
       ) : (
         <motion.div
@@ -621,8 +569,8 @@ export default function MatchesPage() {
                 <div className="grid gap-5 lg:grid-cols-2 2xl:grid-cols-3">
                   {filteredMatches.map((match, index) => {
                     const status = getDerivedStatus(match, now);
-                    const matchDate = combineDateTime(match.date, match.time);
-                    const reminder = reminders[match.id] || match.reminder;
+                    const matchDate = combineDateTime(match.match_date, match.match_time);
+                    const reminder = match.reminder;
                     const isExpanded = expandedMatchId === match.id;
 
                     return (
@@ -635,65 +583,137 @@ export default function MatchesPage() {
                       >
                         <div className="absolute inset-x-0 top-0 h-24 bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.2),transparent_60%)] opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
                         <div className="relative flex items-start justify-between gap-4">
-                          <div>
+                          <div className="flex-1">
                             <div className="flex flex-wrap items-center gap-2">
                               <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${STATUS_STYLES[status]}`}>
                                 {status}
                               </span>
                               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                                {match.matchType}
+                                {match.match_type}
                               </span>
                               <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-                                {match.locationType}
+                                {match.location_type}
                               </span>
                             </div>
                             <h2 className="mt-4 text-xl font-semibold text-white">{match.opponent}</h2>
-                            <p className="mt-1 text-sm text-blue-100/70">{match.role}</p>
+                            <p className="mt-1 text-sm text-blue-100/70">{match.player_role}</p>
                           </div>
 
-                          <div className="relative">
-                            <button
-                              onClick={() =>
-                                setOpenReminderId((current) => (current === match.id ? null : match.id))
-                              }
-                              className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-all ${
-                                reminder
-                                  ? "border-blue-400/30 bg-blue-500/15 text-blue-200 shadow-[0_0_22px_rgba(59,130,246,0.2)]"
-                                  : "border-white/10 bg-white/5 text-white/70 hover:text-white"
-                              }`}
-                            >
-                              <Bell className="w-4.5 h-4.5" />
-                            </button>
+                          <div className="flex items-center gap-2">
+                            {/* Reminder Button */}
+                            <div className="relative">
+                              <button
+                                onClick={() =>
+                                  setOpenReminderId((current) => (current === match.id ? null : match.id))
+                                }
+                                className={`flex h-11 w-11 items-center justify-center rounded-2xl border transition-all ${
+                                  reminder
+                                    ? "border-blue-400/30 bg-blue-500/15 text-blue-200 shadow-[0_0_22px_rgba(59,130,246,0.2)]"
+                                    : "border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10"
+                                }`}
+                              >
+                                <Bell className="w-4.5 h-4.5" />
+                              </button>
 
-                            <AnimatePresence>
-                              {openReminderId === match.id && (
-                                <motion.div
-                                  initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                                  exit={{ opacity: 0, y: 8, scale: 0.98 }}
-                                  transition={{ duration: 0.18 }}
-                                  className="absolute right-0 top-14 z-20 min-w-[190px] rounded-2xl border border-white/10 bg-[#0e1628]/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
-                                >
-                                  <p className="px-3 py-2 text-xs uppercase tracking-[0.2em] text-white/45">
-                                    Reminder
-                                  </p>
-                                  {REMINDER_OPTIONS.map((option) => (
+                              <AnimatePresence>
+                                {openReminderId === match.id && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                                    transition={{ duration: 0.18 }}
+                                    className="absolute right-0 top-14 z-20 min-w-[190px] rounded-2xl border border-white/10 bg-[#0e1628]/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+                                  >
+                                    <p className="px-3 py-2 text-xs uppercase tracking-[0.2em] text-white/45">
+                                      Reminder
+                                    </p>
+                                    {REMINDER_OPTIONS.map((option) => (
+                                      <button
+                                        key={option}
+                                        onClick={() => handleUpdateReminder(match.id, option)}
+                                        className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition-colors ${
+                                          reminder === option
+                                            ? "bg-blue-500/15 text-blue-100"
+                                            : "text-white/70 hover:bg-white/5 hover:text-white"
+                                        }`}
+                                      >
+                                        {option}
+                                        {reminder === option ? <ShieldCheck className="w-4 h-4" /> : null}
+                                      </button>
+                                    ))}
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+
+                            {/* Action Menu Button */}
+                            <div className="relative">
+                              <button
+                                onClick={() =>
+                                  setOpenActionMenuId((current) => (current === match.id ? null : match.id))
+                                }
+                                className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                              >
+                                <MoreVertical className="w-4.5 h-4.5" />
+                              </button>
+
+                              <AnimatePresence>
+                                {openActionMenuId === match.id && (
+                                  <motion.div
+                                    initial={{ opacity: 0, y: 8, scale: 0.98 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 8, scale: 0.98 }}
+                                    transition={{ duration: 0.18 }}
+                                    className="absolute right-0 top-14 z-20 min-w-[180px] rounded-2xl border border-white/10 bg-[#0e1628]/95 p-2 shadow-[0_20px_50px_rgba(0,0,0,0.45)] backdrop-blur-2xl"
+                                  >
+                                    <p className="px-3 py-2 text-xs uppercase tracking-[0.2em] text-white/45">
+                                      Actions
+                                    </p>
+                                    
                                     <button
-                                      key={option}
-                                      onClick={() => setReminder(match.id, option)}
-                                      className={`flex w-full items-center justify-between rounded-xl px-3 py-2 text-sm transition-colors ${
-                                        reminder === option
-                                          ? "bg-blue-500/15 text-blue-100"
-                                          : "text-white/70 hover:bg-white/5 hover:text-white"
-                                      }`}
+                                      onClick={() => handleEditMatch(match)}
+                                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
                                     >
-                                      {option}
-                                      {reminder === option ? <ShieldCheck className="w-4 h-4" /> : null}
+                                      <Edit className="w-4 h-4 text-blue-300" />
+                                      Edit Match
                                     </button>
-                                  ))}
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
+
+                                    {status !== "Completed" && (
+                                      <button
+                                        onClick={() => handleMarkCompleted(match.id)}
+                                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
+                                      >
+                                        <CheckCircle className="w-4 h-4 text-emerald-300" />
+                                        Mark Completed
+                                      </button>
+                                    )}
+
+                                    {status !== "Rescheduled" && status !== "Completed" && (
+                                      <button
+                                        onClick={() => handleRescheduleMatch(match.id)}
+                                        className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-white/70 hover:bg-white/5 hover:text-white transition-colors"
+                                      >
+                                        <CalendarClock className="w-4 h-4 text-orange-300" />
+                                        Reschedule
+                                      </button>
+                                    )}
+
+                                    <div className="my-1 h-px bg-white/10" />
+
+                                    <button
+                                      onClick={() => {
+                                        setDeleteConfirmId(match.id);
+                                        setOpenActionMenuId(null);
+                                      }}
+                                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-rose-300 hover:bg-rose-500/10 hover:text-rose-200 transition-colors"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                      Delete Match
+                                    </button>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
                           </div>
                         </div>
 
@@ -730,7 +750,7 @@ export default function MatchesPage() {
                           ) : null}
                         </div>
 
-                        {status === "Completed" && match.stats ? (
+                        {status === "Completed" && match.statistics ? (
                           <div className="relative mt-5">
                             <button
                               onClick={() =>
@@ -759,28 +779,28 @@ export default function MatchesPage() {
                                         <Target className="w-3.5 h-3.5 text-blue-300" />
                                         Runs
                                       </div>
-                                      <p className="mt-3 text-2xl font-semibold">{match.stats.runs}</p>
+                                      <p className="mt-3 text-2xl font-semibold">{match.statistics.runs}</p>
                                     </div>
                                     <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-violet-500/10 to-transparent p-4">
                                       <div className="flex items-center gap-2 text-white/55 text-xs uppercase tracking-[0.2em]">
                                         <Sparkles className="w-3.5 h-3.5 text-violet-300" />
                                         Wickets
                                       </div>
-                                      <p className="mt-3 text-2xl font-semibold">{match.stats.wickets}</p>
+                                      <p className="mt-3 text-2xl font-semibold">{match.statistics.wickets}</p>
                                     </div>
                                     <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-500/10 to-transparent p-4">
                                       <div className="flex items-center gap-2 text-white/55 text-xs uppercase tracking-[0.2em]">
                                         <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
                                         Catches
                                       </div>
-                                      <p className="mt-3 text-2xl font-semibold">{match.stats.catches}</p>
+                                      <p className="mt-3 text-2xl font-semibold">{match.statistics.catches}</p>
                                     </div>
                                     <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-500/10 to-transparent p-4">
                                       <div className="flex items-center gap-2 text-white/55 text-xs uppercase tracking-[0.2em]">
                                         <Trophy className="w-3.5 h-3.5 text-emerald-300" />
                                         Result
                                       </div>
-                                      <p className="mt-3 text-2xl font-semibold">{match.stats.result}</p>
+                                      <p className="mt-3 text-2xl font-semibold">{match.statistics.result}</p>
                                     </div>
                                   </div>
                                 </motion.div>
@@ -879,7 +899,7 @@ export default function MatchesPage() {
                                 className={`block w-full rounded-xl px-2.5 py-1.5 text-left text-[11px] leading-4 ${STATUS_STYLES[status]}`}
                               >
                                 <div className="truncate font-medium">{match.opponent}</div>
-                                <div className="truncate opacity-80">{formatReadableTime(combineDateTime(match.date, match.time))}</div>
+                                <div className="truncate opacity-80">{formatReadableTime(combineDateTime(match.match_date, match.match_time))}</div>
                               </button>
                             );
                           })}
@@ -901,7 +921,11 @@ export default function MatchesPage() {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-md"
-            onClick={() => setIsModalOpen(false)}
+            onClick={() => {
+              setIsModalOpen(false);
+              setEditingMatch(null);
+              setForm(DEFAULT_FORM);
+            }}
           >
             <motion.div
               initial={{ opacity: 0, y: 24, scale: 0.96 }}
@@ -909,123 +933,314 @@ export default function MatchesPage() {
               exit={{ opacity: 0, y: 20, scale: 0.96 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
               onClick={(event) => event.stopPropagation()}
-              className="w-full max-w-2xl overflow-hidden rounded-[32px] border border-white/15 bg-[linear-gradient(180deg,rgba(10,17,34,0.94),rgba(8,12,24,0.92))] shadow-[0_30px_120px_rgba(3,7,18,0.75)]"
+              className="w-full max-w-3xl max-h-[90vh] overflow-y-auto overflow-hidden rounded-[32px] border border-white/15 bg-[linear-gradient(180deg,rgba(10,17,34,0.98),rgba(8,12,24,0.96))] shadow-[0_30px_120px_rgba(3,7,18,0.75)]"
             >
-              <div className="border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.22),transparent_42%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.14),transparent_38%)] p-6">
+              {/* Header */}
+              <div className="sticky top-0 z-10 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(99,102,241,0.22),transparent_42%),radial-gradient(circle_at_top_right,rgba(56,189,248,0.14),transparent_38%)] backdrop-blur-xl p-8">
                 <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <p className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs uppercase tracking-[0.22em] text-white/50">
+                  <div className="flex-1">
+                    <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3.5 py-1.5 text-xs uppercase tracking-[0.22em] text-white/50 mb-4">
                       <Sparkles className="w-3.5 h-3.5 text-violet-300" />
-                      Premium Scheduler
-                    </p>
-                    <h2 className="mt-4 text-2xl font-semibold text-white">Schedule Upcoming Match</h2>
-                    <p className="mt-2 text-sm text-white/60">
+                      {editingMatch ? "Edit Match" : "New Match"}
+                    </div>
+                    <h2 className="text-3xl font-bold text-white mb-2">Schedule Upcoming Match</h2>
+                    <p className="text-sm text-white/60">
                       Add the next fixture with venue, role, notes, and live reminders.
                     </p>
                   </div>
                   <button
-                    onClick={() => setIsModalOpen(false)}
-                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/65 hover:text-white"
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setEditingMatch(null);
+                      setForm(DEFAULT_FORM);
+                    }}
+                    className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white/65 hover:text-white hover:bg-white/10 transition-all"
                   >
-                    <X className="w-4.5 h-4.5" />
+                    <X className="w-5 h-5" />
                   </button>
                 </div>
               </div>
 
-              <div className="grid gap-4 p-6 sm:grid-cols-2">
-                <label className="sm:col-span-2">
-                  <span className="mb-2 block text-sm text-white/70">Opponent Team Name</span>
-                  <input
-                    value={form.opponent}
-                    onChange={(event) => handleFormChange("opponent", event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white placeholder:text-white/30"
-                    placeholder="Enter opponent squad"
-                  />
-                </label>
+              {/* Form Content */}
+              <div className="p-8">
+                <div className="space-y-6">
+                  {/* Opponent Name - Full Width */}
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-2.5">
+                      Opponent Team Name
+                    </label>
+                    <input
+                      value={form.opponent}
+                      onChange={(event) => handleFormChange("opponent", event.target.value)}
+                      className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3.5 text-white placeholder:text-white/30 focus:border-blue-400/50 focus:bg-white/[0.08] focus:outline-none transition-all"
+                      placeholder="Enter opponent squad name"
+                    />
+                  </div>
 
-                <label>
-                  <span className="mb-2 block text-sm text-white/70">Match Date</span>
-                  <input
-                    type="date"
-                    value={form.date}
-                    onChange={(event) => handleFormChange("date", event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white"
-                  />
-                </label>
+                  {/* Date and Time - Side by Side */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-2.5">
+                        Match Date
+                      </label>
+                      <input
+                        type="date"
+                        value={form.date}
+                        onChange={(event) => handleFormChange("date", event.target.value)}
+                        className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3.5 text-white focus:border-blue-400/50 focus:bg-white/[0.08] focus:outline-none transition-all"
+                      />
+                    </div>
 
-                <label>
-                  <span className="mb-2 block text-sm text-white/70">Time</span>
-                  <input
-                    type="time"
-                    value={form.time}
-                    onChange={(event) => handleFormChange("time", event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white"
-                  />
-                </label>
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-2.5">
+                        Match Time
+                      </label>
+                      <div className="relative">
+                        <button
+                          type="button"
+                          onClick={() => setTimePickerOpen(!timePickerOpen)}
+                          className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3.5 text-white focus:border-blue-400/50 focus:bg-white/[0.08] focus:outline-none transition-all flex items-center justify-between"
+                        >
+                          <span className="flex items-center gap-2">
+                            <Clock className="w-4 h-4 text-blue-300" />
+                            {tempTime.hour}:{tempTime.minute} {tempTime.period}
+                          </span>
+                          <ChevronDown className={`w-4 h-4 transition-transform ${timePickerOpen ? "rotate-180" : ""}`} />
+                        </button>
 
-                <label className="sm:col-span-2">
-                  <span className="mb-2 block text-sm text-white/70">Venue / Ground</span>
-                  <input
-                    value={form.venue}
-                    onChange={(event) => handleFormChange("venue", event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white placeholder:text-white/30"
-                    placeholder="PitchVision Arena or away ground"
-                  />
-                </label>
+                        <AnimatePresence>
+                          {timePickerOpen && (
+                            <motion.div
+                              initial={{ opacity: 0, y: -10 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -10 }}
+                              className="absolute z-20 mt-2 w-full rounded-2xl border border-white/10 bg-[#0e1628]/98 backdrop-blur-xl p-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)]"
+                            >
+                              <div className="flex gap-3">
+                                {/* Hour */}
+                                <div className="flex-1">
+                                  <label className="block text-xs text-white/50 mb-2">Hour</label>
+                                  <select
+                                    value={tempTime.hour}
+                                    onChange={(e) => handleTimeChange("hour", e.target.value)}
+                                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-blue-400/50 focus:outline-none"
+                                  >
+                                    {Array.from({ length: 12 }, (_, i) => i + 1).map((h) => (
+                                      <option key={h} value={h}>
+                                        {h}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
 
-                <label>
-                  <span className="mb-2 block text-sm text-white/70">Match Type</span>
-                  <select
-                    value={form.matchType}
-                    onChange={(event) => handleFormChange("matchType", event.target.value as MatchType)}
-                    className="w-full rounded-2xl border border-white/10 bg-[#0f1729] px-4 py-3 text-white"
-                  >
-                    <option>Practice</option>
-                    <option>Tournament</option>
-                    <option>Friendly</option>
-                  </select>
-                </label>
+                                {/* Minute */}
+                                <div className="flex-1">
+                                  <label className="block text-xs text-white/50 mb-2">Minute</label>
+                                  <select
+                                    value={tempTime.minute}
+                                    onChange={(e) => handleTimeChange("minute", e.target.value)}
+                                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white focus:border-blue-400/50 focus:outline-none"
+                                  >
+                                    {Array.from({ length: 60 }, (_, i) => pad(i)).map((m) => (
+                                      <option key={m} value={m}>
+                                        {m}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
 
-                <label>
-                  <span className="mb-2 block text-sm text-white/70">Role</span>
-                  <input
-                    value={form.role}
-                    onChange={(event) => handleFormChange("role", event.target.value)}
-                    className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white placeholder:text-white/30"
-                    placeholder="Opening batter, captain, finisher"
-                  />
-                </label>
+                                {/* AM/PM */}
+                                <div className="flex-1">
+                                  <label className="block text-xs text-white/50 mb-2">Period</label>
+                                  <div className="flex gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTimeChange("period", "AM")}
+                                      className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all ${
+                                        tempTime.period === "AM"
+                                          ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
+                                          : "bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
+                                      }`}
+                                    >
+                                      AM
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleTimeChange("period", "PM")}
+                                      className={`flex-1 rounded-xl px-3 py-2 text-sm font-medium transition-all ${
+                                        tempTime.period === "PM"
+                                          ? "bg-blue-500/20 text-blue-200 border border-blue-400/30"
+                                          : "bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
+                                      }`}
+                                    >
+                                      PM
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
 
-                <label className="sm:col-span-2">
-                  <span className="mb-2 block text-sm text-white/70">Notes</span>
-                  <textarea
-                    value={form.notes}
-                    onChange={(event) => handleFormChange("notes", event.target.value)}
-                    rows={4}
-                    className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.05] px-4 py-3 text-white placeholder:text-white/30"
-                    placeholder="Travel notes, team meeting, warm-up focus, or anything important."
-                  />
-                </label>
+                              <button
+                                type="button"
+                                onClick={() => setTimePickerOpen(false)}
+                                className="mt-3 w-full rounded-xl bg-blue-500/10 border border-blue-400/20 px-4 py-2 text-sm font-medium text-blue-200 hover:bg-blue-500/20 transition-all"
+                              >
+                                Done
+                              </button>
+                            </motion.div>
+                          )}
+                        </AnimatePresence>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Venue - Full Width */}
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-2.5">
+                      Venue / Ground
+                    </label>
+                    <input
+                      value={form.venue}
+                      onChange={(event) => handleFormChange("venue", event.target.value)}
+                      className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3.5 text-white placeholder:text-white/30 focus:border-blue-400/50 focus:bg-white/[0.08] focus:outline-none transition-all"
+                      placeholder="PitchVision Arena or away ground"
+                    />
+                  </div>
+
+                  {/* Match Type and Location Type - Side by Side */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-2.5">
+                        Match Type
+                      </label>
+                      <select
+                        value={form.matchType}
+                        onChange={(event) => handleFormChange("matchType", event.target.value as MatchType)}
+                        className="w-full rounded-2xl border border-white/10 bg-[#0f1729] px-5 py-3.5 text-white focus:border-blue-400/50 focus:outline-none transition-all cursor-pointer"
+                      >
+                        <option>Practice</option>
+                        <option>Tournament</option>
+                        <option>Friendly</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-white/80 mb-2.5">
+                        Location Type
+                      </label>
+                      <select
+                        value={form.locationType}
+                        onChange={(event) => handleFormChange("locationType", event.target.value as MatchLocationType)}
+                        className="w-full rounded-2xl border border-white/10 bg-[#0f1729] px-5 py-3.5 text-white focus:border-blue-400/50 focus:outline-none transition-all cursor-pointer"
+                      >
+                        <option>Home</option>
+                        <option>Away</option>
+                        <option>Neutral</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Role - Full Width */}
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-2.5">
+                      Your Role
+                    </label>
+                    <input
+                      value={form.role}
+                      onChange={(event) => handleFormChange("role", event.target.value)}
+                      className="w-full rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3.5 text-white placeholder:text-white/30 focus:border-blue-400/50 focus:bg-white/[0.08] focus:outline-none transition-all"
+                      placeholder="Opening batter, captain, finisher"
+                    />
+                  </div>
+
+                  {/* Notes - Full Width */}
+                  <div>
+                    <label className="block text-sm font-medium text-white/80 mb-2.5">
+                      Notes (Optional)
+                    </label>
+                    <textarea
+                      value={form.notes}
+                      onChange={(event) => handleFormChange("notes", event.target.value)}
+                      rows={4}
+                      className="w-full resize-none rounded-2xl border border-white/10 bg-white/[0.05] px-5 py-3.5 text-white placeholder:text-white/30 focus:border-blue-400/50 focus:bg-white/[0.08] focus:outline-none transition-all"
+                      placeholder="Travel notes, team meeting, warm-up focus, or anything important."
+                    />
+                  </div>
+                </div>
               </div>
 
-              <div className="flex flex-col-reverse gap-3 border-t border-white/10 p-6 sm:flex-row sm:items-center sm:justify-between">
+              {/* Footer */}
+              <div className="sticky bottom-0 flex flex-col-reverse gap-3 border-t border-white/10 bg-[rgba(8,12,24,0.95)] backdrop-blur-xl p-6 sm:flex-row sm:items-center sm:justify-between">
                 <div className="text-sm text-white/45">
                   Saved matches stay inside this dashboard for quick planning.
                 </div>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => setIsModalOpen(false)}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm text-white/75 hover:text-white"
+                    onClick={() => {
+                      setIsModalOpen(false);
+                      setEditingMatch(null);
+                      setForm(DEFAULT_FORM);
+                    }}
+                    className="flex-1 sm:flex-none rounded-2xl border border-white/10 bg-white/5 px-6 py-3 text-sm font-medium text-white/75 hover:text-white hover:bg-white/10 transition-all"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleScheduleMatch}
-                    className="rounded-2xl bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_35px_rgba(99,102,241,0.35)]"
+                    disabled={!form.opponent || !form.date || !form.time || !form.venue || !form.role}
+                    className="flex-1 sm:flex-none rounded-2xl bg-gradient-to-r from-blue-500 via-violet-500 to-fuchsia-500 px-6 py-3 text-sm font-semibold text-white shadow-[0_0_35px_rgba(99,102,241,0.35)] hover:shadow-[0_0_45px_rgba(99,102,241,0.5)] disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                   >
-                    Add Upcoming Match
+                    {editingMatch ? "Update Match" : "Add Upcoming Match"}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {deleteConfirmId !== null ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-4 backdrop-blur-md"
+            onClick={() => setDeleteConfirmId(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.2 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-md rounded-[28px] border border-white/15 bg-[linear-gradient(180deg,rgba(10,17,34,0.98),rgba(8,12,24,0.96))] p-6 shadow-[0_30px_120px_rgba(3,7,18,0.75)]"
+            >
+              <div className="flex items-start gap-4">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-500/10 border border-rose-400/20">
+                  <AlertCircle className="w-6 h-6 text-rose-400" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-semibold text-white mb-2">Delete Match?</h3>
+                  <p className="text-sm text-white/60 leading-relaxed">
+                    Are you sure you want to delete this match? This action cannot be undone and all match data will be permanently removed.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-6 flex gap-3">
+                <button
+                  onClick={() => setDeleteConfirmId(null)}
+                  className="flex-1 rounded-2xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-medium text-white/75 hover:text-white hover:bg-white/10 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteMatch(deleteConfirmId)}
+                  className="flex-1 rounded-2xl bg-gradient-to-r from-rose-500 to-red-600 px-5 py-3 text-sm font-semibold text-white shadow-[0_0_35px_rgba(244,63,94,0.35)] hover:shadow-[0_0_45px_rgba(244,63,94,0.5)] transition-all"
+                >
+                  Delete Match
+                </button>
               </div>
             </motion.div>
           </motion.div>

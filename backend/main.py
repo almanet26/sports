@@ -19,6 +19,7 @@ from database.models import (
     Message,
     Transaction,
     Review,
+    Match,
 )
 from database.models.coach_content import CoachContent
 from database.models.coach_session import CoachTrainingSession
@@ -289,7 +290,8 @@ from api.routes import (
     coach_content, COACH_CONTENT_AVAILABLE,
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE,
-    reviews, earnings, notification
+    reviews, earnings, notification,
+    match
 )
 from api.routes import plan, subscription, sessions
 try:
@@ -302,6 +304,9 @@ except ImportError:
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
+
+# Match routes
+app.include_router(match.router, prefix="/api/v1", tags=["matches"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])

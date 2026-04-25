@@ -25,6 +25,7 @@ from database.models.message import Message
 from database.models.transaction import Transaction, TransactionType, TransactionStatus
 from database.models.review import Review
 from database.models.coach_review import CoachReview
+from database.models.match import Match
 
 __all__ = [
     # User models
@@ -56,8 +57,9 @@ __all__ = [
     "TransactionStatus",
     # Reviews
     "Review",
-    # Reviews
     "CoachReview",
+    # Matches
+    "Match",
     # Enums
     "VideoVisibility",
     "VideoStatus",
