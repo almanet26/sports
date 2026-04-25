@@ -438,6 +438,15 @@ export default function ProfilePage() {
                   controls
                   className="w-full max-h-64 bg-black"
                   src={resolveMediaUrl(introVideoUrl)}
+                  onError={e => {
+                    // File missing — clear preview so coach knows to re-upload
+                    (e.currentTarget.parentElement as HTMLElement).innerHTML = `
+                      <div class="p-4 flex items-center justify-between">
+                        <p class="text-sm text-yellow-400 flex items-center gap-2">
+                          <i class="fas fa-exclamation-triangle"></i>Video file not found. Please re-upload.
+                        </p>
+                      </div>`;
+                  }}
                 />
                 <div className="flex items-center justify-between px-4 py-3">
                   <p className="text-xs text-green-400 flex items-center gap-2">
