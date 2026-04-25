@@ -177,7 +177,7 @@ export default function CoachDashboard() {
           </div>
 
           <div className="flex gap-3 items-center">
-            {/* Bell Icon */}
+            {/* Bell Icon - only */}
             <div ref={bellRef} className="relative">
               <button
                 onClick={() => setBellOpen(o => !o)}
@@ -258,25 +258,6 @@ export default function CoachDashboard() {
                 )}
               </AnimatePresence>
             </div>
-
-            <Link
-              to="/coach/upload"
-              className={`px-4 py-2 rounded-xl border transition-all duration-300 text-sm flex items-center gap-2 ${
-                theme === 'dark'
-                  ? 'glass border-white/20 hover:bg-white/10'
-                  : 'bg-gray-50 border-gray-300 hover:bg-gray-100'
-              }`}
-            >
-              <i className="fas fa-cloud-upload-alt"></i>
-              Upload Video
-            </Link>
-            <Link
-              to="/library"
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 transition-all duration-300 text-sm font-semibold flex items-center gap-2"
-            >
-              <i className="fas fa-video"></i>
-              Library
-            </Link>
           </div>
         </div>
       </motion.div>
