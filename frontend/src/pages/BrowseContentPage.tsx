@@ -135,11 +135,12 @@ export default function BrowseContentPage() {
                           className="w-full h-full object-cover"
                           src={resolveMediaUrl(coach.intro_video_url)}
                           onEnded={() => setPlayingCoach(null)}
+                          onError={() => setPlayingCoach(null)}
                         />
                       ) : (
                         <>
                           {coach.profile_image_url
-                            ? <img src={resolveMediaUrl(coach.profile_image_url)} alt={coach.name} className="w-full h-full object-cover" />
+                            ? <img src={resolveMediaUrl(coach.profile_image_url)} alt={coach.name} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }}/>
                             : <div className="w-full h-full flex items-center justify-center text-5xl font-bold text-white/40">{coach.name.charAt(0)}</div>
                           }
                           {coach.intro_video_url && (
