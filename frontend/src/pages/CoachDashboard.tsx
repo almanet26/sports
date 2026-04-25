@@ -1,8 +1,8 @@
 import { useMemo, useState, useEffect, useRef } from "react";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import { useThemeStore } from "../store/themeStore";
-import { submissionsApi, api, type CoachAthlete } from "../lib/api";
+import { submissionsApi, api, notificationsApi, type CoachAthlete, type NotificationItem } from "../lib/api";
 import {
   LineChart,
   Line,
@@ -28,6 +28,10 @@ export default function CoachDashboard() {
   const [reviewStats, setReviewStats] = useState<{ average_rating: number; total_reviews: number } | null>(null);
   const [recentReviews, setRecentReviews] = useState<any[]>([]);
   const [reviewsLoading, setReviewsLoading] = useState(true);
+  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [bellOpen, setBellOpen] = useState(false);
+  const bellRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     submissionsApi.coachAthletes()
@@ -42,11 +46,37 @@ export default function CoachDashboard() {
     ])
       .then(([statsRes, reviewsRes]) => {
         setReviewStats(statsRes.data);
-        setRecentReviews(reviewsRes.data.slice(0, 3)); // Get top 3 recent reviews
+        setRecentReviews(reviewsRes.data.slice(0, 3));
       })
       .catch(() => {})
       .finally(() => setReviewsLoading(false));
+
+    // Fetch notifications
+    notificationsApi.getAll()
+      .then(r => { setNotifications(r.data.notifications); setUnreadCount(r.data.unread_count); })
+      .catch(() => {});
   }, []);
+
+  // Close bell dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (bellRef.current && !bellRef.current.contains(e.target as Node)) setBellOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleMarkRead = async (id: string) => {
+    await notificationsApi.markRead(id);
+    setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
+    setUnreadCount(prev => Math.max(0, prev - 1));
+  };
+
+  const handleMarkAllRead = async () => {
+    await notificationsApi.markAllRead();
+    setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+    setUnreadCount(0);
+  };
 
   const myAthletes = athletes;
   const athletesSectionRef = useRef<HTMLDivElement>(null);
@@ -146,7 +176,89 @@ export default function CoachDashboard() {
             </p>
           </div>
 
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center">
+            {/* Bell Icon */}
+            <div ref={bellRef} className="relative">
+              <button
+                onClick={() => setBellOpen(o => !o)}
+                className={`relative w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${
+                  theme === 'dark' ? 'glass border-white/20 hover:bg-white/10' : 'bg-gray-50 border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                <i className="fas fa-bell text-sm"></i>
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              <AnimatePresence>
+                {bellOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className={`absolute right-0 top-12 w-80 rounded-2xl border shadow-2xl z-50 overflow-hidden ${
+                      theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-gray-200 text-gray-900'
+                    }`}
+                  >
+                    <div className={`flex items-center justify-between px-4 py-3 border-b ${
+                      theme === 'dark' ? 'border-white/10' : 'border-gray-100'
+                    }`}>
+                      <p className="font-semibold text-sm">Notifications</p>
+                      {unreadCount > 0 && (
+                        <button onClick={handleMarkAllRead} className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="max-h-80 overflow-y-auto">
+                      {notifications.length === 0 ? (
+                        <div className={`p-6 text-center text-sm ${
+                          theme === 'dark' ? 'text-white/40' : 'text-gray-400'
+                        }`}>
+                          <i className="fas fa-bell-slash text-2xl mb-2 block"></i>
+                          No notifications yet
+                        </div>
+                      ) : notifications.map(n => (
+                        <div
+                          key={n.id}
+                          onClick={() => !n.is_read && handleMarkRead(n.id)}
+                          className={`flex gap-3 px-4 py-3 border-b cursor-pointer transition-all ${
+                            theme === 'dark' ? 'border-white/5 hover:bg-white/5' : 'border-gray-50 hover:bg-gray-50'
+                          } ${!n.is_read ? theme === 'dark' ? 'bg-blue-500/5' : 'bg-blue-50' : ''}`}
+                        >
+                          <div className={`w-8 h-8 rounded-lg flex-shrink-0 flex items-center justify-center ${
+                            n.type === 'submission' ? 'bg-blue-500/20 text-blue-400' :
+                            n.type === 'review' ? 'bg-yellow-500/20 text-yellow-400' :
+                            'bg-gray-500/20 text-gray-400'
+                          }`}>
+                            <i className={`fas ${
+                              n.type === 'submission' ? 'fa-paper-plane' :
+                              n.type === 'review' ? 'fa-star' : 'fa-bell'
+                            } text-xs`}></i>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-semibold truncate">{n.title}</p>
+                            <p className={`text-xs mt-0.5 line-clamp-2 ${
+                              theme === 'dark' ? 'text-white/50' : 'text-gray-500'
+                            }`}>{n.message}</p>
+                            <p className={`text-[10px] mt-1 ${
+                              theme === 'dark' ? 'text-white/30' : 'text-gray-400'
+                            }`}>{new Date(n.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</p>
+                          </div>
+                          {!n.is_read && <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1"></div>}
+                        </div>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <Link
               to="/coach/upload"
               className={`px-4 py-2 rounded-xl border transition-all duration-300 text-sm flex items-center gap-2 ${

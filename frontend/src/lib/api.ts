@@ -743,6 +743,22 @@ export const earningsApi = {
   getMyEarnings: () => api.get<EarningsData>('/earnings'),
 };
 
+// Notifications API
+export interface NotificationItem {
+  id: string;
+  title: string;
+  message: string;
+  type: string;
+  is_read: boolean;
+  created_at: string;
+}
+
+export const notificationsApi = {
+  getAll: () => api.get<{ notifications: NotificationItem[]; unread_count: number }>('/notifications'),
+  markRead: (id: string) => api.patch(`/notifications/${id}/read`),
+  markAllRead: () => api.patch('/notifications/read-all'),
+};
+
 // Admin API
 export const adminApi = {
   // Get admin stats

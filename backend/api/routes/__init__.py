@@ -10,7 +10,7 @@ Routes:
 - batting: Batting performance analysis
 - admin_coaches: Admin routes for coach verification
 """
-from . import auth, videos, jobs, requests, admin_coaches, reviews, earnings
+from . import auth, videos, jobs, requests, admin_coaches, reviews, earnings, notification
 
 try:
     from . import analytics
@@ -89,4 +89,5 @@ __all__ = [
     "worker", "WORKER_AVAILABLE",
     "reviews",
     "earnings",
+    "notification",
 ]

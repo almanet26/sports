@@ -289,7 +289,7 @@ from api.routes import (
     coach_content, COACH_CONTENT_AVAILABLE,
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE,
-    reviews, earnings
+    reviews, earnings, notification
 )
 from api.routes import plan, subscription, sessions
 try:
@@ -348,6 +348,7 @@ from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
 app.include_router(reviews.router, prefix="/api/v1", tags=["reviews"])
 app.include_router(earnings.router, prefix="/api/v1", tags=["earnings"])
+app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
 
 
 # Video management routes

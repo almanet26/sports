@@ -540,6 +540,20 @@ async def player_upload(
         analysis_type=analysis_type,
     )
 
+    # Notify the coach
+    try:
+        from database.models.notification import Notification
+        notif = Notification(
+            user_id=coach_id,
+            title="New Video Submission",
+            message=f"{current_user.name} submitted a {analysis_type.lower()} video for your review.",
+            type="submission",
+        )
+        db.add(notif)
+        db.commit()
+    except Exception as notif_err:
+        logger.warning("Failed to create submission notification: %s", notif_err)
+
     logger.info(
         "Submission %s created: player=%s coach=%s type=%s",
         sub.id, current_user.id, coach_id, analysis_type,
