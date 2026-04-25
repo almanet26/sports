@@ -17,6 +17,7 @@ from database.models import (
     Video, HighlightEvent, HighlightJob, MatchRequest, UserVote,
     BattingAnalysis,
     VideoSubmission,
+    VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -321,6 +322,17 @@ app.include_router(report_router,     prefix="/api/v1", tags=["report"])
 app.include_router(chat_router,       prefix="/api/v1", tags=["chat"])
 app.include_router(benchmarks_router, prefix="/api/v1", tags=["benchmarks"])
 app.include_router(profile_router,    prefix="/api/v1", tags=["profile"])
+
+# Phase 5 coach-facing features
+from api.routes.annotations import router as annotations_router
+from api.routes.dashboard import router as dashboard_router
+from api.routes.coach_inbox import router as coach_inbox_router
+from api.routes.academy import router as academy_router
+
+app.include_router(annotations_router, prefix="/api/v1", tags=["annotations"])
+app.include_router(dashboard_router,   prefix="/api/v1", tags=["dashboard"])
+app.include_router(coach_inbox_router, prefix="/api/v1", tags=["coach-inbox"])
+app.include_router(academy_router,     prefix="/api/v1", tags=["academy"])
     
 # Subscription expiry cron — POST /internal/cron/expire-subscriptions
 from services.subscription_expiry import register_expiry_endpoint

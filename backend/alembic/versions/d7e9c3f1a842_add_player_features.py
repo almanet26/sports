@@ -174,6 +174,11 @@ def upgrade() -> None:
     op.bulk_insert(bench_table, _BENCH_SEED)
 
     # ── player_profiles ──────────────────────────────────────────────────────
+    # The database may already contain a legacy player_profiles table with a completely different schema (player demographics, not scouting data). Rename it so we can create our model's schema without losing old data.
+    bind = op.get_bind()
+    if "player_profiles" in sa.inspect(bind).get_table_names():
+        op.rename_table("player_profiles", "player_profiles_legacy")
+
     op.create_table(
         "player_profiles",
         sa.Column(
@@ -211,6 +216,9 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("player_profiles")
+    bind = op.get_bind()
+    if "player_profiles_legacy" in sa.inspect(bind).get_table_names():
+        op.rename_table("player_profiles_legacy", "player_profiles")
     op.drop_index("ix_chat_history_user_session_created", table_name="chat_history")
     op.drop_table("pro_benchmarks")
     op.drop_table("chat_history")

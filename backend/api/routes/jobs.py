@@ -3,6 +3,7 @@ Jobs API routes for triggering and monitoring OCR processing.
 """
 
 import logging
+import os
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from sqlalchemy.orm import Session
@@ -18,6 +19,97 @@ from dependencies.quota_gate import quota_check, increment_usage_atomic
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 logger = logging.getLogger(__name__)
+
+# Cloud Tasks config — all three must be set to enable Cloud Tasks dispatch.
+_GCP_PROJECT = os.getenv("GCP_PROJECT_ID", "")
+_CT_LOCATION  = os.getenv("CLOUD_TASKS_LOCATION", "asia-south1")
+_WORKER_URL   = os.getenv("WORKER_URL", "")   # e.g. https://worker-xxxx.run.app
+
+# Roles that get expedited processing via the priority queue.
+_PRIORITY_ROLES = {"coach_pro", "academy"}
+
+_CLOUD_TASKS_ENABLED = bool(_GCP_PROJECT and _WORKER_URL)
+
+
+def _enqueue_ocr_task(
+    video_id: str,
+    config: Optional[dict],
+    user_role: str,
+    background_tasks: BackgroundTasks,
+) -> None:
+    """
+    Dispatch an OCR job.
+
+    When Cloud Tasks is fully configured (GCP_PROJECT_ID + WORKER_URL set),
+    enqueues to:
+      • "ocr-priority"  — coach_pro / academy  (higher concurrency)
+      • "ocr-standard"  — all other coach tiers
+
+    Both queues call the same worker endpoint: POST {WORKER_URL}/internal/worker/ocr-task
+
+    Falls back to FastAPI BackgroundTasks when running locally (Cloud Tasks not configured).
+
+    gcloud queue creation commands:
+      # Standard queue — 5 concurrent dispatches
+      gcloud tasks queues create ocr-standard \
+        --location=asia-south1 \
+        --max-concurrent-dispatches=5 \
+        --max-dispatches-per-second=2
+
+      # Priority queue — 20 concurrent dispatches
+      gcloud tasks queues create ocr-priority \
+        --location=asia-south1 \
+        --max-concurrent-dispatches=20 \
+        --max-dispatches-per-second=10
+    """
+    if not _CLOUD_TASKS_ENABLED:
+        background_tasks.add_task(run_ocr_processing, video_id, config)
+        return
+
+    queue_name = "ocr-priority" if user_role in _PRIORITY_ROLES else "ocr-standard"
+
+    try:
+        from services.cloud_tasks_service import CloudTasksManager
+        import json
+
+        manager = CloudTasksManager(_GCP_PROJECT, _CT_LOCATION, queue_name)
+        worker_endpoint = f"{_WORKER_URL}/internal/worker/ocr-task"
+
+        payload = json.dumps({"video_id": video_id, "config": config or {}}).encode()
+
+        from google.cloud import tasks_v2
+        manager.client.create_task(
+            request={
+                "parent": manager.queue_path,
+                "task": {
+                    "http_request": {
+                        "http_method": tasks_v2.HttpMethod.POST,
+                        "url": worker_endpoint,
+                        "headers": {"Content-Type": "application/json"},
+                        "body": payload,
+                        # OIDC token so Cloud Run rejects unauthenticated calls.
+                        "oidc_token": {
+                            "service_account_email": os.getenv(
+                                "WORKER_SERVICE_ACCOUNT", ""
+                            )
+                        },
+                    }
+                },
+            }
+        )
+        logger.info(
+            "Enqueued video=%s to Cloud Tasks queue=%s (role=%s)",
+            video_id,
+            queue_name,
+            user_role,
+        )
+    except Exception as exc:
+        logger.error(
+            "Cloud Tasks enqueue failed for video=%s, falling back to BackgroundTasks: %s",
+            video_id,
+            exc,
+        )
+        background_tasks.add_task(run_ocr_processing, video_id, config)
 
 
 @router.post("/trigger", response_model=JobStatusResponse, status_code=status.HTTP_202_ACCEPTED)
@@ -78,10 +170,10 @@ async def trigger_ocr_job(
     db.commit()
     db.refresh(job)
 
-    logger.info("Triggering OCR job — video=%s user=%s", video.id, current_user.email)
+    logger.info("Triggering OCR job — video=%s user=%s role=%s", video.id, current_user.email, current_user.role)
 
-    # Dispatch background OCR task.
-    background_tasks.add_task(run_ocr_processing, video.id, request.config)
+    # Dispatch OCR task — routes to priority queue for coach_pro / academy.
+    _enqueue_ocr_task(video.id, request.config, current_user.role, background_tasks)
 
     # Reserve estimated OCR hours immediately at dispatch.
     # Uses the atomic check-and-increment so two simultaneous trigger requests cannot both succeed when the user is near their monthly OCR limit.

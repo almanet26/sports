@@ -281,6 +281,9 @@ def process_video(
                 detail=f"Submission already in '{sub.status.value}' — cannot re-process",
             )
 
+        # Resolve academy branding once (used by _upload_pdf later)
+        branding = _get_academy_branding(sub.coach_id, db)
+
         if body.pipeline == "ocr_highlights":
             mark_processing(db, sub)
             return _run_ocr_highlights_pipeline(db, sub, body.blob_name)
@@ -310,8 +313,8 @@ def process_video(
                 _run_batting(tmp_video_path, sub.id)
             )
 
-        # 4. Generate PDF & upload to GCS 
-        pdf_blob_name = _upload_pdf(sub, ai_draft, raw_biometrics)
+        # 4. Generate PDF & upload to GCS (branding injected for academy coaches)
+        pdf_blob_name = _upload_pdf(sub, ai_draft, raw_biometrics, branding=branding)
 
         # 5. Save results → DRAFT_REVIEW 
         save_analysis_results(
@@ -495,6 +498,7 @@ def _upload_pdf(
     sub: VideoSubmission,
     ai_text: str,
     raw_biometrics: dict,
+    branding=None,
 ) -> str | None:
     """Generate the analysis PDF and upload it to GCS.  Returns the blob name or None."""
     try:
@@ -508,6 +512,10 @@ def _upload_pdf(
             pdf_bytes = create_batting_pdf(ai_text, metrics_df, {}, phase_info=sub.phase_info or {})
         else:
             pdf_bytes = _simple_pdf(ai_text, sub.analysis_type)
+
+        # Inject academy branding if the submitting coach is on academy tier
+        if branding is not None:
+            pdf_bytes = _inject_branding_into_pdf(pdf_bytes, branding)
 
         # Write to /tmp/ then upload
         report_name = f"submission_report_{sub.id}.pdf"
@@ -544,3 +552,150 @@ def _simple_pdf(text: str, analysis_type: str) -> bytes:
         safe = line.encode("latin-1", "replace").decode("latin-1")
         pdf.multi_cell(0, 7, safe)
     return bytes(pdf.output())
+
+
+# ---------------------------------------------------------------------------
+# Academy branding injection
+# ---------------------------------------------------------------------------
+
+def _get_academy_branding(coach_id: str, db: Session) -> "AcademyBranding | None":
+    """Return AcademyBranding if the coach is an academy-tier user with branding set up."""
+    try:
+        coach = db.query(User).filter(User.id == coach_id).first()
+        if coach is None or coach.role != "academy":
+            return None
+        from database.models.academy_branding import AcademyBranding
+        return db.query(AcademyBranding).filter(AcademyBranding.academy_id == coach_id).first()
+    except Exception as exc:
+        logger.warning("Academy branding lookup failed for coach=%s: %s", coach_id, exc)
+        return None
+
+
+def _download_logo_bytes(logo_gcs_path: str) -> bytes | None:
+    """Download logo from GCS or local filesystem. Returns raw bytes or None."""
+    try:
+        if logo_gcs_path.startswith("gs://"):
+            after = logo_gcs_path[5:]
+            slash = after.find("/")
+            blob_name = after[slash + 1:] if slash != -1 else after
+            if _bucket:
+                blob = _bucket.blob(blob_name)
+                return blob.download_as_bytes()
+        elif os.path.exists(logo_gcs_path):
+            with open(logo_gcs_path, "rb") as f:
+                return f.read()
+    except Exception as exc:
+        logger.warning("Logo download failed: %s", exc)
+    return None
+
+
+def _inject_branding_into_pdf(pdf_bytes: bytes, branding: "AcademyBranding") -> bytes:
+    """
+    Inject academy branding into an existing PDF using pypdf + reportlab overlay.
+
+    Strategy:
+      1. Download the logo PNG from GCS.
+      2. Create a reportlab canvas overlay page with:
+         - Logo image top-right (40x40 pt)
+         - Colored header bar (primary_color)
+         - Footer text at bottom of every page
+      3. Merge the overlay onto the original PDF using pypdf.
+
+    Falls back to original bytes if any step fails — never corrupt the PDF.
+    """
+    try:
+        import io as _io
+        from pypdf import PdfWriter, PdfReader
+        from reportlab.pdfgen import canvas as rl_canvas
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.colors import HexColor
+
+        src = PdfReader(_io.BytesIO(pdf_bytes))
+        writer = PdfWriter()
+
+        page_w, page_h = A4
+
+        logo_bytes = _download_logo_bytes(branding.logo_gcs_path) if branding.logo_gcs_path else None
+
+        for page in src.pages:
+            # Build overlay
+            overlay_buf = _io.BytesIO()
+            c = rl_canvas.Canvas(overlay_buf, pagesize=A4)
+
+            # Header bar
+            try:
+                bar_color = HexColor(branding.primary_color)
+            except Exception:
+                bar_color = HexColor("#1a73e8")
+
+            c.setFillColor(bar_color)
+            c.rect(0, page_h - 30, page_w, 30, fill=1, stroke=0)
+
+            # Logo
+            if logo_bytes:
+                try:
+                    import PIL.Image
+                    logo_img = PIL.Image.open(_io.BytesIO(logo_bytes))
+                    logo_tmp = os.path.join(tempfile.gettempdir(), "academy_logo_tmp.png")
+                    logo_img.save(logo_tmp)
+                    c.drawImage(logo_tmp, page_w - 50, page_h - 28, width=40, height=24, preserveAspectRatio=True, mask="auto")
+                    os.remove(logo_tmp)
+                except Exception as logo_exc:
+                    logger.debug("Logo render skipped: %s", logo_exc)
+
+            # Footer
+            if branding.report_footer_text:
+                c.setFont("Helvetica", 8)
+                c.setFillColorRGB(0.4, 0.4, 0.4)
+                safe = branding.report_footer_text.encode("latin-1", "replace").decode("latin-1")
+                c.drawCentredString(page_w / 2, 12, safe)
+
+            c.save()
+            overlay_buf.seek(0)
+            overlay_page = PdfReader(overlay_buf).pages[0]
+
+            # Merge: overlay on top of content page
+            page.merge_page(overlay_page)
+            writer.add_page(page)
+
+        out_buf = _io.BytesIO()
+        writer.write(out_buf)
+        return out_buf.getvalue()
+
+    except Exception as exc:
+        logger.exception("Branding injection failed — returning original PDF: %s", exc)
+        return pdf_bytes
+
+
+# ---------------------------------------------------------------------------
+# Cloud Tasks OCR endpoint — POST /internal/worker/ocr-task
+# ---------------------------------------------------------------------------
+
+class OcrTaskRequest(BaseModel):
+    video_id: str
+    config: dict = {}
+
+
+@router.post("/ocr-task")
+def handle_ocr_task(
+    body: OcrTaskRequest,
+    authorization: str | None = Header(None),
+    x_worker_secret: str | None = Header(None),
+) -> dict:
+    """
+    Called by Cloud Tasks queues 'ocr-priority' and 'ocr-standard'.
+    Runs OCR highlight extraction for the given video.  Both queues point
+    to this endpoint; routing is done at enqueue time in jobs.py.
+    """
+    _verify_worker_auth(authorization, x_worker_secret)
+
+    logger.info("OCR task received — video=%s config=%s", body.video_id, body.config)
+
+    # run_ocr_processing is synchronous — Cloud Tasks will retry on non-2xx.
+    try:
+        run_ocr_processing(body.video_id, body.config or None)
+    except Exception as exc:
+        logger.exception("OCR task failed — video=%s: %s", body.video_id, exc)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"status": "ok", "video_id": body.video_id}

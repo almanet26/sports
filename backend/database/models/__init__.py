@@ -22,6 +22,10 @@ from database.models.plan_config import PlanConfig
 from database.models.chat_history import ChatHistory
 from database.models.pro_benchmark import ProBenchmark
 from database.models.player_profile import PlayerProfile
+from database.models.video_annotation import VideoAnnotation
+from database.models.coach_player import CoachPlayer
+from database.models.player_submission import PlayerSubmission
+from database.models.academy_branding import AcademyBranding
 __all__ = [
     # User models
     "User",
@@ -49,6 +53,11 @@ __all__ = [
     "ChatHistory",
     "ProBenchmark",
     "PlayerProfile",
+    # Phase 5 coach features
+    "VideoAnnotation",
+    "CoachPlayer",
+    "PlayerSubmission",
+    "AcademyBranding",
     # Enums
     "VideoVisibility",
     "VideoStatus",
