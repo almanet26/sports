@@ -220,13 +220,13 @@ export default function PlayerDashboard(){
               Library
             </Link>
             <button
-              onClick={() => navigate("/profile")}
+              onClick={() => navigate("/player/settings")}
               className="px-4 py-2 rounded-xl glass border border-white/20
              hover:bg-white/10 transition-all duration-300 text-sm
              flex items-center gap-2"
             >
-              <i className="fas fa-user-edit"></i>
-              Profile
+              <i className="fas fa-cog"></i>
+              Settings
             </button>
           </div>
         </div>

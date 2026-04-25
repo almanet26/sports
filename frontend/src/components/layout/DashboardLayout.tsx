@@ -35,7 +35,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
     { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+    { to: "/player/settings", icon: "fas fa-cog", label: "Settings" },
   ],
   COACH: [
     { to: '/coach', icon: 'fas fa-home', label: 'Dashboard' },
