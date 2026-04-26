@@ -28,7 +28,7 @@ from database.models.coach_player import CoachPlayer
 from database.models.monthly_usage import MonthlyUsage
 from database.models.user import User
 from database.models.video import HighlightJob, VideoStatus
-from dependencies.feature_gate import require_feature
+from dependencies.feature_gate import require_feature, get_active_subscription
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
@@ -116,8 +116,9 @@ def invite_player(
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # Enforce coach_starter cap
-    if current_user.role == "coach_starter":
+    # Enforce coach_starter cap — check subscription tier, not account type
+    sub = get_active_subscription(current_user, db)
+    if sub and sub.role == "coach_starter":
         count = (
             db.query(func.count(CoachPlayer.player_id))
             .filter(CoachPlayer.coach_id == current_user.id)

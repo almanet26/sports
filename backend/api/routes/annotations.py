@@ -109,7 +109,10 @@ def list_annotations(
 
     return (
         db.query(VideoAnnotation)
-        .filter(VideoAnnotation.video_id == video_id)
+        .filter(
+            VideoAnnotation.video_id == video_id,
+            VideoAnnotation.coach_id == current_user.id,
+        )
         .order_by(VideoAnnotation.timestamp_ms)
         .all()
     )

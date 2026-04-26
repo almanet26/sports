@@ -14,7 +14,7 @@ from database.models.video import Video, HighlightJob, VideoStatus
 from schemas.video import JobTriggerRequest, JobStatusResponse, JobResultResponse
 from services.ocr_task import run_ocr_processing
 from utils.auth import get_current_user, require_role
-from dependencies.feature_gate import require_feature
+from dependencies.feature_gate import require_feature, get_active_subscription
 from dependencies.quota_gate import quota_check, increment_usage_atomic
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
@@ -170,10 +170,14 @@ async def trigger_ocr_job(
     db.commit()
     db.refresh(job)
 
-    logger.info("Triggering OCR job — video=%s user=%s role=%s", video.id, current_user.email, current_user.role)
+    # Get subscription tier for queue routing (not account type)
+    sub = get_active_subscription(current_user, db)
+    sub_role = sub.role if sub else "free"
+
+    logger.info("Triggering OCR job — video=%s user=%s sub_role=%s", video.id, current_user.email, sub_role)
 
     # Dispatch OCR task — routes to priority queue for coach_pro / academy.
-    _enqueue_ocr_task(video.id, request.config, current_user.role, background_tasks)
+    _enqueue_ocr_task(video.id, request.config, sub_role, background_tasks)
 
     # Reserve estimated OCR hours immediately at dispatch.
     # Uses the atomic check-and-increment so two simultaneous trigger requests cannot both succeed when the user is near their monthly OCR limit.

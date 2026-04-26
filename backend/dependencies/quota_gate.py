@@ -1,17 +1,22 @@
 """
 quota_check(feature_key) — FastAPI Depends factory for monthly quota enforcement.
 increment_usage(...)     — Atomic helper to increment a monthly_usage field.
+increment_usage_atomic() — Race-safe check-and-increment (used at job dispatch).
 
-Quota-tracked features and their DB column mapping:
-  "biomechanics_analysis" → used: biomech_count       / limit: max_biomech_per_month
-  "ocr_highlights"        → used: ocr_hours_used      / limit: max_ocr_hours_per_month
-  "player_submission"     → used: submission_count    / limit: max_submissions_per_month
+Quota-tracked features:
+  "biomechanics_analysis" → biomech_count       / max_biomech_per_month
+  "ocr_highlights"        → ocr_hours_used      / max_ocr_hours_per_month
+  "player_submission"     → submission_count    / max_submissions_per_month
+
+Plan limits are read from plan_config.role which maps to the active
+subscription's tier (subscriptions.role), NOT to users.role (which is the
+account type PLAYER|COACH|ADMIN after the schema consolidation).
 """
 
 from __future__ import annotations
 
 from datetime import date
-from typing import NamedTuple
+from typing import NamedTuple, Optional
 
 from fastapi import Depends, HTTPException
 from sqlalchemy import text
@@ -20,6 +25,7 @@ from sqlalchemy.orm import Session
 from database.config import get_db
 from database.models.monthly_usage import MonthlyUsage
 from database.models.plan_config import PlanConfig
+from database.models.subscription import Subscription
 from database.models.user import User
 from utils.auth import get_current_user
 
@@ -29,8 +35,8 @@ from utils.auth import get_current_user
 # ---------------------------------------------------------------------------
 
 class _QuotaFields(NamedTuple):
-    usage_col: str   # column on monthly_usage
-    limit_col: str   # column on plan_config
+    usage_col: str
+    limit_col: str
 
 
 _QUOTA_MAP: dict[str, _QuotaFields] = {
@@ -40,6 +46,17 @@ _QUOTA_MAP: dict[str, _QuotaFields] = {
 }
 
 
+def _get_active_sub_role(user_id: str, db: Session) -> str:
+    """Return the subscription tier for user_id, defaulting to 'free'."""
+    sub: Optional[Subscription] = (
+        db.query(Subscription)
+        .filter(Subscription.user_id == user_id, Subscription.status == "active")
+        .order_by(Subscription.started_at.desc())
+        .first()
+    )
+    return sub.role if sub else "free"
+
+
 # ---------------------------------------------------------------------------
 # quota_check dependency factory
 # ---------------------------------------------------------------------------
@@ -47,14 +64,11 @@ _QUOTA_MAP: dict[str, _QuotaFields] = {
 def quota_check(feature_key: str):
     """
     Returns a FastAPI dependency that:
-      1. Looks up (or creates) the monthly_usage row for the current user / month.
-      2. Looks up the plan limit from plan_config via user.role.
-      3. Raises 429 if limit > 0 and usage >= limit.
-      4. Returns (user, usage_row) on success.
-
-    Raises:
-      ValueError  – unknown feature_key (caught at startup, not at runtime)
-      429         – quota exceeded
+      1. ADMIN accounts skip quota checks entirely.
+      2. Fetches (or creates) the monthly_usage row.
+      3. Looks up the plan limit from plan_config via the active subscription tier.
+      4. Raises 429 if limit > 0 and usage >= limit.
+      5. Returns (user, usage_row) on success.
     """
     if feature_key not in _QUOTA_MAP:
         raise ValueError(
@@ -68,11 +82,23 @@ def quota_check(feature_key: str):
         user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> tuple[User, MonthlyUsage]:
+        # ── ADMIN bypass ─────────────────────────────────────────────────────
+        if user.role == "ADMIN":
+            today = date.today()
+            dummy = MonthlyUsage(
+                user_id=user.id,
+                year=today.year,
+                month=today.month,
+                biomech_count=0,
+                ocr_hours_used=0.0,
+                submission_count=0,
+            )
+            return user, dummy
+
         today = date.today()
         year, month = today.year, today.month
 
-        # Fetch-or-create monthly_usage row (no atomic upsert needed here — we only read; increment_usage owns the write path).
-        usage: MonthlyUsage | None = (
+        usage: Optional[MonthlyUsage] = (
             db.query(MonthlyUsage)
             .filter(
                 MonthlyUsage.user_id == user.id,
@@ -95,19 +121,16 @@ def quota_check(feature_key: str):
             db.commit()
             db.refresh(usage)
 
-        # Resolve plan limits — user.role is the canonical plan key.
-        plan: PlanConfig | None = (
-            db.query(PlanConfig)
-            .filter(PlanConfig.role == user.role)
-            .first()
+        # Plan limits come from subscriptions.role, not users.role
+        sub_role = _get_active_sub_role(user.id, db)
+        plan: Optional[PlanConfig] = (
+            db.query(PlanConfig).filter(PlanConfig.role == sub_role).first()
         )
 
-        # If no plan config exists for this role fall back to zero (block everything).
-        limit: float | int = getattr(plan, fields.limit_col, 0) if plan else 0
-        used: float | int = getattr(usage, fields.usage_col, 0)
+        limit: float = getattr(plan, fields.limit_col, 0) if plan else 0
+        used: float = getattr(usage, fields.usage_col, 0)
 
         if limit > 0 and used >= limit:
-            # Next reset is the 1st of next month.
             if month == 12:
                 reset_year, reset_month = year + 1, 1
             else:
@@ -129,7 +152,7 @@ def quota_check(feature_key: str):
 
 
 # ---------------------------------------------------------------------------
-# increment_usage_atomic — race-safe check-and-increment
+# increment_usage_atomic — race-safe check-and-increment at job dispatch
 # ---------------------------------------------------------------------------
 
 def increment_usage_atomic(
@@ -140,22 +163,13 @@ def increment_usage_atomic(
     db: Session,
 ) -> bool:
     """
-    Atomically increment `field` by `amount` **only if** the resulting value
-    would not exceed the plan limit stored in `limit_col` on plan_config.
+    Atomically increment `field` by `amount` only if usage + amount <= plan limit.
 
-    The entire check + write is a single SQL UPDATE with a correlated subquery,
-    so there is no window for two concurrent requests to both pass the quota
-    check and both commit.
+    Plan limit is looked up from plan_config via the active subscription tier
+    (subscriptions.role), NOT from users.role.
 
-    Returns True  — increment applied, quota was not exceeded.
-    Returns False — rowcount == 0, meaning the quota limit was already reached
-                    (or no plan_config row exists for the user's role).
-                    Callers should raise HTTP 429.
-
-    Args:
-        field:     column on monthly_usage  ("biomech_count" | "ocr_hours_used" | "submission_count")
-        limit_col: column on plan_config    ("max_biomech_per_month" | "max_ocr_hours_per_month" | ...)
-        amount:    positive value to add
+    Returns True  — increment applied.
+    Returns False — quota limit already reached or no plan_config row exists.
     """
     _valid = {"biomech_count", "ocr_hours_used", "submission_count"}
     if field not in _valid:
@@ -166,9 +180,6 @@ def increment_usage_atomic(
 
     from database.config import IS_SQLITE  # late import avoids circular
 
-    # Guarantee the row exists before the conditional UPDATE.
-    # Both the INSERT and the UPDATE run inside the same transaction — no
-    # intermediate commit — so the row cannot disappear between the two.
     if IS_SQLITE:
         db.execute(
             text(
@@ -189,10 +200,7 @@ def increment_usage_atomic(
             {"uid": user_id, "y": year, "m": month},
         )
 
-    # Single-statement atomic check + increment.
-    # If `field + amount > limit` the WHERE predicate is false → rowcount == 0.
-    # Handles limit == 0 naturally (0 + amount > 0 → false → blocked).
-    # Handles missing plan_config row (NULL limit) → NULL comparison → false → blocked.
+    # Lookup plan limit via active subscription tier, not users.role
     result = db.execute(
         text(
             f"UPDATE monthly_usage "
@@ -201,10 +209,14 @@ def increment_usage_atomic(
             f"  AND  year    = :y "
             f"  AND  month   = :m "
             f"  AND  {field} + :amount <= ("
-            f"           SELECT {limit_col} "
-            f"           FROM   plan_config "
-            f"           WHERE  role = (SELECT role FROM users WHERE id = :uid)"
-            f"       )"
+            f"    SELECT pc.{limit_col} "
+            f"    FROM   plan_config pc "
+            f"    JOIN   subscriptions s ON s.role = pc.role "
+            f"    WHERE  s.user_id = :uid "
+            f"      AND  s.status  = 'active' "
+            f"    ORDER  BY s.started_at DESC "
+            f"    LIMIT  1"
+            f"  )"
         ),
         {"amount": amount, "uid": user_id, "y": year, "m": month},
     )
@@ -213,8 +225,7 @@ def increment_usage_atomic(
 
 
 # ---------------------------------------------------------------------------
-# increment_usage — unconditional atomic upsert (used for reconciliation /
-# worker callbacks where the quota was already checked at dispatch)
+# increment_usage — unconditional atomic upsert (worker reconciliation)
 # ---------------------------------------------------------------------------
 
 async def increment_usage(
@@ -224,13 +235,9 @@ async def increment_usage(
     db: Session,
 ) -> MonthlyUsage:
     """
-    Atomically increments `field` on the monthly_usage row for the current
-    (user_id, year, month).  Creates the row if it does not exist.
-
-    `field` must be one of: biomech_count | ocr_hours_used | submission_count
-    `amount` should be positive.
-
-    Returns the updated MonthlyUsage row.
+    Atomically increment `field` on the monthly_usage row for the current month.
+    Creates the row if it does not exist.  No quota check — caller is the worker
+    reconciling actual consumption after job completion.
     """
     _valid_fields = {"biomech_count", "ocr_hours_used", "submission_count"}
     if field not in _valid_fields:
@@ -239,10 +246,7 @@ async def increment_usage(
     today = date.today()
     year, month = today.year, today.month
 
-    # PostgreSQL / SQLite compatible atomic upsert via raw SQL so we avoid a read-then-write race condition under concurrent requests.
-    # PostgreSQL uses INSERT … ON CONFLICT DO UPDATE. SQLite uses INSERT OR IGNORE + UPDATE (two statements, still safe for single-writer SQLite use in development).
-
-    from database.config import IS_SQLITE  # imported here to avoid circular import
+    from database.config import IS_SQLITE
 
     if IS_SQLITE:
         db.execute(

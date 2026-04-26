@@ -1,10 +1,8 @@
-"""
-Authentication API routes.
-"""
+"""Authentication API routes."""
 
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import logging
 import secrets
@@ -12,6 +10,7 @@ import os
 from pathlib import Path
 
 from database.config import get_db
+from database.models.subscription import Subscription
 from database.models.user import User
 from database.models.session import UserSession
 from schemas.auth import UserCreate, UserLogin, Token, UserResponse, TokenResponse, ProfileUpdateRequest
@@ -27,104 +26,109 @@ from utils.config import settings
 router = APIRouter(prefix="/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
 
+_FREE_EXPIRES_DAYS = 36500  # ~100 years — effectively never for the free tier
 
-@router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
-)
+
+def _seed_subscription(user_id: str, account_type: str, db: Session) -> Subscription:
+    """Insert the initial free (or academy for ADMIN) subscription row."""
+    now = datetime.now(timezone.utc)
+    tier = "academy" if account_type == "ADMIN" else "free"
+    plan_key = "academy_365d" if account_type == "ADMIN" else "free"
+    sub = Subscription(
+        user_id=user_id,
+        plan_key=plan_key,
+        role=tier,
+        status="active",
+        started_at=now,
+        expires_at=now + timedelta(days=_FREE_EXPIRES_DAYS),
+    )
+    db.add(sub)
+    return sub
+
+
+def _get_active_sub(user_id: str, db: Session) -> Optional[Subscription]:
+    return (
+        db.query(Subscription)
+        .filter(Subscription.user_id == user_id, Subscription.status == "active")
+        .order_by(Subscription.started_at.desc())
+        .first()
+    )
+
+
+# ── Registration ───────────────────────────────────────────────────────────────
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
-    role: str = Form(...),
+    role: str = Form(...),          # PLAYER | COACH
     phone: str = Form(None),
     team: str = Form(None),
     coach_document: UploadFile = File(None),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
-        )
+    role = role.upper()
+    if role not in ("PLAYER", "COACH"):
+        raise HTTPException(status_code=400, detail="role must be PLAYER or COACH")
 
-    # Handle coach document upload with validation
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # ── coach document upload ─────────────────────────────────────────────────
     coach_document_url = None
-    if coach_document and role == 'COACH':
-        # Validate file extension
-        ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'}
-        file_extension = os.path.splitext(coach_document.filename)[1].lower()
-        
-        if file_extension not in ALLOWED_EXTENSIONS:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-            )
-        
-        # Read and validate file size (max 10MB)
-        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    if coach_document and role == "COACH":
+        ALLOWED = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+        ext = os.path.splitext(coach_document.filename)[1].lower()
+        if ext not in ALLOWED:
+            raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED))}")
         try:
             content = await coach_document.read()
-            
-            if len(content) > MAX_FILE_SIZE:
-                raise HTTPException(
-                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail="File too large. Maximum size is 10MB."
-                )
-            
-            # Create storage directory if it doesn't exist
+            if len(content) > 10 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
             storage_dir = Path("storage/coach_documents")
             storage_dir.mkdir(parents=True, exist_ok=True)
-            
-            # Generate unique filename
-            unique_filename = f"{secrets.token_urlsafe(16)}{file_extension}"
-            file_path = storage_dir / unique_filename
-            
-            # Save file with error handling
-            with open(file_path, "wb") as buffer:
-                buffer.write(content)
-            
-            # Store relative path (not full system path)
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            with open(storage_dir / unique_filename, "wb") as buf:
+                buf.write(content)
             coach_document_url = f"coach_documents/{unique_filename}"
-            logger.info(f"Coach document uploaded: {coach_document_url}")
-            
         except HTTPException:
             raise
-        except Exception as e:
-            logger.error(f"Coach document upload failed: {e}")
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Failed to upload document. Please try again."
-            )
+        except Exception as exc:
+            logger.error("Coach document upload failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to upload document. Please try again.")
         finally:
             await coach_document.close()
 
-    # Create new user
-    hashed_password = get_password_hash(password)
+    # ── create user ───────────────────────────────────────────────────────────
     new_user = User(
         email=email,
-        password_hash=hashed_password,
+        password_hash=get_password_hash(password),
         name=name,
-        role=role,
+        role=role,                  # permanent account type: PLAYER | COACH
         phone=phone,
         team=team,
         coach_document_url=coach_document_url,
+        coach_status="pending" if role == "COACH" else None,
     )
-
     db.add(new_user)
+    db.flush()  # get new_user.id without committing
+
+    # ── seed subscription in the same transaction ─────────────────────────────
+    _seed_subscription(new_user.id, role, db)
     db.commit()
     db.refresh(new_user)
 
-    logger.info(f"New user registered: {new_user.email} (ID: {new_user.id}, Role: {role})")
-    if coach_document_url:
-        logger.info(f"Coach document saved: {coach_document_url}")
+    logger.info("New user registered: %s (ID: %s, role: %s)", new_user.email, new_user.id, role)
 
-    return new_user
+    sub = _get_active_sub(new_user.id, db)
+    return _build_profile_response(new_user, sub)
 
+
+# ── Login ──────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
-    # Find user
     user = db.query(User).filter(User.email == login_data.email).first()
 
     if not user or not verify_password(login_data.password, user.password_hash):
@@ -133,91 +137,103 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             detail="Incorrect email or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Check if coach is pending verification
-    if user.role == 'COACH' and user.coach_status == 'pending':
+
+    if user.role == "COACH" and user.coach_status == "pending":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your account is pending for verification. Please wait until the Admin reviews your documents.",
+            status_code=403,
+            detail="Your account is pending verification. Please wait until Admin reviews your documents.",
         )
-    
-    # Check if coach was rejected
-    if user.role == 'COACH' and user.coach_status == 'rejected':
+    if user.role == "COACH" and user.coach_status == "rejected":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your coach application has been rejected. Please contact support for more information.",
+            status_code=403,
+            detail="Your coach application has been rejected. Please contact support.",
         )
 
-    # Update last_login timestamp
-    user.last_login = datetime.utcnow()
+    # Pull active subscription so we can embed tier into the JWT
+    sub = _get_active_sub(user.id, db)
+    sub_role = sub.role if sub else "free"
+    sub_status = sub.status if sub else "inactive"
 
-    # Create access token
-    access_token_expires = timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    user.last_login = datetime.now(timezone.utc)
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
+        data={
+            "sub": user.email,
+            "user_id": user.id,
+            "role": user.role,                  # account type: PLAYER | COACH | ADMIN
+            "subscription_role": sub_role,      # tier: free | basic | platinum …
+            "subscription_status": sub_status,
+        },
+        expires_delta=access_token_expires,
     )
+    refresh_token = create_refresh_token(data={"sub": user.email})
 
-    # Create refresh token
-    refresh_token = create_refresh_token(
-        data={"sub": user.email}
-    )
-
-    # Create session record
-    session = UserSession(
+    db.add(UserSession(
         user_id=user.id,
         refresh_token=refresh_token,
-        expires_at=datetime.utcnow() + timedelta(days=30)
-    )
-    db.add(session)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    ))
     db.commit()
 
-    logger.info(f"User logged in: {user.email} (ID: {user.id})")
+    logger.info("User logged in: %s (ID: %s)", user.email, user.id)
 
-    # Return token with user profile
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": int(access_token_expires.total_seconds()),
-        "user": {
-            "id": str(user.id),
-            "email": user.email,
-            "full_name": user.name,  # User model has 'name' field
-            "role": user.role,
-            "team": user.team,
-            "jersey_number": user.jersey_number,
-        },
     }
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
-):
-    # Cache user info BEFORE database operations (prevents lazy loading after commit)
-    user_email = current_user.email
-    user_id = current_user.id
-    
-    try:
-        # Delete all active sessions for this user
-        db.query(UserSession).filter(
-            UserSession.user_id == user_id).delete()
-        db.commit()
-        
-        logger.info(f"User logged out: {user_email} (ID: {user_id})")
-        
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Logout error for user {user_id}: {e}")
-        # Don't fail logout even if session cleanup fails
-        
-    return None
+# ── /me ────────────────────────────────────────────────────────────────────────
+
+def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
+    """Merge user row with active subscription for /me and /register responses."""
+    return {
+        "id": user.id,
+        "role": user.role,
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "profile_bio": user.profile_bio,
+        "gender": user.gender,
+        "jersey_number": user.jersey_number,
+        "team": user.team,
+        "certifications": user.certifications,
+        "specialization": user.specialization,
+        "intro_video_url": user.intro_video_url,
+        "profile_image_url": user.profile_image_url,
+        "coach_category": user.coach_category,
+        "is_verified": user.is_verified,
+        "created_at": user.created_at,
+        "last_login": user.last_login,
+        "subscription_tier": sub.role if sub else "free",
+        "subscription_status": sub.status if sub else "inactive",
+        "subscription_expires_at": sub.expires_at if sub else None,
+    }
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_user)):
-    return current_user
+def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    sub = _get_active_sub(current_user.id, db)
+    return _build_profile_response(current_user, sub)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user_id = current_user.id
+    try:
+        db.query(UserSession).filter(UserSession.user_id == user_id).delete()
+        db.commit()
+        logger.info("User logged out: %s (ID: %s)", current_user.email, user_id)
+    except Exception as exc:
+        db.rollback()
+        logger.error("Logout error for user %s: %s", user_id, exc)
+    return None
 
 
 @router.put("/me", response_model=UserResponse)
@@ -226,15 +242,11 @@ def update_current_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    # Update only provided fields
-    update_dict = update_data.model_dump(exclude_unset=True)
-    
-    for field, value in update_dict.items():
+    for field, value in update_data.model_dump(exclude_unset=True).items():
         if hasattr(current_user, field):
             setattr(current_user, field, value)
-
     db.commit()
     db.refresh(current_user)
-    logger.info(f"User profile updated: {current_user.email}")
-
-    return current_user
+    logger.info("User profile updated: %s", current_user.email)
+    sub = _get_active_sub(current_user.id, db)
+    return _build_profile_response(current_user, sub)

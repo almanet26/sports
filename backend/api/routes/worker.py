@@ -559,10 +559,16 @@ def _simple_pdf(text: str, analysis_type: str) -> bytes:
 # ---------------------------------------------------------------------------
 
 def _get_academy_branding(coach_id: str, db: Session) -> "AcademyBranding | None":
-    """Return AcademyBranding if the coach is an academy-tier user with branding set up."""
+    """Return AcademyBranding if the coach is on the academy subscription tier."""
     try:
-        coach = db.query(User).filter(User.id == coach_id).first()
-        if coach is None or coach.role != "academy":
+        from database.models.subscription import Subscription
+        sub = (
+            db.query(Subscription)
+            .filter(Subscription.user_id == coach_id, Subscription.status == "active")
+            .order_by(Subscription.started_at.desc())
+            .first()
+        )
+        if sub is None or sub.role != "academy":
             return None
         from database.models.academy_branding import AcademyBranding
         return db.query(AcademyBranding).filter(AcademyBranding.academy_id == coach_id).first()

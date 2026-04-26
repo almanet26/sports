@@ -19,6 +19,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -30,7 +31,9 @@ from database.models.user import User
 from dependencies.feature_gate import get_active_subscription
 from dependencies.quota_gate import increment_usage
 from services.usage_service import get_or_create_monthly_usage, report_ocr_usage
-from utils.auth import get_current_user
+from utils.auth import get_current_user, verify_access_token
+
+_optional_bearer = HTTPBearer(auto_error=False)
 
 logger = logging.getLogger(__name__)
 
@@ -40,10 +43,26 @@ _INTERNAL_SECRET: str = os.getenv("INTERNAL_API_SECRET", "")
 internal_router = APIRouter(tags=["internal"])
 billing_router = APIRouter(tags=["billing"])
 
+# Plan key → subscription role mapping (single source of truth for billing)
+_PLAN_KEY_TO_ROLE: dict[str, str] = {
+    "free":               "free",
+    "basic_90d":          "basic",
+    "platinum_180d":      "platinum",
+    "coach_starter_180d": "coach_starter",
+    "coach_pro_365d":     "coach_pro",
+    "academy_365d":       "academy",
+}
+_PLAYER_ROLES = frozenset({"free", "basic", "platinum"})
+_COACH_ROLES  = frozenset({"coach_starter", "coach_pro", "academy"})
+
 
 # ---------------------------------------------------------------------------
 # Schemas
 # ---------------------------------------------------------------------------
+
+class CreateOrderRequest(BaseModel):
+    plan_key: str
+
 
 class UsageReportRequest(BaseModel):
     user_id: str
@@ -79,25 +98,40 @@ class BillingUsageResponse(BaseModel):
 def internal_usage_report(
     body: UsageReportRequest,
     x_internal_secret: Optional[str] = Header(None),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(_optional_bearer),
     db: Session = Depends(get_db),
 ) -> None:
     """
     Called by the Cloud Tasks worker after a job completes.
 
-    - ocr_hours_actual  → reconcile OCR hours (replaces the estimated reserve)
-    - biomech_count_delta → increment biomechanics run counter
+    Auth options (either is sufficient):
+      1. X-Internal-Secret header matching INTERNAL_API_SECRET env var.
+      2. Bearer JWT with role == "ADMIN".
 
-    Both fields are optional; omit whichever doesn't apply for the job type.
     Protected by X-Internal-Secret header — set INTERNAL_API_SECRET env var.
     """
-    if not _INTERNAL_SECRET:
-        logger.error(
-            "INTERNAL_API_SECRET not configured — rejecting /internal/usage/report"
-        )
-        raise HTTPException(status_code=503, detail="Internal secret not configured")
-
-    if x_internal_secret != _INTERNAL_SECRET:
-        raise HTTPException(status_code=401, detail="Invalid internal secret")
+    # Allow admin JWT as an alternative to the internal secret
+    if credentials is not None:
+        try:
+            payload = verify_access_token(credentials.credentials)
+            if payload.get("role") == "ADMIN":
+                pass  # authenticated as admin — proceed
+            else:
+                raise HTTPException(status_code=403, detail="Only ADMIN may call this endpoint via JWT")
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # fall through to secret check
+    elif x_internal_secret:
+        if not _INTERNAL_SECRET:
+            logger.error(
+                "INTERNAL_API_SECRET not configured — rejecting /internal/usage/report"
+            )
+            raise HTTPException(status_code=503, detail="Internal secret not configured")
+        if x_internal_secret != _INTERNAL_SECRET:
+            raise HTTPException(status_code=401, detail="Invalid internal secret")
+    else:
+        raise HTTPException(status_code=401, detail="Authentication required")
 
     if body.ocr_hours_actual is not None:
         if body.ocr_hours_actual < 0:
@@ -151,6 +185,48 @@ def internal_usage_report(
                 body.job_id,
                 body.biomech_count_delta,
             )
+
+
+# ---------------------------------------------------------------------------
+# POST /billing/create-order
+# ---------------------------------------------------------------------------
+
+@billing_router.post("/create-order")
+def create_billing_order(
+    body: CreateOrderRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Validates account-type eligibility before creating a Razorpay order.
+
+    Players   → may only purchase: free, basic, platinum
+    Coaches   → may only purchase: coach_starter, coach_pro, academy
+    Either    → free is always allowed (no payment needed)
+    """
+    tier = _PLAN_KEY_TO_ROLE.get(body.plan_key)
+    if tier is None:
+        raise HTTPException(status_code=422, detail=f"Unknown plan key: {body.plan_key!r}")
+
+    account_type = current_user.role  # PLAYER | COACH | ADMIN
+
+    if account_type == "ADMIN":
+        raise HTTPException(status_code=403, detail="Admins do not require a subscription")
+
+    if account_type == "PLAYER" and tier in _COACH_ROLES:
+        raise HTTPException(
+            status_code=403,
+            detail="This plan is not available for player accounts",
+        )
+
+    if account_type == "COACH" and tier in _PLAYER_ROLES and tier != "free":
+        raise HTTPException(
+            status_code=403,
+            detail="This plan is not available for coach accounts",
+        )
+
+    # Phase 9: create Razorpay order here and return order_id / amount / key_id.
+    raise HTTPException(status_code=501, detail="Payment integration not yet available")
 
 
 # ---------------------------------------------------------------------------

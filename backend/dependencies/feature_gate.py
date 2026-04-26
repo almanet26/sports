@@ -1,14 +1,14 @@
 """
 require_feature(feature_key) — FastAPI Depends factory.
 
-Also exports get_active_subscription() — the single canonical function for
-fetching a user's current subscription.  All route code must use this instead
-of querying subscriptions directly, so the lazy-expiry logic runs everywhere.
+Gate evaluation order (matches Step 3A spec):
+  1. ADMIN bypass — admins pass every gate unconditionally.
+  2. Account-type check — coach-only features reject PLAYER accounts regardless of tier.
+  3. Subscription active check — raises 402 when no active subscription exists.
+  4. Tier check — raises 403 when the user's current tier is below the feature minimum.
 
-Usage:
-    @router.get("/pdf")
-    def download_pdf(user: User = Depends(require_feature("pdf_report")), ...):
-        ...
+get_active_subscription() is the single canonical function for fetching the active
+subscription.  All route code must call this instead of querying subscriptions directly.
 """
 
 from __future__ import annotations
@@ -26,6 +26,30 @@ from database.models.user import User
 from utils.auth import get_current_user
 
 
+# Features that require a COACH account type regardless of subscription tier.
+# A PLAYER with a coach_starter subscription (should never exist after Step 3C enforcement, but defended here anyway) must still be rejected.
+ACCOUNT_TYPE_FOR_FEATURE: dict[str, Optional[str]] = {
+    "ocr_highlights":        "COACH",
+    "video_annotation":      "COACH",
+    "player_dashboard":      "COACH",
+    "player_submission":     "COACH",
+    "csv_export":            "COACH",
+    "white_label_reports":   "COACH",
+    "multi_seat_roles":      "COACH",
+    "recruitment_desk":      "COACH",
+    # Player-accessible features — no account-type restriction
+    "biomechanics_analysis": None,
+    "pdf_report":            None,
+    "ai_chat":               None,
+    "pro_benchmarking":      None,
+    "injury_risk_alerts":    None,
+    "priority_processing":   None,
+}
+
+# Coach subscription tiers (used for account-type check fallback).
+_COACH_TIERS = frozenset({"coach_starter", "coach_pro", "academy"})
+
+
 # ---------------------------------------------------------------------------
 # Shared helper — single source of truth for subscription state
 # ---------------------------------------------------------------------------
@@ -34,12 +58,11 @@ def get_active_subscription(user: User, db: Session) -> Optional[Subscription]:
     """
     Return the most recent subscription for `user`, applying lazy expiry:
 
-    • If the subscription's expires_at has passed but status is still "active",
-      this function atomically flips status → "expired" and user.role → "free"
-      before returning, so the caller sees a consistent, already-expired record.
+    • If expires_at has passed but status is still "active", this function
+      atomically flips status → "expired" before returning so callers always
+      see a consistent, already-expired record.
 
-    • Returns None if the user has no subscription at all.
-    
+    • Returns None if the user has no subscription row at all.
     """
     sub: Optional[Subscription] = (
         db.query(Subscription)
@@ -49,16 +72,11 @@ def get_active_subscription(user: User, db: Session) -> Optional[Subscription]:
     )
 
     if sub is not None and sub.status == "active":
-        # Normalise to UTC for comparison regardless of whether the DB driver returns a tz-aware or a naive datetime.
         exp = sub.expires_at
         if exp.tzinfo is None:
             exp = exp.replace(tzinfo=timezone.utc)
-
         if exp < datetime.now(timezone.utc):
-            # Lazy expiry — write it now so every subsequent check sees the correct state without waiting for a background sweep.
             sub.status = "expired"
-            if user.role != "free":
-                user.role = "free"
             db.commit()
 
     return sub
@@ -70,39 +88,54 @@ def get_active_subscription(user: User, db: Session) -> Optional[Subscription]:
 
 def require_feature(feature_key: str):
     """
-    Returns a FastAPI dependency that:
-      1. Fetches the user's current subscription via get_active_subscription()(which includes lazy expiry handling).
-      2. Raises 402 if there is no active subscription.
-      3. Raises 403 if the user's tier is below the feature's minimum.
-      4. Returns the authenticated User on success.
+    Returns a FastAPI dependency that enforces the four-gate sequence above.
+    Returns the authenticated User on success.
     """
     if feature_key not in FEATURE_MAP:
-        raise ValueError(f"Unknown feature key: '{feature_key}'. Add it to config/feature_map.py.")
+        raise ValueError(
+            f"Unknown feature key: '{feature_key}'. Add it to config/feature_map.py."
+        )
 
-    required_role: str = FEATURE_MAP[feature_key]
+    required_tier: str = FEATURE_MAP[feature_key]
+    required_account_type: Optional[str] = ACCOUNT_TYPE_FOR_FEATURE.get(feature_key)
 
     def _gate(
         user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
-        sub = get_active_subscription(user, db)
+        # ── Gate 1: ADMIN bypass ─────────────────────────────────────────────
+        if user.role == "ADMIN":
+            return user
 
+        # ── Gate 2: account-type check ───────────────────────────────────────
+        if required_account_type is not None and user.role != required_account_type:
+            raise HTTPException(
+                status_code=403,
+                detail={
+                    "error": "wrong_account_type",
+                    "detail": f"This feature requires a {required_account_type} account",
+                },
+            )
+
+        # ── Gate 3: active subscription ──────────────────────────────────────
+        sub = get_active_subscription(user, db)
         if sub is None or sub.status != "active":
             raise HTTPException(
                 status_code=402,
-                detail="Subscription inactive",
+                detail={"error": "subscription_inactive"},
             )
 
-        user_tier = TIER_HIERARCHY.get(user.role, -1)
-        required_tier = TIER_HIERARCHY[required_role]
+        # ── Gate 4: tier check ───────────────────────────────────────────────
+        user_tier = TIER_HIERARCHY.get(sub.role, -1)
+        required_tier_level = TIER_HIERARCHY[required_tier]
 
-        if user_tier < required_tier:
+        if user_tier < required_tier_level:
             raise HTTPException(
                 status_code=403,
                 detail={
                     "error": "tier_required",
-                    "required": required_role,
-                    "current": user.role,
+                    "required": required_tier,
+                    "current": sub.role,
                 },
             )
 

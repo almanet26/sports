@@ -74,6 +74,12 @@ def submit_job_to_coach(
     """Player submits an OCR highlight job to a coach's inbox."""
     current_user: User = _quota[0]
 
+    if current_user.role != "PLAYER":
+        raise HTTPException(
+            status_code=403,
+            detail="Only player accounts can submit to a coach inbox",
+        )
+
     # Validate job exists and belongs to the submitting player
     job = db.query(HighlightJob).filter(HighlightJob.id == body.job_id).first()
     if not job:
