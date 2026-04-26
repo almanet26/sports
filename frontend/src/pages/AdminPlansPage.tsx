@@ -1,51 +1,162 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { plansApi } from "../lib/api";
+import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { adminApi } from '../lib/api';
+
+interface PlanRow {
+  plan_key: string;
+  role: string;
+  display_name: string;
+  price_inr: number;
+  duration_days: number;
+  max_biomech_per_month: number;
+  max_ocr_hours_per_month: number;
+  max_submissions_per_month: number;
+  max_players_in_dashboard: number;
+}
+
+interface EditState {
+  display_name: string;
+  price_rupees: string;
+  duration_days: string;
+  max_biomech_per_month: string;
+  max_ocr_hours_per_month: string;
+  max_submissions_per_month: string;
+  max_players_in_dashboard: string;
+}
+
+function toEditState(p: PlanRow): EditState {
+  return {
+    display_name: p.display_name,
+    price_rupees: (p.price_inr / 100).toFixed(0),
+    duration_days: String(p.duration_days),
+    max_biomech_per_month: String(p.max_biomech_per_month),
+    max_ocr_hours_per_month: String(p.max_ocr_hours_per_month),
+    max_submissions_per_month: String(p.max_submissions_per_month),
+    max_players_in_dashboard: String(p.max_players_in_dashboard),
+  };
+}
+
+function validateEdit(e: EditState): string | null {
+  if (Number(e.price_rupees) < 0) return 'Price cannot be negative';
+  if (Number(e.duration_days) < 0) return 'Duration cannot be negative';
+  return null;
+}
+
+function limitLabel(v: number): string {
+  return v === -1 ? '∞' : String(v);
+}
 
 export default function AdminPlansPage() {
-  const [plans, setPlans] = useState<any[]>([]);
-  const [form, setForm] = useState({
-    name: "",
-    monthly_price: "",
-    yearly_price: "",
-    features: ""
-  });
+  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editState, setEditState] = useState<EditState | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const fetchPlans = () => {
-    plansApi.list().then((res: any) => {
-      setPlans(res.data);
-    });
-  };
-
-  useEffect(() => {
-    fetchPlans();
+  const fetchPlans = useCallback(async () => {
+    try {
+      const { data } = await adminApi.listPlans();
+      setPlans(data);
+    } catch {
+      showToast('Failed to load plans', false);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  const handleDelete = async (id: number) => {
-    await plansApi.delete(id);
-    fetchPlans();
-  };
+  useEffect(() => { fetchPlans(); }, [fetchPlans]);
 
-  const handleCreate = async () => {
-    await plansApi.create({
-      name: form.name,
-      monthly_price: Number(form.monthly_price),
-      yearly_price: Number(form.yearly_price),
-      features: form.features
-    });
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3500);
+  }
 
-    setForm({
-      name: "",
-      monthly_price: "",
-      yearly_price: "",
-      features: ""
-    });
+  function startEdit(plan: PlanRow) {
+    setEditingKey(plan.plan_key);
+    setEditState(toEditState(plan));
+    setValidationError(null);
+  }
 
-    fetchPlans();
-  };
+  function cancelEdit() {
+    setEditingKey(null);
+    setEditState(null);
+    setValidationError(null);
+  }
+
+  async function saveEdit(planKey: string) {
+    if (!editState) return;
+    const err = validateEdit(editState);
+    if (err) { setValidationError(err); return; }
+
+    setSaving(true);
+    try {
+      await adminApi.updatePlan(planKey, {
+        display_name: editState.display_name,
+        price_inr: Math.round(Number(editState.price_rupees) * 100),
+        duration_days: Number(editState.duration_days),
+        max_biomech_per_month: Number(editState.max_biomech_per_month),
+        max_ocr_hours_per_month: Number(editState.max_ocr_hours_per_month),
+        max_submissions_per_month: Number(editState.max_submissions_per_month),
+        max_players_in_dashboard: Number(editState.max_players_in_dashboard),
+      });
+      await fetchPlans();
+      cancelEdit();
+      showToast('Plan updated successfully', true);
+    } catch (err: unknown) {
+      const detail =
+        typeof err === 'object' && err !== null &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : undefined;
+      showToast(typeof detail === 'string' ? detail : 'Save failed', false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function field(label: string, key: keyof EditState, hint?: string) {
+    if (!editState) return null;
+    return (
+      <div>
+        <label className="block text-xs text-white/50 mb-1">{label}{hint && <span className="text-white/30 ml-1">{hint}</span>}</label>
+        <input
+          type="number"
+          value={editState[key]}
+          onChange={(e) => setEditState({ ...editState, [key]: e.target.value })}
+          className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none text-sm text-white"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="text-white">
+      {/* Toast */}
+      {toast && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium ${
+            toast.ok ? 'bg-green-600' : 'bg-red-600'
+          }`}
+        >
+          {toast.ok ? '✓' : '✗'} {toast.msg}
+        </motion.div>
+      )}
+
+      {/* Warning banner */}
+      <div className="mb-6 px-5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm flex items-start gap-3">
+        <i className="fas fa-exclamation-triangle mt-0.5 flex-shrink-0"></i>
+        <span>
+          <strong>Changes to plan limits take effect immediately</strong> for all users on that plan.
+          Existing subscribers are not grandfathered.
+        </span>
+      </div>
+
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -53,137 +164,122 @@ export default function AdminPlansPage() {
         className="glass rounded-3xl p-6 mb-8 border border-white/20"
       >
         <h1 className="text-3xl font-bold gradient-text flex items-center gap-3">
-          <i className="fas fa-crown text-yellow-400"></i>
-          Subscription Plans
+          <i className="fas fa-tags text-yellow-400"></i>
+          Plan Management
         </h1>
-        <p className="text-white/70 mt-2 text-sm">
-          Manage subscription tiers and pricing
+        <p className="text-white/60 mt-1 text-sm">
+          Edit plan limits and pricing directly from the platform.
         </p>
       </motion.div>
 
-      {/* Create Plan Form */}
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="glass rounded-3xl p-6 mb-8 border border-white/20"
-      >
-        <h3 className="text-xl font-semibold mb-4 flex items-center gap-2">
-          <i className="fas fa-plus-circle text-green-400"></i>
-          Create New Plan
-        </h3>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <input
-            placeholder="Plan name (e.g., Gold)"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-          />
-
-          <input
-            type="number"
-            placeholder="Monthly price"
-            value={form.monthly_price}
-            onChange={(e) => setForm({ ...form, monthly_price: e.target.value })}
-            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-          />
-
-          <input
-            type="number"
-            placeholder="Yearly price"
-            value={form.yearly_price}
-            onChange={(e) => setForm({ ...form, yearly_price: e.target.value })}
-            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-          />
-
-          <input
-            placeholder="Features (comma-separated)"
-            value={form.features}
-            onChange={(e) => setForm({ ...form, features: e.target.value })}
-            className="px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-          />
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
         </div>
-
-        <button
-          onClick={handleCreate}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-300 font-semibold flex items-center gap-2"
-        >
-          <i className="fas fa-plus"></i>
-          Create Plan
-        </button>
-      </motion.div>
-
-      {/* Plans List */}
-      <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {plans.map((plan, i) => (
-          <motion.div
-            key={plan.id}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: i * 0.1 }}
-            className="glass rounded-3xl p-6 border border-white/20 hover:border-white/30 transition-all duration-300"
-          >
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-2xl font-bold gradient-text">{plan.name}</h3>
-              <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-yellow-500 to-orange-500 flex items-center justify-center">
-                <i className="fas fa-crown text-white"></i>
+      ) : (
+        <div className="space-y-4">
+          {plans.map((plan, i) => (
+            <motion.div
+              key={plan.plan_key}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="glass rounded-2xl border border-white/10 overflow-hidden"
+            >
+              {/* Plan header row */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <span className="font-semibold text-white">{plan.display_name}</span>
+                    <span className="ml-2 text-xs text-white/40 font-mono">{plan.plan_key}</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/60 font-mono">
+                    {plan.role}
+                  </span>
+                </div>
+                {editingKey !== plan.plan_key ? (
+                  <button
+                    onClick={() => startEdit(plan)}
+                    className="px-4 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-sm font-medium border border-blue-500/30 transition-all"
+                  >
+                    <i className="fas fa-pencil mr-2"></i>Edit
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(plan.plan_key)}
+                      disabled={saving}
+                      className="px-4 py-2 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-400 text-sm font-medium border border-green-500/30 transition-all disabled:opacity-50"
+                    >
+                      {saving ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-check mr-1"></i>}
+                      Save
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 text-sm font-medium border border-white/10 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
 
-            <div className="space-y-3 mb-6">
-              <div className="flex items-center justify-between">
-                <span className="text-white/60">Monthly</span>
-                <span className="text-2xl font-bold text-green-400">₹{plan.monthly_price}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-white/60">Yearly</span>
-                <span className="text-2xl font-bold text-blue-400">₹{plan.yearly_price}</span>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <p className="text-sm text-white/60 mb-2">Features:</p>
-              <p className="text-sm">{plan.features}</p>
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={async () => {
-                  const newPrice = prompt("New monthly price");
-                  if (newPrice) {
-                    await plansApi.update(plan.id, {
-                      name: plan.name,
-                      monthly_price: Number(newPrice),
-                      yearly_price: plan.yearly_price,
-                      features: plan.features
-                    });
-                    fetchPlans();
-                  }
-                }}
-                className="flex-1 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-600 hover:from-blue-600 hover:to-cyan-700 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2"
-              >
-                <i className="fas fa-edit"></i>
-                Update
-              </button>
-
-              <button
-                onClick={() => handleDelete(plan.id)}
-                className="flex-1 px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2"
-              >
-                <i className="fas fa-trash"></i>
-                Delete
-              </button>
-            </div>
-          </motion.div>
-        ))}
-      </div>
-
-      {plans.length === 0 && (
-        <div className="text-center py-12 glass rounded-3xl border border-white/20">
-          <i className="fas fa-inbox text-4xl text-white/20 mb-4"></i>
-          <p className="text-white/60">No plans created yet</p>
-          <p className="text-sm text-white/40 mt-1">Create your first subscription plan above</p>
+              {/* Read-only summary or edit form */}
+              {editingKey !== plan.plan_key ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4 px-6 py-4 text-sm">
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Price</p>
+                    <p className="font-medium">₹{(plan.price_inr / 100).toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Duration</p>
+                    <p className="font-medium">{plan.duration_days === 0 ? 'Forever' : `${plan.duration_days}d`}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Biomech/mo</p>
+                    <p className="font-medium">{limitLabel(plan.max_biomech_per_month)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">OCR hrs/mo</p>
+                    <p className="font-medium">{limitLabel(plan.max_ocr_hours_per_month)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Submissions/mo</p>
+                    <p className="font-medium">{limitLabel(plan.max_submissions_per_month)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Max players</p>
+                    <p className="font-medium">{limitLabel(plan.max_players_in_dashboard)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-6 py-5 space-y-4">
+                  {validationError && (
+                    <p className="text-red-400 text-sm flex items-center gap-2">
+                      <i className="fas fa-exclamation-circle"></i> {validationError}
+                    </p>
+                  )}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs text-white/50 mb-1">Display Name</label>
+                      <input
+                        type="text"
+                        value={editState!.display_name}
+                        onChange={(e) => setEditState({ ...editState!, display_name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none text-sm text-white"
+                      />
+                    </div>
+                    {field('Price (₹)', 'price_rupees', '— shown in rupees, stored as paise')}
+                    {field('Duration (days)', 'duration_days', '— 0 = forever')}
+                    {field('Biomech / month', 'max_biomech_per_month', '— −1 = unlimited')}
+                    {field('OCR hours / month', 'max_ocr_hours_per_month', '— −1 = unlimited')}
+                    {field('Submissions / month', 'max_submissions_per_month', '— −1 = unlimited')}
+                    {field('Max players in dashboard', 'max_players_in_dashboard', '— −1 = unlimited')}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          ))}
         </div>
       )}
     </div>
