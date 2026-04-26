@@ -23,6 +23,7 @@ from database.models import (
     VideoSubmission,
     VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
     AdminAuditLog,
+    PlayerPerformanceEntry,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -336,6 +337,10 @@ app.include_router(requests.router, prefix="/api/v1", tags=["requests"])
 # Matches and notifications routes
 app.include_router(match.router, prefix="/api/v1", tags=["matches"])
 app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
+
+# Player performance (match stats logging)
+from api.routes.performance import router as performance_router
+app.include_router(performance_router, prefix="/api/v1", tags=["performance"])
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])

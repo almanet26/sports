@@ -13,7 +13,7 @@ import {
   BarChart,
   Bar,
 } from 'recharts';
-import { videosApi, requestsApi } from '../lib/api';
+import { videosApi, requestsApi, submissionsApi, type PlayerProgress } from '../lib/api';
 import { useAuthStore } from '../store/authStore';
 import RequestMatchModal from '../components/RequestMatchModal';
 
@@ -38,13 +38,59 @@ interface UserRequest {
   created_at: string;
 }
 
+const WEEK_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] as const;
+
+function getCurrentWeekLineData(progress: PlayerProgress | null) {
+  const today = new Date();
+  const startOfWeek = new Date(today);
+  const dayOffset = (today.getDay() + 6) % 7;
+  startOfWeek.setHours(0, 0, 0, 0);
+  startOfWeek.setDate(today.getDate() - dayOffset);
+
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+  const weekData = WEEK_DAYS.map((day, index) => {
+    const date = new Date(startOfWeek);
+    date.setDate(startOfWeek.getDate() + index);
+
+    return {
+      day,
+      events: 0,
+      dateKey: date.toDateString(),
+    };
+  });
+
+  const dayMap = new Map(weekData.map((item) => [item.dateKey, item]));
+
+  for (const submission of progress?.submission_timeline || []) {
+    if (!submission.created_at) continue;
+
+    const createdAt = new Date(submission.created_at);
+    if (Number.isNaN(createdAt.getTime())) continue;
+
+    if (createdAt < startOfWeek || createdAt >= endOfWeek) continue;
+
+    const bucket = dayMap.get(createdAt.toDateString());
+    if (bucket) {
+      bucket.events += 1;
+    }
+  }
+
+  return weekData.map(({ day, events }) => ({ day, events }));
+}
+
 export default function PlayerDashboard(){
   const navigate = useNavigate();
   const { user } = useAuthStore();
   const [recentVideos, setRecentVideos] = useState<VideoSummary[]>([]);
   const [myRequests, setMyRequests] = useState<UserRequest[]>([]);
+  const [progress, setProgress] = useState<PlayerProgress | null>(null);
+
   const [loadingVideos, setLoadingVideos] = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(true);
+  const [loadingActivity, setLoadingActivity] = useState(true);
+  const [activityError, setActivityError] = useState('');
   const [showRequestModal, setShowRequestModal] = useState(false);
 
   // Stats data for cards
@@ -56,15 +102,11 @@ export default function PlayerDashboard(){
   ], [recentVideos, myRequests]);
 
   // Chart data
-  const lineData = useMemo(() => [
-    { day: "Mon", events: 12 },
-    { day: "Tue", events: 18 },
-    { day: "Wed", events: 15 },
-    { day: "Thu", events: 22 },
-    { day: "Fri", events: 28 },
-    { day: "Sat", events: 35 },
-    { day: "Sun", events: 30 },
-  ], []);
+  const lineData = useMemo(() => getCurrentWeekLineData(progress), [progress]);
+  const hasWeeklyActivity = useMemo(
+    () => lineData.some((item) => item.events > 0),
+    [lineData]
+  );
 
   const barData = useMemo(() => {
     return recentVideos.slice(0, 5).map((v) => ({
@@ -78,6 +120,8 @@ export default function PlayerDashboard(){
   useEffect(() => {
     fetchRecentVideos();
     fetchMyRequests();
+    fetchWeeklyActivity();
+
   }, []);
 
   const fetchRecentVideos = async () => {
@@ -99,6 +143,19 @@ export default function PlayerDashboard(){
       console.error('Failed to fetch requests:', error);
     } finally {
       setLoadingRequests(false);
+    }
+  };
+
+  const fetchWeeklyActivity = async () => {
+    try {
+      setActivityError('');
+      const response = await submissionsApi.myProgress();
+      setProgress(response.data);
+    } catch (error) {
+      console.error('Failed to fetch weekly activity:', error);
+      setActivityError('Unable to load weekly submission activity right now.');
+    } finally {
+      setLoadingActivity(false);
     }
   };
 
@@ -165,13 +222,13 @@ export default function PlayerDashboard(){
               Library
             </Link>
             <button
-              onClick={() => navigate("/profile")}
+              onClick={() => navigate("/player/settings")}
               className="px-4 py-2 rounded-xl glass border border-white/20
              hover:bg-white/10 transition-all duration-300 text-sm
              flex items-center gap-2"
             >
-              <i className="fas fa-user-edit"></i>
-              Profile
+              <i className="fas fa-cog"></i>
+              Settings
             </button>
           </div>
         </div>
@@ -225,40 +282,64 @@ export default function PlayerDashboard(){
               <i className="fas fa-chart-line text-white"></i>
             </div>
             <div>
-              <p className="font-semibold">Weekly Activity</p>
-              <p className="text-sm text-white/60">Your highlight viewing trend</p>
+              <p className="font-semibold">Weekly Submission Activity</p>
+              <p className="text-sm text-white/60">Current week submission trend</p>
             </div>
           </div>
 
           <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={lineData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
-                <XAxis dataKey="day" stroke="rgba(255,255,255,0.6)" />
-                <YAxis stroke="rgba(255,255,255,0.6)" />
-                <Tooltip contentStyle={{
-                  backgroundColor: 'rgba(0,0,0,0.8)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '12px',
-                  color: 'white'
-                }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="events"
-                  stroke="url(#lineGradient)"
-                  strokeWidth={3}
-                  dot={{ fill: '#60A5FA', strokeWidth: 2, r: 6 }}
-                  activeDot={{ r: 8, fill: '#3B82F6' }}
-                />
-                <defs>
-                  <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#3B82F6" />
-                    <stop offset="100%" stopColor="#8B5CF6" />
-                  </linearGradient>
-                </defs>
-              </LineChart>
-            </ResponsiveContainer>
+            {loadingActivity ? (
+              <div className="h-full flex items-center justify-center text-white/50">
+                <div className="text-center">
+                  <i className="fas fa-spinner fa-spin text-3xl mb-3"></i>
+                  <p>Loading weekly submission activity...</p>
+                </div>
+              </div>
+            ) : activityError ? (
+              <div className="h-full flex items-center justify-center text-white/50">
+                <div className="text-center">
+                  <i className="fas fa-exclamation-circle text-3xl mb-3 text-red-400"></i>
+                  <p>{activityError}</p>
+                </div>
+              </div>
+            ) : !hasWeeklyActivity ? (
+              <div className="h-full flex items-center justify-center text-white/40">
+                <div className="text-center">
+                  <i className="fas fa-calendar-week text-4xl mb-3"></i>
+                  <p>No submissions this week</p>
+                </div>
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={lineData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.1)" />
+                  <XAxis dataKey="day" stroke="rgba(255,255,255,0.6)" />
+                  <YAxis allowDecimals={false} stroke="rgba(255,255,255,0.6)" />
+                  <Tooltip contentStyle={{
+                    backgroundColor: 'rgba(0,0,0,0.8)',
+                    border: '1px solid rgba(255,255,255,0.2)',
+                    borderRadius: '12px',
+                    color: 'white'
+                  }}
+                    formatter={(value) => [`${Number(value) || 0} submissions`, 'Activity']}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="events"
+                    stroke="url(#lineGradient)"
+                    strokeWidth={3}
+                    dot={{ fill: '#60A5FA', strokeWidth: 2, r: 6 }}
+                    activeDot={{ r: 8, fill: '#3B82F6' }}
+                  />
+                  <defs>
+                    <linearGradient id="lineGradient" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#3B82F6" />
+                      <stop offset="100%" stopColor="#8B5CF6" />
+                    </linearGradient>
+                  </defs>
+                </LineChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </motion.div >
 
@@ -336,59 +417,6 @@ export default function PlayerDashboard(){
             </Link>
           </div>
 
-          {
-            loadingVideos ? (
-              <div className="space-y-3">
-                {[1, 2, 3].map((i) => (
-                  <div key={i} className="glass rounded-2xl p-4 border border-white/10 animate-pulse">
-                    <div className="h-4 bg-white/10 rounded w-3/4 mb-2"></div>
-                    <div className="h-3 bg-white/10 rounded w-1/2"></div>
-                  </div>
-                ))}
-              </div>
-            ) : recentVideos.length === 0 ? (
-              <div className="text-center py-12">
-                <i className="fas fa-video text-4xl text-white/20 mb-4"></i>
-                <p className="text-white/60">No highlights available yet</p>
-                <p className="text-sm text-white/40 mt-1">Request a match to get started!</p>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {recentVideos.slice(0, 4).map((video, i) => (
-                  <motion.div
-                    key={video.id}
-                    initial={{ opacity: 0, x: -20 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: i * 0.1 }}
-                  >
-                    <Link
-                      to={`/video/${video.id}`}
-                      className="glass rounded-2xl p-4 border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center justify-between group"
-                    >
-                      <div className="flex items-center gap-4">
-                        <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold">
-                          <i className="fas fa-play text-sm"></i>
-                        </div>
-                        <div>
-                          <p className="font-medium group-hover:text-blue-400 transition-colors">{video.title}</p>
-                          <p className="text-xs text-white/50">{video.teams || 'Cricket Match'}</p>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs">
-                        <span className="text-blue-400">{video.total_fours} 4s</span>
-                        <span className="text-green-400">{video.total_sixes} 6s</span>
-                        <span className="text-red-400">{video.total_wickets} W</span>
-                      </div>
-                    </Link>
-                  </motion.div>
-                ))}
-              </div>
-            )
-          }
-        </motion.div >
-
-        {/* Quick Actions & Requests */}
-        <motion.div>
           {
             loadingVideos ? (
               <div className="space-y-3">

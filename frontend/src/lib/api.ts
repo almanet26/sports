@@ -926,4 +926,54 @@ export const scoutingApi = {
     api.delete(`/scouting/shortlist/${playerId}`),
 };
 
+// Player Performance API
+export interface PerformanceEntry {
+  id: number;
+  player_id: string;
+  opponent: string;
+  match_date: string;
+  match_type: string;
+  runs: number;
+  fours: number;
+  sixes: number;
+  balls_faced: number;
+  wickets: number;
+  overs_bowled: number;
+  runs_conceded: number;
+  catches: number;
+  run_outs: number;
+  result: string;
+  created_at: string;
+}
+
+export interface PerformanceStats {
+  total_matches: number;
+  total_runs: number;
+  total_fours: number;
+  total_sixes: number;
+  total_wickets: number;
+  total_catches: number;
+  total_run_outs: number;
+  highest_score: number;
+  batting_average: number;
+  total_balls_faced: number;
+  total_overs_bowled: number;
+  total_runs_conceded: number;
+  bowling_average: number;
+  wins: number;
+  losses: number;
+  draws: number;
+}
+
+export const performanceApi = {
+  log: (data: Omit<PerformanceEntry, 'id' | 'player_id' | 'created_at'>) =>
+    api.post<PerformanceEntry>('/performance/', data),
+  getStats: () =>
+    api.get<PerformanceStats>('/performance/stats'),
+  getHistory: () =>
+    api.get<PerformanceEntry[]>('/performance/history'),
+  deleteEntry: (id: number) =>
+    api.delete(`/performance/${id}`),
+};
+
 export default api;
