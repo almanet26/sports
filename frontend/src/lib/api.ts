@@ -606,22 +606,65 @@ export const subscriptionApi = {
 
 };
 
+// Billing API
+export const billingApi = {
+  /** Create a Razorpay order for the given plan_key */
+  createOrder: (planKey: string) =>
+    api.post('/billing/create-order', { plan_key: planKey }),
+
+  /** Monthly quota usage for the current user */
+  getUsage: () =>
+    api.get('/billing/usage'),
+};
+
 // Admin API
 export const adminApi = {
-  // Get admin stats
+  // Stats
   getStats: () => api.get('/admin/stats'),
-  
-  // Get pending coach verifications
-  getPendingCoaches: (limit = 5) => 
+
+  // Coach verification
+  getPendingCoaches: (limit = 5) =>
     api.get('/admin/coaches/pending', { params: { limit } }),
-  
-  // Verify coach (approve/reject)
-  verifyCoach: (coachId: string, action: 'verified' | 'rejected') => 
+  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
     api.patch(`/admin/coaches/${coachId}/verify`, null, { params: { action } }),
-  
-  // Get activity feed
-  getActivityFeed: (limit = 20) => 
+
+  // Activity feed
+  getActivityFeed: (limit = 20) =>
     api.get('/admin/activity', { params: { limit } }),
+
+  // Plan management
+  listPlans: () => api.get('/admin/plans'),
+  updatePlan: (planKey: string, data: {
+    display_name?: string;
+    price_inr?: number;
+    duration_days?: number;
+    max_biomech_per_month?: number;
+    max_ocr_hours_per_month?: number;
+    max_submissions_per_month?: number;
+    max_players_in_dashboard?: number;
+  }) => api.patch(`/admin/plans/${planKey}`, data),
+
+  // User management
+  listUsers: (params: {
+    page?: number;
+    per_page?: number;
+    search?: string;
+    role?: string;
+    subscription_status?: string;
+    plan?: string;
+    is_active?: boolean;
+  }) => api.get('/admin/users', { params }),
+  overrideSubscription: (userId: string, data: {
+    plan_key: string;
+    status: string;
+    expires_at?: string;
+  }) => api.patch(`/admin/users/${userId}/subscription`, data),
+  impersonateUser: (userId: string) =>
+    api.post(`/admin/users/${userId}/impersonate`),
+
+  // Audit log
+  getAuditLog: (page = 1, perPage = 50) =>
+    api.get('/admin/audit-log', { params: { page, per_page: perPage } }),
 };
 
 export default api;

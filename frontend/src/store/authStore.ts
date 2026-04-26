@@ -76,44 +76,56 @@ export const useAuthStore = create<AuthState>()(
       // Login action
       login: async (email: string, password: string) => {
         set({ isLoading: true, error: null });
-        
+
         try {
           // Call login endpoint
           const response = await authApi.login(email, password);
           const { access_token, refresh_token, user } = response.data;
-          
+
           // Store tokens in localStorage for axios interceptor
           localStorage.setItem('access_token', access_token);
           if (refresh_token) {
             localStorage.setItem('refresh_token', refresh_token);
           }
-          
-          const userData = user ? {
+
+          // Decode JWT payload immediately — backend embeds role from DB at signing time
+          let roleFromToken: UserRole = 'PLAYER';
+          let userIdFromToken = '';
+          try {
+            const b64 = access_token.split('.')[1];
+            const decoded = JSON.parse(atob(b64.replace(/-/g, '+').replace(/_/g, '/')));
+            if (decoded.role) roleFromToken = decoded.role as UserRole;
+            if (decoded.user_id) userIdFromToken = decoded.user_id;
+          } catch { /* fetchProfile will supply correct values */ }
+
+          const userData: User = user ? {
             id: user.id,
             email: user.email,
-            name: user.full_name || user.name,
-            role: user.role,
+            name: user.full_name || user.name || '',
+            role: (user.role ?? roleFromToken) as UserRole,
             is_verified: true,
             created_at: new Date().toISOString(),
-          } : null;
-          
-          // Store user profile in localStorage
-          if (userData) {
-            localStorage.setItem('user_profile', JSON.stringify(userData));
-          }
-          
+          } : {
+            id: userIdFromToken,
+            email,
+            name: '',
+            role: roleFromToken,
+            is_verified: true,
+            created_at: new Date().toISOString(),
+          };
+
+          localStorage.setItem('user_profile', JSON.stringify(userData));
+
           set({
             token: access_token,
             refreshToken: refresh_token || null,
             user: userData,
             isAuthenticated: true,
           });
-          
-          // If user data is not in token response, fetch profile
-          if (!user) {
-            await get().fetchProfile();
-          }
-          
+
+          // Fetch full profile to populate name, phone, team, etc.
+          await get().fetchProfile();
+
           set({ isLoading: false });
           return true;
         } catch (error) {
