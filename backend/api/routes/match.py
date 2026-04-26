@@ -158,14 +158,10 @@ def update_match(
         )
     
     update_data = match_data.model_dump(exclude_unset=True)
-    
-    # Handle statistics separately
-    if "statistics" in update_data and update_data["statistics"]:
-        update_data["statistics"] = update_data["statistics"].dict() if hasattr(update_data["statistics"], "dict") else update_data["statistics"]
-    
+
     for field, value in update_data.items():
         setattr(match, field, value)
-    
+
     db.commit()
     db.refresh(match)
     

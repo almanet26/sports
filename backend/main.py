@@ -25,6 +25,7 @@ from database.models.coach_content import CoachContent
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
+from database.models.player_performance import PlayerPerformanceEntry
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -294,6 +295,7 @@ from api.routes import (
     match
 )
 from api.routes import plan, subscription, sessions
+from api.routes import performance
 try:
     from api.routes import earnings, reviews
     EARNINGS_AVAILABLE = True
@@ -307,6 +309,9 @@ app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 
 # Match routes
 app.include_router(match.router, prefix="/api/v1", tags=["matches"])
+
+# Performance routes
+app.include_router(performance.router, prefix="/api/v1", tags=["performance"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])

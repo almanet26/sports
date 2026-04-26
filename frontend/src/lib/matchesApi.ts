@@ -50,7 +50,6 @@ export interface UpdateMatchData {
   reminder?: "1 Day Before" | "2 Hours Before" | "30 Minutes Before";
   statistics?: MatchStatistics;
 }
-
 class MatchesAPI {
   async getAllMatches(): Promise<Match[]> {
     const response = await api.get<Match[]>("/matches/");

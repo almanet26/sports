@@ -26,6 +26,7 @@ from database.models.transaction import Transaction, TransactionType, Transactio
 from database.models.review import Review
 from database.models.coach_review import CoachReview
 from database.models.match import Match
+from database.models.player_performance import PlayerPerformanceEntry
 
 __all__ = [
     # User models

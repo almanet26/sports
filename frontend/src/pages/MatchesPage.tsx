@@ -43,8 +43,6 @@ interface MatchFormState {
   locationType: MatchLocationType;
 }
 
-
-
 const DEFAULT_FORM: MatchFormState = {
   opponent: "",
   date: "",
@@ -750,7 +748,7 @@ export default function MatchesPage() {
                           ) : null}
                         </div>
 
-                        {status === "Completed" && match.statistics ? (
+                        {match.match_status === "Completed" && match.statistics ? (
                           <div className="relative mt-5">
                             <button
                               onClick={() =>
@@ -758,7 +756,7 @@ export default function MatchesPage() {
                               }
                               className="flex w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-sm font-medium text-white/85"
                             >
-                              After Match Update
+                              Match Stats
                               <ChevronDown
                                 className={`w-4 h-4 transition-transform ${isExpanded ? "rotate-180" : ""}`}
                               />
