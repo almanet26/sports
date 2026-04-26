@@ -26,6 +26,7 @@ from database.models.video_annotation import VideoAnnotation
 from database.models.coach_player import CoachPlayer
 from database.models.player_submission import PlayerSubmission
 from database.models.academy_branding import AcademyBranding
+from database.models.admin_audit_log import AdminAuditLog
 __all__ = [
     # User models
     "User",
@@ -58,6 +59,7 @@ __all__ = [
     "CoachPlayer",
     "PlayerSubmission",
     "AcademyBranding",
+    "AdminAuditLog",
     # Enums
     "VideoVisibility",
     "VideoStatus",
