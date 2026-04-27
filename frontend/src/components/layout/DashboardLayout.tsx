@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { getStoredPlayerProfileSummary } from "../../services/playerProfile";
-import { resolveMediaUrl } from "../../lib/api";
+import { resolveMediaUrl, notificationsApi } from "../../lib/api";
 import logoImage from '/logo.webp';
 
 
@@ -75,6 +75,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [playerProfile, setPlayerProfile] = React.useState(() => getStoredPlayerProfileSummary());
+  const [unreadCount, setUnreadCount] = React.useState(0);
 
   React.useEffect(() => {
     const refresh = () => setPlayerProfile(getStoredPlayerProfileSummary());
@@ -86,6 +87,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       window.removeEventListener("pitchvision:playerProfileUpdated", refresh);
       window.removeEventListener("storage", refresh);
     };
+  }, [user]);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const fetchUnread = () =>
+      notificationsApi.getAll().then(res => setUnreadCount(res.data.unread_count)).catch(() => {});
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60000);
+    return () => clearInterval(interval);
   }, [user]);
   
   const sidebarName = playerProfile.fullName || user?.name || user?.email || "User";
@@ -249,7 +259,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                           }`}></i>
                       </div>
                       <span className="font-medium">{item.label}</span>
-                      {isActive && (
+                      {item.label === "Notifications" && unreadCount > 0 && (
+                        <span className="ml-auto min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                          {unreadCount > 99 ? "99+" : unreadCount}
+                        </span>
+                      )}
+                      {isActive && item.label !== "Notifications" && (
                         <motion.div
                           layoutId="activeIndicator"
                           className="ml-auto w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500"
@@ -386,6 +401,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                             <i className={`${item.icon} text-sm ${isActive ? 'text-white' : 'text-white/60'}`}></i>
                           </div>
                           <span className="font-medium">{item.label}</span>
+                          {item.label === "Notifications" && unreadCount > 0 && (
+                            <span className="ml-auto min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                              {unreadCount > 99 ? "99+" : unreadCount}
+                            </span>
+                          )}
                         </>
                       )}
                     </NavLink>

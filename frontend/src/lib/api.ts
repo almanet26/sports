@@ -757,6 +757,7 @@ export const notificationsApi = {
   getAll: () => api.get<{ notifications: NotificationItem[]; unread_count: number }>('/notifications'),
   markRead: (id: string) => api.patch(`/notifications/${id}/read`),
   markAllRead: () => api.patch('/notifications/read-all'),
+  delete: (id: string) => api.delete(`/notifications/${id}`),
 };
 
 // Admin API

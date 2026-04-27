@@ -1,8 +1,9 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, ConfigDict
 from datetime import datetime
 from typing import Optional
+import uuid
 
 from database.config import get_db
 from database.models.notification import Notification
@@ -10,6 +11,20 @@ from database.models.user import User
 from utils.auth import get_current_user
 
 router = APIRouter(prefix="/notifications")
+
+
+def create_notification(db: Session, user_id: str, title: str, message: str, notif_type: str = "info") -> Notification:
+    """Helper to create a notification from any route/event."""
+    notif = Notification(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        title=title,
+        message=message,
+        type=notif_type,
+    )
+    db.add(notif)
+    db.commit()
+    return notif
 
 
 class NotificationResponse(BaseModel):
@@ -72,5 +87,22 @@ def mark_all_read(
         Notification.user_id == current_user.id,
         Notification.is_read == False,
     ).update({"is_read": True})
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/{notification_id}")
+def delete_notification(
+    notification_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notif = db.query(Notification).filter(
+        Notification.id == notification_id,
+        Notification.user_id == current_user.id,
+    ).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    db.delete(notif)
     db.commit()
     return {"ok": True}
