@@ -284,6 +284,8 @@ def update_current_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
+    from api.routes.notification import create_notification
+    
     update_dict = update_data.model_dump(exclude_unset=True)
 
     for field, value in update_dict.items():
@@ -293,6 +295,15 @@ def update_current_user(
     db.commit()
     db.refresh(current_user)
     logger.info(f"User profile updated: {current_user.email}")
+    
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Profile Updated",
+        message="Your profile information has been successfully updated.",
+        notif_type="system"
+    )
 
     return current_user
 
@@ -332,6 +343,8 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     from utils.auth import verify_password, get_password_hash
+    from api.routes.notification import create_notification
+    
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
 
@@ -342,6 +355,17 @@ def change_password(
 
     current_user.password_hash = get_password_hash(new_password)
     db.commit()
+    
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Password Changed",
+        message="Your password was successfully changed. If you didn't make this change, please contact support immediately.",
+        notif_type="system"
+    )
+    
+    logger.info(f"Password changed for user: {current_user.email}")
     return None
 
 

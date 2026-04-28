@@ -117,6 +117,8 @@ def create_match(
     db: Session = Depends(get_db)
 ):
     """Create a new match."""
+    from api.routes.notification import create_notification
+    
     new_match = Match(
         created_by=current_user.id,
         opponent=match_data.opponent,
@@ -135,6 +137,15 @@ def create_match(
     db.commit()
     db.refresh(new_match)
     
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Match Scheduled",
+        message=f"New match vs {match_data.opponent} on {match_data.match_date} at {match_data.venue}",
+        notif_type="match"
+    )
+    
     return new_match
 
 
@@ -146,6 +157,8 @@ def update_match(
     db: Session = Depends(get_db)
 ):
     """Update an existing match."""
+    from api.routes.notification import create_notification
+    
     match = db.query(Match).filter(
         Match.id == match_id,
         Match.created_by == current_user.id
@@ -158,12 +171,36 @@ def update_match(
         )
     
     update_data = match_data.model_dump(exclude_unset=True)
+    
+    # Check if critical fields changed
+    date_changed = "match_date" in update_data and update_data["match_date"] != match.match_date
+    time_changed = "match_time" in update_data and update_data["match_time"] != match.match_time
+    venue_changed = "venue" in update_data and update_data["venue"] != match.venue
+    cancelled = "match_status" in update_data and update_data["match_status"] == "Cancelled"
 
     for field, value in update_data.items():
         setattr(match, field, value)
 
     db.commit()
     db.refresh(match)
+    
+    # Create notification for significant changes
+    if cancelled:
+        create_notification(
+            db=db,
+            user_id=current_user.id,
+            title="Match Cancelled",
+            message=f"Match vs {match.opponent} on {match.match_date} has been cancelled",
+            notif_type="match"
+        )
+    elif date_changed or time_changed or venue_changed:
+        create_notification(
+            db=db,
+            user_id=current_user.id,
+            title="Match Updated",
+            message=f"Match vs {match.opponent} details have been updated",
+            notif_type="match"
+        )
     
     return match
 
