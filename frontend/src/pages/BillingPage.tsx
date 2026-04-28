@@ -93,8 +93,9 @@ export default function BillingPage() {
 
   const planDisplay  = PLAN_DISPLAY_CONFIG[role];
   const isPlayerTier = accountType === 'PLAYER';
+  const isForeverTier = role === 'free' || role === 'coach_free';
 
-  const daysRemaining = expiresAt
+  const daysRemaining = !isForeverTier && expiresAt
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 86_400_000))
     : null;
 
@@ -165,7 +166,7 @@ export default function BillingPage() {
             <h2 className="text-2xl font-bold text-white">{planDisplay.displayName}</h2>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <StatusBadge status={subscriptionStatus} />
-              {expiresAt && (
+              {!isForeverTier && expiresAt && (
                 <span className="text-xs text-zinc-500">
                   Expires{' '}
                   {new Date(expiresAt).toLocaleDateString('en-IN', {

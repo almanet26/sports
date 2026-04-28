@@ -21,6 +21,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
+    { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat" },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
@@ -32,9 +33,12 @@ const dashboardItems: Record<string, NavItem[]> = {
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
-    { to: "/settings", icon: "fas fa-user-circle", label: "My Profile" },
+    { to: "/coach/chat", icon: "fas fa-robot", label: "AI Chat" },
+    { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
     { to: "/coach/submissions", icon: "fas fa-inbox", label: "Video Reviews" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
+    { to: "/billing", icon: "fas fa-star", label: "Subscription" },
+    { to: "/settings", icon: "fas fa-user-circle", label: "My Profile" },
   ],
  ADMIN: [
   { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
@@ -53,8 +57,39 @@ interface DashboardLayoutProps {
   children?: React.ReactNode;
 }
 
+interface RoleBadgeProps {
+  accountType: 'PLAYER' | 'COACH' | 'ADMIN';
+}
+
+function RoleBadge({ accountType }: RoleBadgeProps) {
+  if (accountType === 'ADMIN') {
+    return (
+      <span className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-red-500/20 to-orange-500/20 text-red-400 text-xs rounded-full border border-red-500/30">
+        <i className="fas fa-shield-alt text-[10px]"></i>
+        Admin
+      </span>
+    );
+  }
+
+  if (accountType === 'COACH') {
+    return (
+      <span className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 text-xs rounded-full border border-green-500/30">
+        <i className="fas fa-chalkboard-teacher text-[10px]"></i>
+        Coach
+      </span>
+    );
+  }
+
+  return (
+    <span className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-400 text-xs rounded-full border border-blue-500/30">
+      <i className="fas fa-running text-[10px]"></i>
+      Player
+    </span>
+  );
+}
+
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
-  const { user, logout } = useAuthStore();
+  const { user, logout, accountType } = useAuthStore();
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
@@ -69,33 +104,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   };
 
   // Get role-specific navigation items
-  const navItems = dashboardItems[user?.role || 'PLAYER'] || dashboardItems.PLAYER;
-
-  const getRoleBadge = () => {
-    switch (user?.role) {
-      case "ADMIN":
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-red-500/20 to-orange-500/20 text-red-400 text-xs rounded-full border border-red-500/30">
-            <i className="fas fa-shield-alt text-[10px]"></i>
-            Admin
-          </span>
-        );
-      case "COACH":
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-green-500/20 to-emerald-500/20 text-green-400 text-xs rounded-full border border-green-500/30">
-            <i className="fas fa-chalkboard-teacher text-[10px]"></i>
-            Coach
-          </span>
-        );
-      default:
-        return (
-          <span className="flex items-center gap-1 px-2 py-1 bg-gradient-to-r from-blue-500/20 to-cyan-500/20 text-blue-400 text-xs rounded-full border border-blue-500/30">
-            <i className="fas fa-running text-[10px]"></i>
-            Player
-          </span>
-        );
-    }
-  };
+  const navItems = dashboardItems[accountType || 'PLAYER'] || dashboardItems.PLAYER;
 
   return (
     <div className={`min-h-screen relative overflow-hidden ${
@@ -179,7 +188,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                       {user?.email || "User"}
                     </p>
                     <div className="mt-1">
-                      {getRoleBadge()}
+                      <RoleBadge accountType={accountType || 'PLAYER'} />
                     </div>
                   </div>
                 </div>
@@ -335,7 +344,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                           {user?.email || "User"}
                         </p>
                         <div className="mt-1">
-                          {getRoleBadge()}
+                          <RoleBadge accountType={accountType || 'PLAYER'} />
                         </div>
                       </div>
                     </div>

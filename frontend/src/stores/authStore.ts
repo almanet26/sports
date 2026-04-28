@@ -12,6 +12,8 @@ interface SubscriptionUser {
 
 interface SubscriptionState {
   user: SubscriptionUser | null;
+  accountType: 'PLAYER' | 'COACH' | 'ADMIN';
+  subscriptionTier: Tier;
   role: Tier;
   subscriptionStatus: SubscriptionStatus;
   expiresAt: string | null;
@@ -31,6 +33,8 @@ export const useSubscriptionStore = create<SubscriptionState>()(
   persist(
     (set) => ({
       user: null,
+      accountType: 'PLAYER',
+      subscriptionTier: 'free' as Tier,
       role: 'free' as Tier,
       subscriptionStatus: 'inactive' as SubscriptionStatus,
       expiresAt: null,
@@ -49,11 +53,12 @@ export const useSubscriptionStore = create<SubscriptionState>()(
               id: profile.id,
               email: profile.email,
               name: profile.full_name ?? profile.name,
-              // /auth/me returns role = account type (PLAYER | COACH | ADMIN)
-              platform_role: (profile.role ?? 'PLAYER') as 'PLAYER' | 'COACH' | 'ADMIN',
+              platform_role: (profile.account_type ?? profile.role ?? 'PLAYER') as 'PLAYER' | 'COACH' | 'ADMIN',
             },
-            // Subscription tier and status come from billing/usage — the canonical source
-            role: (usage.role ?? 'free') as Tier,
+            accountType: (profile.account_type ?? profile.role ?? 'PLAYER') as 'PLAYER' | 'COACH' | 'ADMIN',
+            subscriptionTier: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
+            // Backward-compatible alias for existing consumers
+            role: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
             subscriptionStatus: (usage.status ?? 'inactive') as SubscriptionStatus,
             expiresAt: usage.expires_at ?? null,
             // billing/usage wraps quota inside current_month
@@ -81,6 +86,8 @@ export const useSubscriptionStore = create<SubscriptionState>()(
       // Never persist quota — it must be fetched fresh each session
       partialize: (state) => ({
         user: state.user,
+        accountType: state.accountType,
+        subscriptionTier: state.subscriptionTier,
         role: state.role,
         subscriptionStatus: state.subscriptionStatus,
         expiresAt: state.expiresAt,

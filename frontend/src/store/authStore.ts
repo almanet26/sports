@@ -42,6 +42,8 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  accountType: UserRole;
+  subscriptionTier: string;
   
   // Actions
   login: (email: string, password: string) => Promise<boolean>;
@@ -72,6 +74,8 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      accountType: 'PLAYER',
+      subscriptionTier: 'free',
       
       // Login action
       login: async (email: string, password: string) => {
@@ -102,7 +106,7 @@ export const useAuthStore = create<AuthState>()(
             id: user.id,
             email: user.email,
             name: user.full_name || user.name || '',
-            role: (user.role ?? roleFromToken) as UserRole,
+            role: (user.account_type ?? user.role ?? roleFromToken) as UserRole,
             is_verified: true,
             created_at: new Date().toISOString(),
           } : {
@@ -121,6 +125,8 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: refresh_token || null,
             user: userData,
             isAuthenticated: true,
+            accountType: userData.role,
+            subscriptionTier: (user?.subscription_role ?? 'free') as string,
           });
 
           // Fetch full profile to populate name, phone, team, etc.
@@ -170,6 +176,8 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: null,
             isAuthenticated: false,
             error: null,
+            accountType: 'PLAYER',
+            subscriptionTier: 'free',
           });
         }
       },
@@ -178,12 +186,21 @@ export const useAuthStore = create<AuthState>()(
       fetchProfile: async () => {
         try {
           const response = await authApi.getProfile();
-          const user = response.data as User;
+          const profile = response.data as User & { account_type?: UserRole; subscription_role?: string };
+          const mappedUser: User = {
+            ...profile,
+            role: (profile.account_type ?? profile.role ?? 'PLAYER') as UserRole,
+          };
           
           // Also store in localStorage for backward compatibility
-          localStorage.setItem('user_profile', JSON.stringify(user));
+          localStorage.setItem('user_profile', JSON.stringify(mappedUser));
           
-          set({ user, isAuthenticated: true });
+          set({
+            user: mappedUser,
+            isAuthenticated: true,
+            accountType: mappedUser.role,
+            subscriptionTier: profile.subscription_role ?? 'free',
+          });
         } catch (error) {
           console.error('Failed to fetch profile:', error);
           // If profile fetch fails, clear auth
@@ -219,6 +236,8 @@ export const useAuthStore = create<AuthState>()(
         token: state.token,
         refreshToken: state.refreshToken,
         isAuthenticated: state.isAuthenticated,
+        accountType: state.accountType,
+        subscriptionTier: state.subscriptionTier,
       }),
     }
   )

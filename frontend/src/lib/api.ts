@@ -592,17 +592,18 @@ export const plansApi = {
 };
 // Subscription API
 export const subscriptionApi = {
+  listAvailablePlans: () => api.get('/subscriptions/plans'),
 
-  // Subscribe user to a plan
-  subscribe: (userId: string, planId: number) =>
-    api.post("/subscriptions/subscribe", {
-      user_id: userId,
-      plan_id: planId
+  getMySubscription: () => api.get('/subscriptions/me'),
+
+  // Subscribe current user to a plan
+  subscribe: (planKey: string) =>
+    api.post('/subscriptions/subscribe', {
+      plan_key: planKey,
     }),
 
-  // Get subscription of a user
-  getUserSubscription: (userId: string) =>
-    api.get(`/subscriptions/user/${userId}`)
+  // Backward-compatible alias used by older code paths
+  getUserSubscription: () => api.get('/subscriptions/me'),
 
 };
 
