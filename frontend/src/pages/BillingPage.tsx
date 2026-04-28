@@ -81,6 +81,14 @@ export default function BillingPage() {
 
   useEffect(() => { fetchMe(); }, [fetchMe]);
 
+  const safeQuotaUsage = quotaUsage && typeof quotaUsage === 'object' && 'biomech' in quotaUsage
+    ? quotaUsage
+    : {
+        biomech: { used: 0, limit: 0 },
+        ocr_hours: { used: 0, limit: 0 },
+        submissions: { used: 0, limit: 0 },
+      };
+
   const isAdmin      = accountType === 'ADMIN';
   // Filter plans by account_type declared in PLAN_DISPLAY_CONFIG.
   // Admins see all plans with an informational note instead of upgrade CTAs.
@@ -121,7 +129,7 @@ export default function BillingPage() {
     },
     {
       label: 'Biomech / mo',
-      render: (p) => fmt(p.max_biomech_per_month, '5'),
+      render: (p) => fmt(p.max_biomech_per_month, '3'),
     },
     {
       label: 'OCR hours / mo',
@@ -200,20 +208,20 @@ export default function BillingPage() {
         </div>
         <UsageBar
           label="Biomech analyses"
-          used={quotaUsage.biomech.used}
-          limit={quotaUsage.biomech.limit}
+          used={safeQuotaUsage.biomech.used}
+          limit={safeQuotaUsage.biomech.limit}
         />
         {!isPlayerTier && (
           <>
             <UsageBar
               label="OCR match hours"
-              used={quotaUsage.ocr_hours.used}
-              limit={quotaUsage.ocr_hours.limit}
+              used={safeQuotaUsage.ocr_hours.used}
+              limit={safeQuotaUsage.ocr_hours.limit}
             />
             <UsageBar
               label="Player submissions"
-              used={quotaUsage.submissions.used}
-              limit={quotaUsage.submissions.limit}
+              used={safeQuotaUsage.submissions.used}
+              limit={safeQuotaUsage.submissions.limit}
             />
           </>
         )}

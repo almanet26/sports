@@ -18,6 +18,7 @@ Environment Variables:
 
 import logging
 import os
+import asyncio
 import shutil
 import tempfile
 import uuid
@@ -35,6 +36,7 @@ from database.crud.submission import (
     mark_processing,
     save_analysis_results,
 )
+from dependencies.quota_gate import increment_usage
 from services.ocr_task import run_ocr_processing
 from services.usage_service import report_ocr_usage
 
@@ -326,6 +328,9 @@ def process_video(
             annotated_video_url=annotated_url,
             key_frame_url=key_frame_url,
         )
+
+        if sub.analysis_type in ("BOWLING", "BATTING"):
+            asyncio.run(increment_usage(sub.player_id, "biomech_count", 1, db))
 
         # Store PDF public URL (pdf_blob_name now holds the full public URL)
         if pdf_blob_name:

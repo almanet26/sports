@@ -140,7 +140,7 @@ export const PLANS_FULL_CONFIG: PlanConfig[] = [
     display_name: 'Free',
     price_inr: 0,
     duration_days: 36500,
-    max_biomech_per_month: 5,
+    max_biomech_per_month: 3,
     max_ocr_hours_per_month: 0,
     max_submissions_per_month: 0,
     max_players_in_dashboard: 0,

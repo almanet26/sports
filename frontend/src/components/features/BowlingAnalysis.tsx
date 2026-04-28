@@ -1,5 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { bowlingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, type SubmissionDetail } from "../../lib/api";
+import { useSubscriptionStore } from "../../stores/authStore";
+import UpgradePrompt from "../gates/UpgradePrompt";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Progress } from "../ui/Progress";
@@ -239,6 +241,7 @@ const BowlingAnalysis: React.FC = () => {
 
   // Accepted formats
   const acceptedTypes = ".mp4,.mov,.avi";
+  const biomechUsage = useSubscriptionStore((s) => s.quotaUsage.biomech);
 
   // Fetch history on mount
   useEffect(() => {
@@ -261,6 +264,8 @@ const BowlingAnalysis: React.FC = () => {
     },
     []
   );
+
+  const refreshQuota = useSubscriptionStore((s) => s.refreshQuota);
 
   const handleAnalyze = useCallback(async () => {
     if (!file) return;
@@ -285,6 +290,9 @@ const BowlingAnalysis: React.FC = () => {
       // Map SubmissionDetail → AnalysisResult for the existing UI
       setResult(mapSubmissionToResult(sub));
       setPhase("done");
+
+      // Sync quota state with backend after successful analysis
+      await refreshQuota();
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
@@ -293,7 +301,7 @@ const BowlingAnalysis: React.FC = () => {
       setErrorMsg(msg);
       setPhase("error");
     }
-  }, [file]);
+  }, [file, refreshQuota]);
 
   const reset = useCallback(() => {
     setFile(null);
@@ -303,6 +311,10 @@ const BowlingAnalysis: React.FC = () => {
     setUploadProgress(0);
     if (fileRef.current) fileRef.current.value = "";
   }, []);
+
+  if (biomechUsage.limit > 0 && biomechUsage.used >= biomechUsage.limit) {
+    return <UpgradePrompt requiredTier="basic" />;
+  }
 
 
 

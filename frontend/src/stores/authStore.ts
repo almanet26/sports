@@ -28,6 +28,20 @@ const DEFAULT_QUOTA: QuotaUsage = {
   submissions: { used: 0, limit: 0 },
 };
 
+function normalizeQuotaUsage(value: unknown): QuotaUsage {
+  if (!value || typeof value !== 'object') {
+    return DEFAULT_QUOTA;
+  }
+
+  const candidate = value as Partial<QuotaUsage>;
+
+  return {
+    biomech: candidate.biomech ?? DEFAULT_QUOTA.biomech,
+    ocr_hours: candidate.ocr_hours ?? DEFAULT_QUOTA.ocr_hours,
+    submissions: candidate.submissions ?? DEFAULT_QUOTA.submissions,
+  };
+}
+
 export const useSubscriptionStore = create<SubscriptionState>()(
   persist(
     (set) => ({
@@ -70,7 +84,7 @@ export const useSubscriptionStore = create<SubscriptionState>()(
       refreshQuota: async () => {
         try {
           const { data } = await api.get('/billing/usage');
-          set({ quotaUsage: data });
+          set({ quotaUsage: normalizeQuotaUsage((data as { current_month?: unknown }).current_month) });
         } catch {
           // Quota refresh failures are non-fatal
         }
