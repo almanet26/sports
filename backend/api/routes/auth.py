@@ -260,11 +260,187 @@ def update_current_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    for field, value in update_data.model_dump(exclude_unset=True).items():
+    from api.routes.notification import create_notification
+    
+    update_dict = update_data.model_dump(exclude_unset=True)
+
+    for field, value in update_dict.items():
         if hasattr(current_user, field):
             setattr(current_user, field, value)
     db.commit()
     db.refresh(current_user)
     logger.info("User profile updated: %s", current_user.email)
+    
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Profile Updated",
+        message="Your profile information has been successfully updated.",
+        notif_type="system"
+    )
+
     sub = _get_active_sub(current_user.id, db)
     return _build_profile_response(current_user, sub)
+
+
+@router.get("/coaches/public")
+def get_public_coaches(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return all verified coaches with their public profile info including intro video."""
+    coaches = (
+        db.query(User)
+        .filter(User.role == "COACH", User.coach_status == "verified", User.is_active == True)
+        .all()
+    )
+    return {
+        "coaches": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "profile_bio": c.profile_bio,
+                "specialization": c.specialization,
+                "intro_video_url": c.intro_video_url,
+                "profile_image_url": c.profile_image_url,
+                "coach_category": c.coach_category,
+                "years_of_experience": c.years_of_experience,
+            }
+            for c in coaches
+        ]
+    }
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from utils.auth import verify_password, get_password_hash
+    from api.routes.notification import create_notification
+    
+    current_password = data.get("current_password", "")
+    new_password = data.get("new_password", "")
+
+    if not verify_password(current_password, current_user.password_hash):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters")
+
+    current_user.password_hash = get_password_hash(new_password)
+    db.commit()
+    
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Password Changed",
+        message="Your password was successfully changed. If you didn't make this change, please contact support immediately.",
+        notif_type="system"
+    )
+    
+    logger.info(f"Password changed for user: {current_user.email}")
+    return None
+
+
+@router.get("/notifications")
+def get_notification_preferences(
+    current_user: User = Depends(get_current_user),
+):
+    default = {"email_submissions": True, "email_published": True, "email_messages": False, "push_all": True}
+    return current_user.notification_preferences or default
+
+
+@router.put("/notifications")
+def update_notification_preferences(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.notification_preferences = data
+    db.commit()
+    db.refresh(current_user)
+    return current_user.notification_preferences
+
+
+@router.post("/coach-intro-video", response_model=IntroVideoResponse)
+async def upload_intro_video(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace coach intro video — streams directly to GCS, falls back to local disk in dev."""
+    if current_user.role != 'COACH':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
+
+    ALLOWED_VIDEO = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_VIDEO:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid video format. Allowed: mp4, mov, avi, webm, mkv"
+        )
+
+    unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+
+    try:
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+
+        if gcs_bucket:
+            # Stream directly to GCS — never loads full file into RAM
+            import google.cloud.storage as gcs_lib
+            gcs_client = gcs_lib.Client()
+            bucket = gcs_client.bucket(gcs_bucket)
+            blob = bucket.blob(f"coach_intro_videos/{unique_filename}")
+
+            CHUNK = 256 * 1024  # 256 KB chunks
+            with blob.open("wb", content_type=file.content_type or "video/mp4") as gcs_stream:
+                while True:
+                    chunk = await file.read(CHUNK)
+                    if not chunk:
+                        break
+                    gcs_stream.write(chunk)
+
+            intro_video_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_intro_videos/{unique_filename}"
+        else:
+            # Local dev fallback — stream to disk in chunks (no full RAM load)
+            storage_dir = Path("storage/coach_intro_videos")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            file_path = storage_dir / unique_filename
+
+            CHUNK = 256 * 1024  # 256 KB chunks
+            MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+            written = 0
+            with open(file_path, "wb") as buf:
+                while True:
+                    chunk = await file.read(CHUNK)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > MAX_SIZE:
+                        buf.close()
+                        file_path.unlink(missing_ok=True)
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail="File too large. Max 100MB."
+                        )
+                    buf.write(chunk)
+
+            intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
+
+        current_user.intro_video_url = intro_video_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"Intro video uploaded for coach: {current_user.email} -> {intro_video_url}")
+        return IntroVideoResponse(intro_video_url=intro_video_url)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Intro video upload failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
+>>>>>>> 7754698 (Dynamic notification page)

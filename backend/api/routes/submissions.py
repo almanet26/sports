@@ -1168,6 +1168,19 @@ def coach_run_analysis(
             annotated_video_url=annotated_video_url,
             key_frame_url=key_frame_url,
         )
+        
+        # Notify player that analysis is complete
+        try:
+            from api.routes.notification import create_notification
+            create_notification(
+                db=db,
+                user_id=sub.player_id,
+                title="Analysis Complete",
+                message=f"Your {sub.analysis_type.lower()} video analysis is ready for coach review",
+                notif_type="report"
+            )
+        except Exception as notif_err:
+            logger.warning("Failed to create analysis notification: %s", notif_err)
 
         logger.info("Analysis complete for submission %s → DRAFT_REVIEW", sub.id)
         return _to_detail(sub)
@@ -1328,6 +1341,19 @@ def coach_publish(
             pdf_report_url=pdf_report_url,
             coach_sketches=sketches,  # Save sketches to DB
         )
+        
+        # Notify player that report is published
+        try:
+            from api.routes.notification import create_notification
+            create_notification(
+                db=db,
+                user_id=sub.player_id,
+                title="Report Published",
+                message=f"Your {sub.analysis_type.lower()} performance report is now available",
+                notif_type="report"
+            )
+        except Exception as notif_err:
+            logger.warning("Failed to create publish notification: %s", notif_err)
 
         logger.info("Submission %s published by coach %s", sub.id, current_user.id)
         return _to_detail(sub)
