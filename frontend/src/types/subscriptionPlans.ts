@@ -71,7 +71,7 @@ export interface PlanDisplayInfo {
   duration: string;
   topFeatures: [string, string, string];
   planKey: string;
-  account_type: AccountType;  // which account type may purchase this plan
+  account_type: AccountType;
 }
 
 export const PLAN_DISPLAY_CONFIG: Record<Tier, PlanDisplayInfo> = {
@@ -133,7 +133,6 @@ export const PLAN_DISPLAY_CONFIG: Record<Tier, PlanDisplayInfo> = {
   },
 };
 
-// -1 means unlimited
 export const PLANS_FULL_CONFIG: PlanConfig[] = [
   {
     plan_key: 'free',

@@ -1,6 +1,6 @@
 import { CheckCircle, Zap } from 'lucide-react';
 import { billingApi } from '../../lib/api';
-import { PLAN_DISPLAY_CONFIG, type Tier } from '../../types/plans';
+import { PLAN_DISPLAY_CONFIG, type Tier } from '../../types/subscriptionPlans';
 
 interface UpgradePromptProps {
   requiredTier: Tier;

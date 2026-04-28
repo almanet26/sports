@@ -1,4 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import type { PlanConfig } from '../types/subscriptionPlans';
 
 // Base URL from environment or default
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -37,6 +38,10 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
+const SUBSCRIPTIONS_SEGMENT = 'subscriptions';
+const ADMIN_SEGMENT = 'admin';
+const PLANS_SEGMENT = 'plans';
 
 // Request interceptor - attach JWT token
 api.interceptors.request.use(
@@ -563,36 +568,27 @@ export async function pollSubmissionResult(
   }
   throw new Error('Processing timed out. Your results will appear in History when ready.');
 }
-// Plans API (Admin)
+// Plans API (public billing list + admin plan management)
+type PlanUpdatePayload = Partial<Pick<
+  PlanConfig,
+  | 'display_name'
+  | 'price_inr'
+  | 'duration_days'
+  | 'max_biomech_per_month'
+  | 'max_ocr_hours_per_month'
+  | 'max_submissions_per_month'
+  | 'max_players_in_dashboard'
+>>;
+
 export const plansApi = {
-  // Create new plan
-  create: (data: {
-    name: string;
-    monthly_price: number;
-    yearly_price: number;
-    features: string;
-  }) => api.post('/plans/', data),
-
-  // Get all plans
-  list: () => api.get('/plans/'),
-
-  // Update plan
-  update: (
-    planId: number,
-    data: {
-      name: string;
-      monthly_price: number;
-      yearly_price: number;
-      features: string;
-    }
-  ) => api.put(`/plans/${planId}`, data),
-
-  // Delete plan
-  delete: (planId: number) => api.delete(`/plans/${planId}`),
+  list: () => api.get<PlanConfig[]>(`/${SUBSCRIPTIONS_SEGMENT}/${PLANS_SEGMENT}`),
+  listAdmin: () => api.get<PlanConfig[]>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}`),
+  update: (planKey: string, data: PlanUpdatePayload) =>
+    api.patch<PlanConfig>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}/${planKey}`, data),
 };
 // Subscription API
 export const subscriptionApi = {
-  listAvailablePlans: () => api.get('/subscriptions/plans'),
+  listAvailablePlans: () => api.get<PlanConfig[]>(`/${SUBSCRIPTIONS_SEGMENT}/${PLANS_SEGMENT}`),
 
   getMySubscription: () => api.get('/subscriptions/me'),
 
@@ -634,7 +630,7 @@ export const adminApi = {
     api.get('/admin/activity', { params: { limit } }),
 
   // Plan management
-  listPlans: () => api.get('/admin/plans'),
+  listPlans: () => api.get<PlanConfig[]>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}`),
   updatePlan: (planKey: string, data: {
     display_name?: string;
     price_inr?: number;
@@ -643,7 +639,7 @@ export const adminApi = {
     max_ocr_hours_per_month?: number;
     max_submissions_per_month?: number;
     max_players_in_dashboard?: number;
-  }) => api.patch(`/admin/plans/${planKey}`, data),
+  }) => api.patch<PlanConfig>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}/${planKey}`, data),
 
   // User management
   listUsers: (params: {

@@ -7,10 +7,9 @@ import {
   PLAN_DISPLAY_CONFIG,
   PLANS_FULL_CONFIG,
   TIER_HIERARCHY,
-  type AccountType,
   type PlanConfig,
   type SubscriptionStatus,
-} from '../types/plans';
+} from '../types/subscriptionPlans';
 import { billingApi } from '../lib/api';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -72,8 +71,8 @@ function fmt(n: number, zero = '—'): string {
 
 export default function BillingPage() {
   const navigate = useNavigate();
-  const role             = useSubscriptionStore((s) => s.role);
-  const platformRole     = useSubscriptionStore((s) => s.user?.platform_role ?? 'PLAYER');
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
+  const accountType      = useSubscriptionStore((s) => s.accountType);
   const subscriptionStatus = useSubscriptionStore((s) => s.subscriptionStatus);
   const expiresAt        = useSubscriptionStore((s) => s.expiresAt);
   const quotaUsage       = useSubscriptionStore((s) => s.quotaUsage);
@@ -82,7 +81,6 @@ export default function BillingPage() {
 
   useEffect(() => { fetchMe(); }, [fetchMe]);
 
-  const accountType  = (platformRole ?? 'PLAYER') as AccountType;
   const isAdmin      = accountType === 'ADMIN';
   // Filter plans by account_type declared in PLAN_DISPLAY_CONFIG.
   // Admins see all plans with an informational note instead of upgrade CTAs.
@@ -91,9 +89,9 @@ export default function BillingPage() {
   );
   const colCount     = visiblePlans.length + 1; // +1 for the label column
 
-  const planDisplay  = PLAN_DISPLAY_CONFIG[role];
+  const planDisplay  = PLAN_DISPLAY_CONFIG[subscriptionTier];
   const isPlayerTier = accountType === 'PLAYER';
-  const isForeverTier = role === 'free' || role === 'coach_free';
+  const isForeverTier = subscriptionTier === 'free' || subscriptionTier === 'coach_free';
 
   const daysRemaining = !isForeverTier && expiresAt
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 86_400_000))
@@ -229,7 +227,7 @@ export default function BillingPage() {
           <div className={`grid border-b border-zinc-700`} style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
             <div className="p-4" />
             {visiblePlans.map((plan) => {
-              const isCurrent = plan.role === role;
+              const isCurrent = plan.role === subscriptionTier;
               return (
                 <div
                   key={plan.role}
@@ -258,7 +256,7 @@ export default function BillingPage() {
             <div key={label} className="grid border-b border-zinc-800 last:border-0" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
               <div className="p-4 text-xs text-zinc-500 flex items-start pt-5">{label}</div>
               {visiblePlans.map((plan) => {
-                const isCurrent = plan.role === role;
+                const isCurrent = plan.role === subscriptionTier;
                 return (
                   <div
                     key={plan.role}
@@ -279,8 +277,8 @@ export default function BillingPage() {
           <div className="grid border-t border-zinc-700 bg-zinc-950/60" style={{ gridTemplateColumns: `repeat(${colCount}, minmax(0, 1fr))` }}>
             <div className="p-4" />
             {visiblePlans.map((plan) => {
-              const isCurrent = plan.role === role;
-              const isHigher  = TIER_HIERARCHY[plan.role] > TIER_HIERARCHY[role];
+              const isCurrent = plan.role === subscriptionTier;
+              const isHigher  = TIER_HIERARCHY[plan.role] > TIER_HIERARCHY[subscriptionTier];
 
               return (
                 <div

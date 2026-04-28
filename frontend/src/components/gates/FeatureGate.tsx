@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useSubscriptionStore } from '../../stores/authStore';
-import { TIER_HIERARCHY, type Tier } from '../../types/plans';
+import { TIER_HIERARCHY, type Tier } from '../../types/subscriptionPlans';
 import UpgradePrompt from './UpgradePrompt';
 import SubscriptionExpiredPrompt from './SubscriptionExpiredPrompt';
 
@@ -11,13 +11,12 @@ interface FeatureGateProps {
 }
 
 export default function FeatureGate({ requiredTier, feature, children }: FeatureGateProps) {
-  const platformRole = useSubscriptionStore((s) => s.user?.platform_role);
   const accountType = useSubscriptionStore((s) => s.accountType);
-  const role = useSubscriptionStore((s) => s.role);
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
   const subscriptionStatus = useSubscriptionStore((s) => s.subscriptionStatus);
 
   // ADMIN bypasses every gate unconditionally
-  if (platformRole === 'ADMIN') {
+  if (accountType === 'ADMIN') {
     return <>{children}</>;
   }
 
@@ -27,7 +26,7 @@ export default function FeatureGate({ requiredTier, feature, children }: Feature
   }
 
   // User had a paid plan that lapsed — show renewal prompt rather than upgrade
-  const wasSubscribed = role !== 'free' && role !== 'coach_free';
+  const wasSubscribed = subscriptionTier !== 'free' && subscriptionTier !== 'coach_free';
   if (subscriptionStatus !== 'active' && wasSubscribed) {
     return <SubscriptionExpiredPrompt />;
   }
@@ -40,7 +39,7 @@ export default function FeatureGate({ requiredTier, feature, children }: Feature
   }
 
   // Current tier is below the required tier
-  if (TIER_HIERARCHY[role] < TIER_HIERARCHY[effectiveRequiredTier]) {
+  if (TIER_HIERARCHY[subscriptionTier] < TIER_HIERARCHY[effectiveRequiredTier]) {
     return <UpgradePrompt requiredTier={effectiveRequiredTier} />;
   }
 

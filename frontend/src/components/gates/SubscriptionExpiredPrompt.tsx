@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AlertCircle } from 'lucide-react';
 import { useSubscriptionStore } from '../../stores/authStore';
-import { PLAN_DISPLAY_CONFIG } from '../../types/plans';
+import { PLAN_DISPLAY_CONFIG } from '../../types/subscriptionPlans';
 
 const DISMISS_KEY = 'sub_expired_dismissed_at';
 
@@ -14,13 +14,13 @@ function wasDismissedRecently(): boolean {
 
 export default function SubscriptionExpiredPrompt() {
   const navigate = useNavigate();
-  const role = useSubscriptionStore((s) => s.role);
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
   const expiresAt = useSubscriptionStore((s) => s.expiresAt);
   const [dismissed, setDismissed] = useState(wasDismissedRecently);
 
   if (dismissed) return null;
 
-  const planName = PLAN_DISPLAY_CONFIG[role]?.displayName ?? 'Paid';
+  const planName = PLAN_DISPLAY_CONFIG[subscriptionTier]?.displayName ?? 'Paid';
   const expiryDisplay = expiresAt
     ? new Date(expiresAt).toLocaleDateString('en-IN', {
         day: 'numeric',

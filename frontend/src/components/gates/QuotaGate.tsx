@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useSubscriptionStore } from '../../stores/authStore';
-import type { QuotaUsage } from '../../types/plans';
+import type { QuotaUsage } from '../../types/subscriptionPlans';
 
 export interface QuotaProps {
   used: number;
@@ -32,11 +32,11 @@ interface QuotaGateProps {
 }
 
 export default function QuotaGate({ feature, children }: QuotaGateProps) {
-  const platformRole = useSubscriptionStore((s) => s.user?.platform_role);
+  const accountType = useSubscriptionStore((s) => s.accountType);
   const quotaUsage = useSubscriptionStore((s) => s.quotaUsage);
 
   // ADMIN sees unlimited quota on all features
-  if (platformRole === 'ADMIN') {
+  if (accountType === 'ADMIN') {
     return <>{children({ used: 0, limit: 999999, remaining: 999999, exhausted: false })}</>;
   }
 

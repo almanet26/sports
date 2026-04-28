@@ -1,20 +1,19 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { api } from '../lib/api';
-import type { Tier, SubscriptionStatus, QuotaUsage } from '../types/plans';
+import type { Tier, SubscriptionStatus, QuotaUsage } from '../types/subscriptionPlans';
 
 interface SubscriptionUser {
   id: string;
   email: string;
   name: string;
-  platform_role: 'PLAYER' | 'COACH' | 'ADMIN';
+  accountType: 'PLAYER' | 'COACH' | 'ADMIN';
 }
 
 interface SubscriptionState {
   user: SubscriptionUser | null;
   accountType: 'PLAYER' | 'COACH' | 'ADMIN';
   subscriptionTier: Tier;
-  role: Tier;
   subscriptionStatus: SubscriptionStatus;
   expiresAt: string | null;
   quotaUsage: QuotaUsage;
@@ -35,7 +34,6 @@ export const useSubscriptionStore = create<SubscriptionState>()(
       user: null,
       accountType: 'PLAYER',
       subscriptionTier: 'free' as Tier,
-      role: 'free' as Tier,
       subscriptionStatus: 'inactive' as SubscriptionStatus,
       expiresAt: null,
       quotaUsage: DEFAULT_QUOTA,
@@ -53,12 +51,10 @@ export const useSubscriptionStore = create<SubscriptionState>()(
               id: profile.id,
               email: profile.email,
               name: profile.full_name ?? profile.name,
-              platform_role: (profile.account_type ?? profile.role ?? 'PLAYER') as 'PLAYER' | 'COACH' | 'ADMIN',
+              accountType: (profile.account_type ?? profile.role ?? 'PLAYER') as 'PLAYER' | 'COACH' | 'ADMIN',
             },
             accountType: (profile.account_type ?? profile.role ?? 'PLAYER') as 'PLAYER' | 'COACH' | 'ADMIN',
             subscriptionTier: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
-            // Backward-compatible alias for existing consumers
-            role: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
             subscriptionStatus: (usage.status ?? 'inactive') as SubscriptionStatus,
             expiresAt: usage.expires_at ?? null,
             // billing/usage wraps quota inside current_month
@@ -88,7 +84,6 @@ export const useSubscriptionStore = create<SubscriptionState>()(
         user: state.user,
         accountType: state.accountType,
         subscriptionTier: state.subscriptionTier,
-        role: state.role,
         subscriptionStatus: state.subscriptionStatus,
         expiresAt: state.expiresAt,
       }),
