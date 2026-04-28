@@ -64,14 +64,14 @@ class RefreshTokenRequest(BaseModel):
 class UserProfileResponse(BaseModel):
     """Response model for GET /auth/me.
 
-    `role` is the permanent account type (PLAYER | COACH | ADMIN).
-    `subscription_tier` and `subscription_status` are denormalised from the
+    `account_type` is the permanent account type (PLAYER | COACH | ADMIN).
+    `subscription_role` and `subscription_status` are denormalised from the
     active subscriptions row so the frontend does not need a second round-trip.
     They may be None when no subscription row exists (new free account that
     hasn't had its seed row written yet — shouldn't happen in practice).
     """
     id: uuid.UUID
-    role: str                           # account type: PLAYER | COACH | ADMIN
+    account_type: str                   # account type: PLAYER | COACH | ADMIN
     name: str
     email: str
     phone: Optional[str] = None
@@ -89,7 +89,7 @@ class UserProfileResponse(BaseModel):
     last_login: Optional[datetime] = None
 
     # Subscription denorm — pulled from subscriptions table in the endpoint
-    subscription_tier: Optional[str] = None    # e.g. "free" | "basic" | "platinum" …
+    subscription_role: Optional[str] = None    # e.g. "free" | "basic" | "platinum" …
     subscription_status: Optional[str] = None  # e.g. "active" | "expired"
     subscription_expires_at: Optional[datetime] = None
 

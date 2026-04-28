@@ -21,6 +21,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 ROLE_VALUES = (
     "free",
+    "coach_free",
     "basic",
     "platinum",
     "coach_starter",
@@ -76,7 +77,7 @@ def upgrade() -> None:
         op.create_check_constraint(
             "ck_users_role_tier_enum",
             "users",
-            "role IN ('free', 'basic', 'platinum', 'coach_starter', 'coach_pro', 'academy')",
+            "role IN ('free', 'coach_free', 'basic', 'platinum', 'coach_starter', 'coach_pro', 'academy')",
         )
 
     # Replace any legacy subscriptions table with the target schema.
@@ -167,7 +168,8 @@ def upgrade() -> None:
     op.execute("""
         INSERT INTO plan_config (plan_key, role, display_name, price_inr, duration_days, max_biomech_per_month, max_ocr_hours_per_month, max_submissions_per_month, max_players_in_dashboard)
         VALUES
-        ('free', 'free', 'Free', 0, 90, 3, 0.0, 0, 0),
+        ('free', 'free', 'Free', 0, 36500, 3, 0.0, 0, 0),
+        ('coach_free', 'coach_free', 'Coach Free', 0, 36500, 0, 0.0, 0, 0),
         ('basic', 'basic', 'Basic', 20000, 90, 15, 0.0, 5, 0),
         ('platinum', 'platinum', 'Platinum', 50000, 365, 50, 0.0, 0, 0),
         ('coach_starter', 'coach_starter', 'Coach Starter', 199900, 90, 999, 50.0, 150, 10),

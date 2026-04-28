@@ -6,6 +6,7 @@ Gate evaluation order (matches Step 3A spec):
   2. Account-type check — coach-only features reject PLAYER accounts regardless of tier.
   3. Subscription active check — raises 402 when no active subscription exists.
   4. Tier check — raises 403 when the user's current tier is below the feature minimum.
+     For ai_chat specifically: player minimum is "basic", coach minimum is "coach_starter".
 
 get_active_subscription() is the single canonical function for fetching the active
 subscription.  All route code must call this instead of querying subscriptions directly.
@@ -40,14 +41,14 @@ ACCOUNT_TYPE_FOR_FEATURE: dict[str, Optional[str]] = {
     # Player-accessible features — no account-type restriction
     "biomechanics_analysis": None,
     "pdf_report":            None,
-    "ai_chat":               None,
+    "ai_chat":               None,  # accessible to both; tier checked per account type below
     "pro_benchmarking":      None,
     "injury_risk_alerts":    None,
     "priority_processing":   None,
 }
 
 # Coach subscription tiers (used for account-type check fallback).
-_COACH_TIERS = frozenset({"coach_starter", "coach_pro", "academy"})
+_COACH_TIERS = frozenset({"coach_free", "coach_starter", "coach_pro", "academy"})
 
 
 # ---------------------------------------------------------------------------
@@ -126,18 +127,48 @@ def require_feature(feature_key: str):
             )
 
         # ── Gate 4: tier check ───────────────────────────────────────────────
-        user_tier = TIER_HIERARCHY.get(sub.role, -1)
-        required_tier_level = TIER_HIERARCHY[required_tier]
+        # Special case: ai_chat has different minimum tiers per account type.
+        # coach_free (level 0) must be blocked; coach_starter (level 3) is the minimum.
+        # free (level 0) must be blocked; basic (level 1) is the player minimum.
+        if feature_key == "ai_chat":
+            if user.role == "COACH":
+                # Coach minimum for AI Chat is coach_starter
+                if TIER_HIERARCHY.get(sub.role, -1) < TIER_HIERARCHY["coach_starter"]:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": "tier_required",
+                            "required": "coach_starter",
+                            "current": sub.role,
+                            "message": "AI Chat requires Coach Starter plan or above",
+                        },
+                    )
+            else:
+                # Player minimum for AI Chat is basic
+                if TIER_HIERARCHY.get(sub.role, -1) < TIER_HIERARCHY["basic"]:
+                    raise HTTPException(
+                        status_code=403,
+                        detail={
+                            "error": "tier_required",
+                            "required": "basic",
+                            "current": sub.role,
+                            "message": "AI Chat requires Basic plan or above",
+                        },
+                    )
+        else:
+            # Generic tier check for all other features
+            user_tier = TIER_HIERARCHY.get(sub.role, -1)
+            required_tier_level = TIER_HIERARCHY[required_tier]
 
-        if user_tier < required_tier_level:
-            raise HTTPException(
-                status_code=403,
-                detail={
-                    "error": "tier_required",
-                    "required": required_tier,
-                    "current": sub.role,
-                },
-            )
+            if user_tier < required_tier_level:
+                raise HTTPException(
+                    status_code=403,
+                    detail={
+                        "error": "tier_required",
+                        "required": required_tier,
+                        "current": sub.role,
+                    },
+                )
 
         return user
 

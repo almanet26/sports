@@ -8,6 +8,7 @@ USER_ROLE_VALUES = ("PLAYER", "COACH", "ADMIN")
 # users.role never holds one of these values.
 ROLE_VALUES = (
     "free",
+    "coach_free",
     "basic",
     "platinum",
     "coach_starter",

@@ -4,6 +4,7 @@ Feature gate configuration: tier ordering and feature → minimum tier mapping.
 
 TIER_HIERARCHY: dict[str, int] = {
     "free": 0,
+    "coach_free": 0,
     "basic": 1,
     "platinum": 2,
     "coach_starter": 3,
