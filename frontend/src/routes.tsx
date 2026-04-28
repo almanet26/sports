@@ -27,15 +27,15 @@ import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
 import CoachInboxPage from './pages/CoachInboxPage';
 import CoachReviewPage from './pages/CoachReviewPage';
-import SubscriptionPage from './pages/SubscriptionPage';
 import BillingPage from './pages/BillingPage';
+import SubscriptionPage from './pages/SubscriptionPage';
 import CoachPendingPage from './pages/CoachPendingPage';
 import CoachVerificationPage from './pages/CoachVerificationPage';
 import FeaturesDetailPage from './pages/FeaturesDetailPage';
 import StatsPage from './pages/PlayerStatsPage';
 import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
-import ChatPage from './pages/ChatPage';
+import ChatPage, { CoachChatPage } from './pages/ChatPage';
 
 import { useSubscriptionStore } from './stores/authStore';
 
@@ -204,6 +204,7 @@ export default function AppRouter() {
             <Route element={<DashboardLayout />}>
               <Route path="/coach" element={<CoachDashboard />} />
               <Route path="/coach/upload" element={<UploadPage />} />
+              <Route path="/coach/chat" element={<CoachChatPage />} />
               <Route path="/coach/player/:id" element={<PlayerPerformance />} />
               <Route path="/coach/submissions" element={<CoachInboxPage />} />
               <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />

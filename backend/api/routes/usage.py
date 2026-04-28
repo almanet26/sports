@@ -46,14 +46,20 @@ billing_router = APIRouter(tags=["billing"])
 # Plan key → subscription role mapping (single source of truth for billing)
 _PLAN_KEY_TO_ROLE: dict[str, str] = {
     "free":               "free",
+    "coach_free":         "coach_free",
     "basic_90d":          "basic",
+    "basic":              "basic",
     "platinum_180d":      "platinum",
+    "platinum":           "platinum",
     "coach_starter_180d": "coach_starter",
+    "coach_starter":      "coach_starter",
     "coach_pro_365d":     "coach_pro",
+    "coach_pro":          "coach_pro",
     "academy_365d":       "academy",
+    "academy":            "academy",
 }
 _PLAYER_ROLES = frozenset({"free", "basic", "platinum"})
-_COACH_ROLES  = frozenset({"coach_starter", "coach_pro", "academy"})
+_COACH_ROLES  = frozenset({"coach_free", "coach_starter", "coach_pro", "academy"})
 
 
 # ---------------------------------------------------------------------------
@@ -201,8 +207,7 @@ def create_billing_order(
     Validates account-type eligibility before creating a Razorpay order.
 
     Players   → may only purchase: free, basic, platinum
-    Coaches   → may only purchase: coach_starter, coach_pro, academy
-    Either    → free is always allowed (no payment needed)
+    Coaches   → may only purchase: coach_free, coach_starter, coach_pro, academy
     """
     tier = _PLAN_KEY_TO_ROLE.get(body.plan_key)
     if tier is None:
@@ -219,7 +224,7 @@ def create_billing_order(
             detail="This plan is not available for player accounts",
         )
 
-    if account_type == "COACH" and tier in _PLAYER_ROLES and tier != "free":
+    if account_type == "COACH" and tier in _PLAYER_ROLES:
         raise HTTPException(
             status_code=403,
             detail="This plan is not available for coach accounts",
@@ -247,8 +252,15 @@ def get_billing_usage(
     sub: Optional[Subscription] = get_active_subscription(current_user, db)
 
     if sub is None:
-        plan_key = "free"
-        role = current_user.role or "free"
+        if current_user.role == "COACH":
+            plan_key = "coach_free"
+            role = "coach_free"
+        elif current_user.role == "ADMIN":
+            plan_key = "academy_365d"
+            role = "academy"
+        else:
+            plan_key = "free"
+            role = "free"
         expires_at = None
         status = "inactive"
     else:

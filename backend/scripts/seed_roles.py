@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 TEST_PASSWORD = "Test@12345"
 PLAN_ORDER = [
     "free",
+    "coach_free",
     "basic",
     "platinum",
     "coach_starter",
@@ -52,13 +53,14 @@ def _ensure_user_and_subscription(db: Session, plan: PlanConfig) -> Dict[str, st
     now = datetime.now(timezone.utc)
     email = _build_email(plan.plan_key)
 
+    account_type = "COACH" if plan.role.startswith("coach_") or plan.role == "academy" else "PLAYER"
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         user = User(
             email=email,
             password_hash=get_password_hash(TEST_PASSWORD),
             name=_build_name(plan.plan_key),
-            role=plan.role,
+            role=account_type,
             is_active=True,
             is_verified=True,
         )
@@ -67,7 +69,7 @@ def _ensure_user_and_subscription(db: Session, plan: PlanConfig) -> Dict[str, st
     else:
         user.password_hash = get_password_hash(TEST_PASSWORD)
         user.name = _build_name(plan.plan_key)
-        user.role = plan.role
+        user.role = account_type
         user.is_active = True
         user.is_verified = True
 

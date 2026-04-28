@@ -32,8 +32,15 @@ _FREE_EXPIRES_DAYS = 36500  # ~100 years — effectively never for the free tier
 def _seed_subscription(user_id: str, account_type: str, db: Session) -> Subscription:
     """Insert the initial free (or academy for ADMIN) subscription row."""
     now = datetime.now(timezone.utc)
-    tier = "academy" if account_type == "ADMIN" else "free"
-    plan_key = "academy_365d" if account_type == "ADMIN" else "free"
+    if account_type == "ADMIN":
+        tier = "academy"
+        plan_key = "academy_365d"
+    elif account_type == "COACH":
+        tier = "coach_free"
+        plan_key = "coach_free"
+    else:
+        tier = "free"
+        plan_key = "free"
     sub = Subscription(
         user_id=user_id,
         plan_key=plan_key,
@@ -151,7 +158,14 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
 
     # Pull active subscription so we can embed tier into the JWT
     sub = _get_active_sub(user.id, db)
-    sub_role = sub.role if sub else "free"
+    if sub:
+        sub_role = sub.role
+    elif user.role == "COACH":
+        sub_role = "coach_free"
+    elif user.role == "ADMIN":
+        sub_role = "academy"
+    else:
+        sub_role = "free"
     sub_status = sub.status if sub else "inactive"
 
     user.last_login = datetime.now(timezone.utc)
@@ -192,7 +206,7 @@ def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
     """Merge user row with active subscription for /me and /register responses."""
     return {
         "id": user.id,
-        "role": user.role,
+        "account_type": user.role,
         "name": user.name,
         "email": user.email,
         "phone": user.phone,
@@ -208,7 +222,11 @@ def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
         "is_verified": user.is_verified,
         "created_at": user.created_at,
         "last_login": user.last_login,
-        "subscription_tier": sub.role if sub else "free",
+        "subscription_role": (
+            sub.role
+            if sub
+            else ("coach_free" if user.role == "COACH" else ("academy" if user.role == "ADMIN" else "free"))
+        ),
         "subscription_status": sub.status if sub else "inactive",
         "subscription_expires_at": sub.expires_at if sub else None,
     }
