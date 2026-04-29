@@ -335,9 +335,14 @@ export default function AdminUsersPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [resetRequests, setResetRequests] = useState<{id:string;email:string;name:string;message?:string;created_at:string}[]>([]);
+  const [newPassword, setNewPassword] = useState<Record<string,string>>({});
 
   useEffect(() => {
     fetchUsers();
+    api.get('/admin/password-reset-requests')
+      .then(r => setResetRequests(r.data.requests || []))
+      .catch(() => {});
   }, [page, search, roleFilter, statusFilter]);
 
   const fetchUsers = async () => {
@@ -416,6 +421,60 @@ export default function AdminUsersPage() {
           Manage all users, search, filter, and control account status
         </p>
       </motion.div>
+
+      {/* Password Reset Requests */}
+      {resetRequests.length > 0 && (
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}
+          className={`rounded-3xl p-6 mb-6 border ${
+            theme === 'dark' ? 'glass border-red-500/30 bg-red-500/5' : 'bg-red-50 border-red-200'
+          }`}>
+          <h2 className="font-semibold mb-1 flex items-center gap-2 text-red-400">
+            <i className="fas fa-key"></i> Password Reset Requests ({resetRequests.length})
+          </h2>
+          <p className={`text-xs mb-4 ${theme === 'dark' ? 'text-white/50' : 'text-gray-500'}`}>
+            Set a new password and click Reset. The user will be notified via their dashboard bell icon.
+          </p>
+          <div className="space-y-3">
+            {resetRequests.map(req => (
+              <div key={req.id} className={`rounded-2xl p-4 border flex flex-wrap items-center gap-4 justify-between ${
+                theme === 'dark' ? 'glass border-white/10' : 'bg-white border-red-100'
+              }`}>
+                <div>
+                  <p className="font-medium text-sm">{req.name}</p>
+                  <p className={`text-xs ${theme === 'dark' ? 'text-white/50' : 'text-gray-500'}`}>{req.email}</p>
+                  {req.message && <p className={`text-xs mt-1 italic ${theme === 'dark' ? 'text-white/40' : 'text-gray-400'}`}>"{req.message}"</p>}
+                  <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-white/30' : 'text-gray-400'}`}>
+                    {new Date(req.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    placeholder="New password"
+                    value={newPassword[req.id] || ''}
+                    onChange={e => setNewPassword(p => ({ ...p, [req.id]: e.target.value }))}
+                    className={`px-3 py-2 rounded-xl border text-sm focus:outline-none w-36 ${
+                      theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-gray-300'
+                    }`}
+                  />
+                  <button
+                    disabled={!newPassword[req.id] || newPassword[req.id].length < 6}
+                    onClick={async () => {
+                      try {
+                        await api.post(`/admin/password-reset-requests/${req.id}/resolve`, { new_password: newPassword[req.id] });
+                        setResetRequests(prev => prev.filter(r => r.id !== req.id));
+                        setNewPassword(p => { const n = {...p}; delete n[req.id]; return n; });
+                      } catch (e) { console.error(e); }
+                    }}
+                    className="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium disabled:opacity-50 hover:opacity-90 transition-all">
+                    <i className="fas fa-check mr-1"></i>Reset
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </motion.div>
+      )}
 
       {/* Filters */}
       <motion.div

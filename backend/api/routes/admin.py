@@ -196,6 +196,70 @@ def update_user(
     return UserSummaryResponse.model_validate(user)
 
 
+@router.get("/password-reset-requests")
+def get_password_reset_requests(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    from database.models.password_reset_request import PasswordResetRequest
+    requests = db.query(PasswordResetRequest).filter(
+        PasswordResetRequest.is_resolved == False
+    ).order_by(PasswordResetRequest.created_at.desc()).all()
+    return {
+        "requests": [
+            {
+                "id": r.id,
+                "user_id": r.user_id,
+                "email": r.email,
+                "name": r.name,
+                "message": r.message,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in requests
+        ]
+    }
+
+
+@router.post("/password-reset-requests/{request_id}/resolve")
+def resolve_password_reset(
+    request_id: str,
+    data: dict,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    from database.models.password_reset_request import PasswordResetRequest
+    from database.models.notification import Notification
+    from utils.auth import get_password_hash
+    from datetime import datetime, timezone
+
+    req = db.query(PasswordResetRequest).filter(PasswordResetRequest.id == request_id).first()
+    if not req:
+        raise HTTPException(status_code=404, detail="Request not found")
+
+    new_password = data.get("new_password", "").strip()
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    user = db.query(User).filter(User.id == req.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user.password_hash = get_password_hash(new_password)
+    req.is_resolved = True
+    req.resolved_at = datetime.now(timezone.utc)
+
+    # Notify the user with their new password
+    notif = Notification(
+        user_id=user.id,
+        title="Password Reset by Admin",
+        message=f"Your password has been reset. Your new password is: {new_password} — Please log in and change it immediately.",
+        type="info",
+    )
+    db.add(notif)
+    db.commit()
+    return {"ok": True, "message": f"Password reset for {user.email}. User has been notified."}
+
+
 @router.get("/stats")
 def get_admin_stats(
     current_user: User = Depends(require_admin),

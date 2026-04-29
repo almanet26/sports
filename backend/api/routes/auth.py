@@ -308,6 +308,40 @@ def update_current_user(
     return current_user
 
 
+@router.post("/forgot-password", status_code=201)
+def forgot_password(
+    data: dict,
+    db: Session = Depends(get_db),
+):
+    """User submits a password reset request to admin."""
+    from database.models.password_reset_request import PasswordResetRequest
+    email = data.get("email", "").strip()
+    message = data.get("message", "")
+
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        # Don't reveal if email exists
+        return {"ok": True, "message": "If this email exists, your request has been submitted."}
+
+    # Check no pending request already
+    existing = db.query(PasswordResetRequest).filter(
+        PasswordResetRequest.user_id == user.id,
+        PasswordResetRequest.is_resolved == False
+    ).first()
+    if existing:
+        return {"ok": True, "message": "A request is already pending. Please wait for admin to respond."}
+
+    req = PasswordResetRequest(
+        user_id=user.id,
+        email=user.email,
+        name=user.name,
+        message=message,
+    )
+    db.add(req)
+    db.commit()
+    return {"ok": True, "message": "Request submitted. Admin will reset your password shortly."}
+
+
 @router.get("/coaches/public")
 def get_public_coaches(
     db: Session = Depends(get_db),

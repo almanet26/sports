@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
+import { api } from '../lib/api';
 
 interface LoginFormData {
   email: string;
@@ -20,6 +21,11 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotMessage, setForgotMessage] = useState('');
+  const [forgotNote, setForgotNote] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
   
   // Get success message from registration
   const successMessage = location.state?.message;
@@ -223,38 +229,96 @@ export default function LoginPage() {
           >
             <p className="text-sm text-white/60">
               Don't have an account?{" "}
-              <Link
-                to="/register"
-                className="text-blue-400 hover:text-blue-300 font-medium transition-colors"
-              >
+              <Link to="/register" className="text-blue-400 hover:text-blue-300 font-medium transition-colors">
                 Create one
               </Link>
             </p>
-            
-            <Link
-              to="/"
-              className="inline-flex items-center text-xs text-white/50 hover:text-white/70 transition-colors"
+            <button
+              onClick={() => { setShowForgot(true); setForgotMessage(''); setForgotNote(''); }}
+              className="text-sm text-white/40 hover:text-white/70 transition-colors"
             >
-              <span className="mr-1">←</span>
-              Back to Home
+              Forgot password? Contact admin
+            </button>
+            <Link to="/" className="inline-flex items-center text-xs text-white/50 hover:text-white/70 transition-colors">
+              <span className="mr-1">←</span>Back to Home
             </Link>
           </motion.div>
         </div>
 
         {/* Decorative elements */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.7, duration: 0.5 }}
-          className="absolute -top-6 -right-6 w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 blur-xl"
-        />
-        <motion.div
-          initial={{ opacity: 0, scale: 0 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.8, duration: 0.5 }}
-          className="absolute -bottom-6 -left-6 w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 blur-xl"
-        />
+        <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.7, duration: 0.5 }}
+          className="absolute -top-6 -right-6 w-12 h-12 rounded-full bg-gradient-to-r from-blue-500 to-purple-600 blur-xl" />
+        <motion.div initial={{ opacity: 0, scale: 0 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: 0.8, duration: 0.5 }}
+          className="absolute -bottom-6 -left-6 w-16 h-16 rounded-full bg-gradient-to-r from-purple-500 to-pink-600 blur-xl" />
       </motion.div>
+
+      {/* Forgot Password Modal */}
+      <AnimatePresence>
+        {showForgot && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowForgot(false)}>
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
+              onClick={e => e.stopPropagation()}
+              className="relative w-full max-w-md glass rounded-3xl p-6 border border-white/20 text-white">
+              <h3 className="text-xl font-bold mb-1">Forgot Password?</h3>
+              <p className="text-white/60 text-sm mb-5">Submit a request and the admin will reset your password. Once reset, you'll receive a notification with your new password when you log in.</p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Your Email</label>
+                  <input
+                    type="email"
+                    value={forgotEmail}
+                    onChange={e => setForgotEmail(e.target.value)}
+                    placeholder="Enter your registered email"
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-blue-400 focus:outline-none text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Message (optional)</label>
+                  <textarea
+                    value={forgotNote}
+                    onChange={e => setForgotNote(e.target.value)}
+                    placeholder="Any additional info for the admin..."
+                    rows={3}
+                    className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/30 focus:border-blue-400 focus:outline-none text-sm resize-none"
+                  />
+                </div>
+              </div>
+
+              {forgotMessage && (
+                <p className="mt-3 text-sm text-green-400 flex items-center gap-2">
+                  <i className="fas fa-check-circle"></i>{forgotMessage}
+                </p>
+              )}
+
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => setShowForgot(false)}
+                  className="flex-1 py-2.5 rounded-xl glass border border-white/20 text-sm font-medium hover:bg-white/10 transition-all">
+                  Cancel
+                </button>
+                <button
+                  disabled={!forgotEmail || forgotLoading}
+                  onClick={async () => {
+                    setForgotLoading(true);
+                    try {
+                      const r = await api.post('/auth/forgot-password', { email: forgotEmail, message: forgotNote });
+                      setForgotMessage(r.data.message);
+                      setTimeout(() => setShowForgot(false), 2500);
+                    } catch {
+                      setForgotMessage('Failed to submit. Please try again.');
+                    } finally {
+                      setForgotLoading(false);
+                    }
+                  }}
+                  className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-all">
+                  {forgotLoading ? 'Submitting...' : 'Submit Request'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
