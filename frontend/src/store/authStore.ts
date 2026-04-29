@@ -167,8 +167,8 @@ export const useAuthStore = create<AuthState>()(
             subscriptionTier: (user?.subscription_role ?? 'free') as Tier,
           });
 
-          // Fetch full profile + billing in one shot
-          await get().fetchMe();
+          // Always fetch full profile to ensure role and all fields are correct
+          await get().fetchProfile();
 
           set({ isLoading: false });
           return true;
@@ -203,6 +203,8 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user_profile');
+          localStorage.removeItem('auth-storage');
+
           set({
             user: null,
             token: null,
