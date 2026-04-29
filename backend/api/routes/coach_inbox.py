@@ -130,7 +130,7 @@ def submit_job_to_coach(
 
 @router.get("/inbox", response_model=list[SubmissionResponse])
 def get_inbox(
-    current_user: User = Depends(require_feature("player_submission")),
+    current_user: User = Depends(require_feature("coach_submission_inbox")),
     db: Session = Depends(get_db),
 ) -> list[SubmissionResponse]:
     """Coach fetches pending submissions from players."""
@@ -162,7 +162,7 @@ def get_inbox(
 def update_submission_status(
     submission_id: str,
     body: StatusPatch,
-    current_user: User = Depends(require_feature("player_submission")),
+    current_user: User = Depends(require_feature("coach_submission_inbox")),
     db: Session = Depends(get_db),
 ) -> SubmissionResponse:
     if body.status not in _VALID_STATUSES:

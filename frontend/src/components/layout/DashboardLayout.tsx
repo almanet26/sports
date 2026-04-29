@@ -3,13 +3,14 @@ import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
-import { TIER_HIERARCHY, type Tier } from "../../types/subscriptionPlans";
+import { TIER_HIERARCHY, type Tier } from "../../types/plans";
 import logoImage from '/logo.webp';
 
 interface NavItem {
   to: string;
   icon: string;
   label: string;
+  minTier?: Tier;
 }
 
 const dashboardItems: Record<string, NavItem[]> = {
@@ -17,24 +18,20 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
-    { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat" },
+    { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'basic' },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/stats", icon: "fas fa-chart-bar", label: "Stats" },
-    { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
-    { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
-    { to: "/coach/chat", icon: "fas fa-robot", label: "AI Chat" },
-    { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload" },
-    { to: "/coach/submissions", icon: "fas fa-inbox", label: "Video Reviews" },
+    { to: "/coach/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'coach_starter' },
+    { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload", minTier: 'coach_starter' },
+    { to: "/coach/submissions", icon: "fas fa-inbox", label: "Video Reviews", minTier: 'coach_starter' },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/billing", icon: "fas fa-star", label: "Subscription" },
-    { to: "/settings", icon: "fas fa-user-circle", label: "My Profile" },
+    { to: "/settings", icon: "fas fa-user-circle", label: "My Profile", minTier: 'coach_starter' },
+    { to: "/settings", icon: "fas fa-paint-brush", label: "Branding", minTier: 'academy' },
   ],
   ADMIN: [
     { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
@@ -100,14 +97,11 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   };
 
   const navItems = dashboardItems[accountType || 'PLAYER'] || dashboardItems.PLAYER;
+  const currentTier = (subscriptionTier || 'free') as Tier;
 
   const canSeeNavItem = (item: NavItem): boolean => {
-    const isPremiumLink = item.label === 'AI Chat' || item.label === 'Submissions';
-    if (!isPremiumLink) return true;
-
-    const requiredTier: Tier = item.label === 'AI Chat' ? 'basic' : 'coach_starter';
-    const currentTier = (subscriptionTier || 'free') as Tier;
-    return TIER_HIERARCHY[currentTier] >= TIER_HIERARCHY[requiredTier];
+    if (!item.minTier) return true;
+    return TIER_HIERARCHY[currentTier] >= TIER_HIERARCHY[item.minTier];
   };
 
   const renderNavItem = (item: NavItem, index: number, mobile = false) => {

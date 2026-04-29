@@ -4,12 +4,13 @@ import { useNavigate } from 'react-router-dom';
 import { AlertCircle, CheckCircle, Clock, Zap } from 'lucide-react';
 import { useSubscriptionStore } from '../stores/authStore';
 import {
+  PLAN_CUMULATIVE_FEATURES,
   PLAN_DISPLAY_CONFIG,
   PLANS_FULL_CONFIG,
   TIER_HIERARCHY,
   type PlanConfig,
   type SubscriptionStatus,
-} from '../types/subscriptionPlans';
+} from '../types/plans';
 import { billingApi } from '../lib/api';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -147,7 +148,7 @@ export default function BillingPage() {
       label: 'Key features',
       render: (p) => (
         <ul className="space-y-1 text-left">
-          {PLAN_DISPLAY_CONFIG[p.role].topFeatures.map((f) => (
+          {PLAN_CUMULATIVE_FEATURES[p.role].map((f) => (
             <li key={f} className="flex items-start gap-1">
               <CheckCircle className="mt-0.5 h-3 w-3 shrink-0 text-emerald-400" />
               <span className="text-xs text-zinc-300">{f}</span>

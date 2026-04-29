@@ -20,6 +20,7 @@ export type FeatureKey =
   | 'video_annotation'
   | 'player_dashboard'
   | 'player_submission'
+  | 'coach_submission_inbox'
   | 'csv_export'
   | 'priority_processing'
   | 'white_label_reports'
@@ -35,7 +36,8 @@ export const FEATURE_MAP: Record<FeatureKey, Tier> = {
   ocr_highlights: 'coach_starter',
   video_annotation: 'coach_starter',
   player_dashboard: 'coach_starter',
-  player_submission: 'coach_starter',
+  player_submission: 'basic',
+  coach_submission_inbox: 'coach_starter',
   csv_export: 'coach_pro',
   priority_processing: 'coach_pro',
   white_label_reports: 'academy',

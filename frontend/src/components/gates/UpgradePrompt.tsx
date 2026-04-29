@@ -1,6 +1,7 @@
 import { CheckCircle, Zap } from 'lucide-react';
 import { billingApi } from '../../lib/api';
-import { PLAN_DISPLAY_CONFIG, type Tier } from '../../types/subscriptionPlans';
+import { PLAN_CUMULATIVE_FEATURES, PLAN_DISPLAY_CONFIG, getUpgradeFeatureDelta, type Tier } from '../../types/plans';
+import { useSubscriptionStore } from '../../stores/authStore';
 
 interface UpgradePromptProps {
   requiredTier: Tier;
@@ -8,6 +9,8 @@ interface UpgradePromptProps {
 
 export default function UpgradePrompt({ requiredTier }: UpgradePromptProps) {
   const config = PLAN_DISPLAY_CONFIG[requiredTier];
+  const currentTier = useSubscriptionStore((s) => s.subscriptionTier);
+  const deltaFeatures = getUpgradeFeatureDelta(currentTier, requiredTier);
 
   const priceLabel =
     config.priceInr === 0
@@ -44,7 +47,7 @@ export default function UpgradePrompt({ requiredTier }: UpgradePromptProps) {
         </div>
 
         <ul className="mt-4 space-y-2.5">
-          {config.topFeatures.map((feat) => (
+          {(deltaFeatures.length > 0 ? deltaFeatures : PLAN_CUMULATIVE_FEATURES[requiredTier]).map((feat) => (
             <li key={feat} className="flex items-start gap-2 text-sm text-zinc-300">
               <CheckCircle className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
               {feat}

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { MessageSquare, Send, Loader2 } from 'lucide-react';
 import FeatureGate from '../components/gates/FeatureGate';
 import { useSubscriptionStore } from '../stores/authStore';
+import { TIER_HIERARCHY } from '../types/plans';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -248,6 +249,12 @@ export default function ChatPage() {
  * Free coaches who navigate to /coach/chat see UpgradePrompt immediately.
  */
 export function CoachChatPage() {
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
+
+  if (TIER_HIERARCHY[subscriptionTier] >= TIER_HIERARCHY['coach_starter']) {
+    return <ChatView />;
+  }
+
   return (
     <FeatureGate requiredTier="coach_starter" feature="ai_chat">
       <ChatView />

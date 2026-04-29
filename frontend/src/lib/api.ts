@@ -427,10 +427,34 @@ export interface CoachListItem {
   team?: string;
 }
 
+export interface PlayerSubmissionRequest {
+  coachId: string;
+  note?: string;
+  jobId?: string;
+}
+
+export interface PlayerSubmissionItem {
+  id: string;
+  coach_name?: string | null;
+  job_id?: string | null;
+  status: string;
+  note?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
 export const submissionsApi = {
   /** List available coaches for the player's dropdown */
   listCoaches: () =>
-    api.get<{ coaches: CoachListItem[] }>('/submissions/coaches'),
+    api.get<{ coaches: CoachListItem[] }>('/coaches'),
+
+  /** Player: Create a submission for a coach */
+  createPlayerSubmission: (data: PlayerSubmissionRequest) =>
+    api.post<PlayerSubmissionItem>('/submissions', {
+      coach_id: data.coachId,
+      note: data.note,
+      job_id: data.jobId,
+    }),
 
   /** Player: Upload video to a coach */
   upload: (file: File, coachId: string, analysisType: string = 'BATTING', onProgress?: (p: number) => void) => {
@@ -454,6 +478,10 @@ export const submissionsApi = {
   /** Player: All my submissions (all statuses) */
   playerAll: (limit = 50, offset = 0) =>
     api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/player/all', { params: { limit, offset } }),
+
+  /** Player: My coach submissions */
+  playerMy: () =>
+    api.get<{ submissions: PlayerSubmissionItem[]; total: number }>('/submissions/my'),
 
   /** Coach: Inbox (PENDING + DRAFT_REVIEW) */
   coachInbox: (status?: string, limit = 50, offset = 0) =>

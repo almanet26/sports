@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { useSubscriptionStore } from '../../stores/authStore';
-import { TIER_HIERARCHY, type Tier } from '../../types/subscriptionPlans';
+import { TIER_HIERARCHY, getFeatureRequiredTier, type FeatureKey, type Tier } from '../../types/plans';
 import UpgradePrompt from './UpgradePrompt';
 import SubscriptionExpiredPrompt from './SubscriptionExpiredPrompt';
 
@@ -31,12 +31,9 @@ export default function FeatureGate({ requiredTier, feature, children }: Feature
     return <SubscriptionExpiredPrompt />;
   }
 
-  // Determine the effective required tier based on account type and feature.
-  // For ai_chat: coach minimum is coach_starter, player minimum is basic.
-  let effectiveRequiredTier: Tier = requiredTier;
-  if (feature === 'ai_chat' && accountType === 'COACH') {
-    effectiveRequiredTier = 'coach_starter';
-  }
+  const effectiveRequiredTier: Tier = feature === 'ai_chat'
+    ? getFeatureRequiredTier(feature as FeatureKey, accountType)
+    : requiredTier;
 
   // Current tier is below the required tier
   if (TIER_HIERARCHY[subscriptionTier] < TIER_HIERARCHY[effectiveRequiredTier]) {
