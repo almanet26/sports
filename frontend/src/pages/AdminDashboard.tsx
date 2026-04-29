@@ -36,6 +36,8 @@ interface DashboardStats {
   pendingJobs: number;
   pendingRequests: number;
   totalUsers: number;
+  totalPlayers: number;
+  totalCoaches: number;
   pendingCoaches: number;
   subscription_breakdown?: {
     basic: number;
@@ -86,6 +88,8 @@ export default function AdminDashboard() {
     pendingJobs: 0,
     pendingRequests: 0,
     totalUsers: 0,
+    totalPlayers: 0,
+    totalCoaches: 0,
     pendingCoaches: 0,
   });
   const [pendingRequests, setPendingRequests] = useState<PendingRequest[]>([]);
@@ -152,7 +156,11 @@ export default function AdminDashboard() {
         pendingJobs: 0,
         pendingRequests: requestsResponse.data.total || 0,
         totalUsers: statsResponse.data.total_users || 0,
+        totalPlayers: statsResponse.data.total_players || 0,
+        totalCoaches: statsResponse.data.total_coaches || 0,
         pendingCoaches: statsResponse.data.pending_coaches || 0,
+        subscription_breakdown: statsResponse.data.subscription_breakdown,
+        revenue: statsResponse.data.revenue,
       });
 
       // Store the extended platform stats if the new fields are present
@@ -435,12 +443,8 @@ export default function AdminDashboard() {
 
       {/* Metrics Cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="glass rounded-2xl p-6 border border-white/20"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+          className="glass rounded-2xl p-6 border border-white/20">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
               <i className="fas fa-users text-white"></i>
@@ -451,12 +455,32 @@ export default function AdminDashboard() {
           <p className="text-xs text-green-400 mt-1">↑ 12% this month</p>
         </motion.div>
 
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }}
-          className="glass rounded-2xl p-6 border border-white/20"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }}
+          className="glass rounded-2xl p-6 border border-white/20">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">
+              <i className="fas fa-running text-white"></i>
+            </div>
+            <span className="text-sm text-white/60">Total Players</span>
+          </div>
+          <p className="text-3xl font-bold">{stats.totalPlayers}</p>
+          <p className="text-xs text-blue-400 mt-1">Registered players</p>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.2 }}
+          className="glass rounded-2xl p-6 border border-white/20">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
+              <i className="fas fa-chalkboard-teacher text-white"></i>
+            </div>
+            <span className="text-sm text-white/60">Total Coaches</span>
+          </div>
+          <p className="text-3xl font-bold">{stats.totalCoaches}</p>
+          <p className="text-xs text-green-400 mt-1">{stats.pendingCoaches} pending verification</p>
+        </motion.div>
+
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.3 }}
+          className="glass rounded-2xl p-6 border border-white/20">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-yellow-500 to-orange-500 flex items-center justify-center">
               <i className="fas fa-star text-white"></i>
@@ -467,48 +491,6 @@ export default function AdminDashboard() {
             {(stats.subscription_breakdown?.silver || 0) + (stats.subscription_breakdown?.gold || 0)}
           </p>
           <p className="text-xs text-green-400 mt-1">↑ 8% conversion</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.2 }}
-          className="glass rounded-2xl p-6 border border-white/20"
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-red-500 to-pink-500 flex items-center justify-center">
-              <i className="fas fa-chart-line text-white"></i>
-            </div>
-            <span className="text-sm text-white/60">Churn Rate</span>
-          </div>
-          <p className="text-3xl font-bold">2.3%</p>
-          <p className="text-xs text-green-400 mt-1">↓ 0.5% improvement</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.3 }}
-          className="glass rounded-2xl p-6 border border-white/20"
-        >
-          <div className="flex items-center gap-3 mb-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 flex items-center justify-center">
-              <i className="fas fa-trophy text-white"></i>
-            </div>
-            <span className="text-sm text-white/60">Popular Plan</span>
-          </div>
-          <p className="text-2xl font-bold">
-            {Math.max(
-              stats.subscription_breakdown?.basic || 0,
-              stats.subscription_breakdown?.silver || 0,
-              stats.subscription_breakdown?.gold || 0
-            ) === (stats.subscription_breakdown?.gold || 0) ? 'Gold' :
-            Math.max(
-              stats.subscription_breakdown?.basic || 0,
-              stats.subscription_breakdown?.silver || 0
-            ) === (stats.subscription_breakdown?.silver || 0) ? 'Silver' : 'Basic'}
-          </p>
-          <p className="text-xs text-white/60 mt-1">Most subscribed</p>
         </motion.div>
       </div>
 
