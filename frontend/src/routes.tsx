@@ -21,6 +21,7 @@ import VideoDetailPage from './pages/VideoDetailPage';
 import RequestsPage from './pages/RequestsPage';
 import ProfilePage from './pages/ProfilePage';
 import PlayerPerformance from './pages/PlayerPerformance';
+import CoachPlayerPerformance from './pages/CoachPlayerPerformance';
 import PlayerProfile from './pages/PlayerProfile';
 import PlayerVideosPage from './pages/PlayerVideosPage';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
@@ -208,7 +209,7 @@ export default function AppRouter() {
             <Route path="/player" element={<PlayerDashboard />} />
             <Route path="/player/profile" element={<PlayerProfile />} />
             <Route path="/player/videos" element={<PlayerVideosPage />} />
-            <Route path="/player/:id" element={<PlayerPerformance />} />
+            <Route path="/player/:id" element={<CoachPlayerPerformance />} />
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
             <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
@@ -228,7 +229,7 @@ export default function AppRouter() {
               <Route element={<DashboardLayout />}>
                 <Route path="/coach" element={<CoachDashboard />} />
                 <Route path="/coach/upload" element={<UploadPage />} />
-                <Route path="/coach/player/:id" element={<PlayerPerformance />} />
+                <Route path="/coach/player/:id" element={<CoachPlayerPerformance />} />
                 <Route path="/coach/players" element={<CoachMyPlayersPage />} />
                 <Route path="/coach/submissions" element={<CoachInboxPage />} />
                 <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
