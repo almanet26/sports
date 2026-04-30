@@ -1,15 +1,18 @@
 /**
- * Authentication Store (Zustand)
- * 
- * Manages user authentication state with persistence.
+ * Authentication & Subscription Store (Zustand)
+ *
+ * Single source of truth for user auth state AND subscription/billing state.
+ * Replaces the former split between store/authStore.ts and stores/authStore.ts.
  */
 
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { authApi } from '../lib/api';
+import { authApi, api } from '../lib/api';
 import { AxiosError } from 'axios';
+import type { Tier, SubscriptionStatus, QuotaUsage } from '../types/subscriptionPlans';
 
-// Types
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export type UserRole = 'PLAYER' | 'COACH' | 'ADMIN';
 
 export interface User {
@@ -25,7 +28,7 @@ export interface User {
   is_verified: boolean;
   created_at: string;
   last_login?: string;
-  
+
   // Coach profile fields
   certifications?: Array<{name: string; issuer: string; year: string}>;
   specialization?: string[];
@@ -34,18 +37,43 @@ export interface User {
   coach_category?: string;
 }
 
+const DEFAULT_QUOTA: QuotaUsage = {
+  biomech: { used: 0, limit: 0 },
+  ocr_hours: { used: 0, limit: 0 },
+  submissions: { used: 0, limit: 0 },
+};
+
+function normalizeQuotaUsage(value: unknown): QuotaUsage {
+  if (!value || typeof value !== 'object') return DEFAULT_QUOTA;
+  const candidate = value as Partial<QuotaUsage>;
+  return {
+    biomech: candidate.biomech ?? DEFAULT_QUOTA.biomech,
+    ocr_hours: candidate.ocr_hours ?? DEFAULT_QUOTA.ocr_hours,
+    submissions: candidate.submissions ?? DEFAULT_QUOTA.submissions,
+  };
+}
+
+// ─── State Interface ──────────────────────────────────────────────────────────
+
 interface AuthState {
-  // State
+  // ── Auth fields ──
   user: User | null;
   token: string | null;
   refreshToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+
+  // ── Shared derived fields (account type + tier) ──
   accountType: UserRole;
-  subscriptionTier: string;
-  
-  // Actions
+  subscriptionTier: Tier;
+
+  // ── Subscription / billing fields ──
+  subscriptionStatus: SubscriptionStatus;
+  expiresAt: string | null;
+  quotaUsage: QuotaUsage;
+
+  // ── Auth actions ──
   login: (email: string, password: string) => Promise<boolean>;
   register: (data: {
     name: string;
@@ -58,16 +86,22 @@ interface AuthState {
   logout: () => Promise<void>;
   fetchProfile: () => Promise<void>;
   clearError: () => void;
-  
-  // Helpers
+
+  // ── Subscription actions ──
+  fetchMe: () => Promise<void>;
+  refreshQuota: () => Promise<void>;
+
+  // ── Helpers ──
   hasRole: (role: UserRole | UserRole[]) => boolean;
   canUpload: () => boolean;
 }
 
+// ─── Store ────────────────────────────────────────────────────────────────────
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
-      // Initial state
+      // ── Initial state ──
       user: null,
       token: null,
       refreshToken: null,
@@ -75,24 +109,23 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       accountType: 'PLAYER',
-      subscriptionTier: 'free',
-      
-      // Login action
-      login: async (email: string, password: string) => {
-        set({ isLoading: true, error: null });
+      subscriptionTier: 'free' as Tier,
+      subscriptionStatus: 'inactive' as SubscriptionStatus,
+      expiresAt: null,
+      quotaUsage: DEFAULT_QUOTA,
 
+      // ── Auth actions ─────────────────────────────────────────────────────
+
+      login: async (email, password) => {
+        set({ isLoading: true, error: null });
         try {
-          // Call login endpoint
           const response = await authApi.login(email, password);
           const { access_token, refresh_token, user } = response.data;
 
-          // Store tokens in localStorage for axios interceptor
           localStorage.setItem('access_token', access_token);
-          if (refresh_token) {
-            localStorage.setItem('refresh_token', refresh_token);
-          }
+          if (refresh_token) localStorage.setItem('refresh_token', refresh_token);
 
-          // Decode JWT payload immediately — backend embeds role from DB at signing time
+          // Decode JWT for immediate role hint (fetchMe will correct this)
           let roleFromToken: UserRole = 'PLAYER';
           let userIdFromToken = '';
           try {
@@ -100,7 +133,7 @@ export const useAuthStore = create<AuthState>()(
             const decoded = JSON.parse(atob(b64.replace(/-/g, '+').replace(/_/g, '/')));
             if (decoded.role) roleFromToken = decoded.role as UserRole;
             if (decoded.user_id) userIdFromToken = decoded.user_id;
-          } catch { /* fetchProfile will supply correct values */ }
+          } catch { /* fetchMe will supply correct values */ }
 
           const userData: User = user ? {
             id: user.id,
@@ -126,11 +159,11 @@ export const useAuthStore = create<AuthState>()(
             user: userData,
             isAuthenticated: true,
             accountType: userData.role,
-            subscriptionTier: (user?.subscription_role ?? 'free') as string,
+            subscriptionTier: (user?.subscription_role ?? 'free') as Tier,
           });
 
-          // Fetch full profile to populate name, phone, team, etc.
-          await get().fetchProfile();
+          // Fetch full profile + billing in one shot
+          await get().fetchMe();
 
           set({ isLoading: false });
           return true;
@@ -141,11 +174,9 @@ export const useAuthStore = create<AuthState>()(
           throw new Error(message);
         }
       },
-      
-      // Register action
+
       register: async (data) => {
         set({ isLoading: true, error: null });
-        
         try {
           await authApi.register(data);
           set({ isLoading: false });
@@ -157,19 +188,16 @@ export const useAuthStore = create<AuthState>()(
           return false;
         }
       },
-      
-      // Logout action
+
       logout: async () => {
         try {
           await authApi.logout();
         } catch {
           // Ignore logout errors
         } finally {
-          // Clear all auth data
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user_profile');
-          
           set({
             user: null,
             token: null,
@@ -177,52 +205,88 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             error: null,
             accountType: 'PLAYER',
-            subscriptionTier: 'free',
+            subscriptionTier: 'free' as Tier,
+            subscriptionStatus: 'inactive' as SubscriptionStatus,
+            expiresAt: null,
+            quotaUsage: DEFAULT_QUOTA,
           });
         }
       },
-      
-      // Fetch user profile
+
+      /**
+       * fetchProfile — kept for backward compatibility, delegates to fetchMe.
+       */
       fetchProfile: async () => {
+        return get().fetchMe();
+      },
+
+      // ── Subscription actions ──────────────────────────────────────────────
+
+      /**
+       * fetchMe — fetches both the user profile (/auth/me) and billing usage
+       * (/billing/usage) in parallel.  This is the canonical way to hydrate
+       * both auth and subscription state after login or page load.
+       */
+      fetchMe: async () => {
+        set({ isLoading: true });
         try {
-          const response = await authApi.getProfile();
-          const profile = response.data as User & { account_type?: UserRole; subscription_role?: string };
+          const [{ data: profile }, { data: usage }] = await Promise.all([
+            api.get('/auth/me'),
+            api.get('/billing/usage'),
+          ]);
+
           const mappedUser: User = {
             ...profile,
             role: (profile.account_type ?? profile.role ?? 'PLAYER') as UserRole,
+            name: profile.full_name ?? profile.name,
           };
-          
-          // Also store in localStorage for backward compatibility
+
           localStorage.setItem('user_profile', JSON.stringify(mappedUser));
-          
+
           set({
             user: mappedUser,
             isAuthenticated: true,
             accountType: mappedUser.role,
-            subscriptionTier: profile.subscription_role ?? 'free',
+            subscriptionTier: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
+            subscriptionStatus: (usage.status ?? 'inactive') as SubscriptionStatus,
+            expiresAt: usage.expires_at ?? null,
+            quotaUsage: normalizeQuotaUsage(usage.current_month),
           });
-        } catch (error) {
-          console.error('Failed to fetch profile:', error);
-          // If profile fetch fails, clear auth
-          get().logout();
+        } catch {
+          // Auth interceptor in api.ts handles 401 redirect; quota failures are non-fatal
+        } finally {
+          set({ isLoading: false });
         }
       },
-      
-      // Clear error
+
+      /**
+       * refreshQuota — lightweight re-fetch of just the billing/usage endpoint.
+       * Call after actions that consume quota (biomech analysis, submission, etc.)
+       */
+      refreshQuota: async () => {
+        try {
+          const { data } = await api.get('/billing/usage');
+          set({
+            quotaUsage: normalizeQuotaUsage((data as { current_month?: unknown }).current_month),
+            subscriptionStatus: (data.status ?? 'inactive') as SubscriptionStatus,
+            expiresAt: data.expires_at ?? null,
+          });
+        } catch {
+          // Non-fatal
+        }
+      },
+
+      // ── Helpers ───────────────────────────────────────────────────────────
+
       clearError: () => set({ error: null }),
-      
-      // Check if user has required role(s)
-      hasRole: (role: UserRole | UserRole[]) => {
+
+      hasRole: (role) => {
         const { user } = get();
         if (!user) return false;
-        
-        if (Array.isArray(role)) {
-          return role.includes(user.role);
-        }
+        if (Array.isArray(role)) return role.includes(user.role);
         return user.role === role;
       },
-      
-      // Check if user can upload videos (ADMIN or COACH)
+
       canUpload: () => {
         const { user } = get();
         return user?.role === 'ADMIN' || user?.role === 'COACH';
@@ -231,6 +295,7 @@ export const useAuthStore = create<AuthState>()(
     {
       name: 'auth-storage',
       storage: createJSONStorage(() => localStorage),
+      // Never persist quota — must be fetched fresh each session
       partialize: (state) => ({
         user: state.user,
         token: state.token,
@@ -238,14 +303,19 @@ export const useAuthStore = create<AuthState>()(
         isAuthenticated: state.isAuthenticated,
         accountType: state.accountType,
         subscriptionTier: state.subscriptionTier,
+        subscriptionStatus: state.subscriptionStatus,
+        expiresAt: state.expiresAt,
       }),
-    }
-  )
+    },
+  ),
 );
 
-// Selector hooks for common use cases
+// ── Re-export useSubscriptionStore as an alias so old imports still compile
+// while being gradually migrated.
+export const useSubscriptionStore = useAuthStore;
+
+// ── Selector hooks ────────────────────────────────────────────────────────────
 export const useUser = () => useAuthStore((state) => state.user);
 export const useIsAuthenticated = () => useAuthStore((state) => state.isAuthenticated);
 export const useUserRole = () => useAuthStore((state) => state.user?.role);
 export const useCanUpload = () => useAuthStore((state) => state.canUpload());
-

@@ -1,7 +1,7 @@
 import React from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { useAuthStore } from "../../store/authStore";
+import { useAuthStore, useSubscriptionStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { TIER_HIERARCHY, type Tier } from "../../types/plans";
 import logoImage from '/logo.webp';
@@ -82,7 +82,8 @@ function RoleBadge({ accountType }: RoleBadgeProps) {
 }
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
-  const { user, logout, accountType, subscriptionTier } = useAuthStore();
+  const { user, logout, accountType } = useAuthStore();
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);

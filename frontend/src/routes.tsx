@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore, useSubscriptionStore } from './store/authStore';
 import type { UserRole } from './store/authStore';
 import { useMemo } from 'react';
 
@@ -37,8 +37,6 @@ import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
 
-import { useSubscriptionStore } from './stores/authStore';
-
 // Auth Initializer (runs once on module load)
 let authInitialized = false;
 
@@ -75,13 +73,13 @@ initializeAuthOnce();
 function ProtectedRoute() {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  
+
   const shouldRedirect = useMemo(() => !isAuthenticated, [isAuthenticated]);
-  
+
   if (shouldRedirect) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-  
+
   return <Outlet />;
 }
 
@@ -225,7 +223,6 @@ export default function AppRouter() {
             </Route>
           </Route>
         </Route>
-        
 
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />

@@ -664,6 +664,8 @@ export const adminApi = {
     api.post(`/admin/coaches/${coachId}/reject`),
   getCoachDocument: (coachId: string) =>
     api.get(`/admin/coaches/${coachId}/document`, { responseType: 'blob' }),
+  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
+    api.post(`/admin/coaches/${coachId}/${action === 'verified' ? 'approve' : 'reject'}`),
 
   // Activity feed
   getActivityFeed: (limit = 20) =>

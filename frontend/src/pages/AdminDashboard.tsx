@@ -178,11 +178,7 @@ export default function AdminDashboard() {
 
   const handleCoachAction = async (coachId: string, action: 'verified' | 'rejected') => {
     try {
-      if (action === 'verified') {
-        await adminApi.approveCoach(coachId);
-      } else {
-        await adminApi.rejectCoach(coachId);
-      }
+      await adminApi.verifyCoach(coachId, action);
       fetchDashboardData();
     } catch (error) {
       console.error('Failed to update coach:', error);
