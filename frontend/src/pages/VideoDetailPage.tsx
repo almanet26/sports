@@ -1,8 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { ArrowLeft, Play, Download, Clock, MapPin, Calendar, TrendingUp } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { resolveMediaUrl, videosApi } from '../lib/api';
+import { annotationsApi, resolveMediaUrl, videosApi, type VideoAnnotation } from '../lib/api';
+import { useSubscriptionStore } from '../stores/authStore';
 
 interface VideoDetail {
   id: string;
@@ -35,12 +37,32 @@ interface HighlightEvent {
 
 type EventFilter = 'all' | 'FOUR' | 'SIX' | 'WICKET';
 
+type Point = { x: number; y: number };
+
+interface DrawingDraft {
+  points: Point[];
+  color: string;
+  label: string;
+}
+
 export default function VideoDetailPage() {
   const { videoId } = useParams<{ videoId: string }>();
   const [video, setVideo] = useState<VideoDetail | null>(null);
   const [events, setEvents] = useState<HighlightEvent[]>([]);
+  const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventFilter, setEventFilter] = useState<EventFilter>('all');
+  const [drawMode, setDrawMode] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [draft, setDraft] = useState<DrawingDraft>({ points: [], color: '#f59e0b', label: '' });
+  const [annotationError, setAnnotationError] = useState('');
+  const [annotationSaving, setAnnotationSaving] = useState(false);
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const videoWrapRef = useRef<HTMLDivElement | null>(null);
+  const accountType = useSubscriptionStore((s) => s.accountType);
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
+  const canAnnotate = accountType === 'ADMIN' || (accountType === 'COACH' && subscriptionTier !== 'coach_free');
 
   const needsPolling = (item: VideoDetail | null): boolean => {
     if (!item) return false;
@@ -150,6 +172,172 @@ export default function VideoDetailPage() {
     }
   };
 
+  const getVideoElement = useCallback(() => {
+    return videoWrapRef.current?.querySelector('video') as HTMLVideoElement | null;
+  }, []);
+
+  const syncCanvasSize = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = videoWrapRef.current;
+    if (!canvas || !container) return;
+
+    const rect = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }, []);
+
+  const drawPath = useCallback((context: CanvasRenderingContext2D, path: Point[], color: string) => {
+    if (path.length < 2) return;
+    context.strokeStyle = color;
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i += 1) {
+      context.lineTo(path[i].x, path[i].y);
+    }
+    context.stroke();
+  }, []);
+
+  const redrawCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    const container = videoWrapRef.current;
+    if (!canvas || !container) return;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const rect = container.getBoundingClientRect();
+    context.clearRect(0, 0, rect.width, rect.height);
+
+    for (const annotation of annotations) {
+      const coords = annotation.coordinates as Point[] | undefined;
+      if (Array.isArray(coords)) {
+        drawPath(context, coords, annotation.color || '#f59e0b');
+      }
+    }
+
+    if (draft.points.length > 0) {
+      drawPath(context, draft.points, draft.color);
+      const last = draft.points[draft.points.length - 1];
+      if (last) {
+        context.fillStyle = draft.color;
+        context.beginPath();
+        context.arc(last.x, last.y, 4, 0, Math.PI * 2);
+        context.fill();
+      }
+    }
+  }, [annotations, draft.color, draft.points, drawPath]);
+
+  const getCanvasPoint = useCallback((event: ReactPointerEvent<HTMLCanvasElement>): Point | null => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left,
+      y: event.clientY - rect.top,
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!canAnnotate || !videoId) return;
+    const loadAnnotations = async () => {
+      try {
+        const { data } = await annotationsApi.list(videoId);
+        setAnnotations(data || []);
+      } catch (error) {
+        console.error('Failed to fetch annotations:', error);
+      }
+    };
+    void loadAnnotations();
+  }, [canAnnotate, videoId]);
+
+  useEffect(() => {
+    syncCanvasSize();
+    redrawCanvas();
+    const onResize = () => {
+      syncCanvasSize();
+      redrawCanvas();
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [redrawCanvas, syncCanvasSize]);
+
+  useEffect(() => {
+    redrawCanvas();
+  }, [redrawCanvas]);
+
+  const handlePointerDown = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawMode || !canAnnotate) return;
+    const point = getCanvasPoint(event);
+    if (!point) return;
+    setIsDrawing(true);
+    setDraft((current) => ({ ...current, points: [point] }));
+  }, [canAnnotate, drawMode, getCanvasPoint]);
+
+  const handlePointerMove = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !drawMode || !canAnnotate) return;
+    const point = getCanvasPoint(event);
+    if (!point) return;
+    setDraft((current) => ({ ...current, points: [...current.points, point] }));
+  }, [canAnnotate, drawMode, getCanvasPoint, isDrawing]);
+
+  const handlePointerUp = useCallback(() => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+  }, [isDrawing]);
+
+  const handleSaveAnnotation = useCallback(async () => {
+    if (!videoId || draft.points.length < 2) return;
+    const videoElement = getVideoElement();
+    if (!videoElement) return;
+
+    setAnnotationSaving(true);
+    setAnnotationError('');
+    try {
+      const { data } = await annotationsApi.create({
+        video_id: videoId,
+        timestamp_ms: Math.round(videoElement.currentTime * 1000),
+        annotation_type: 'line',
+        coordinates: draft.points,
+        label: draft.label.trim() || undefined,
+        color: draft.color,
+      });
+      setAnnotations((current) => [...current, data]);
+      setDraft({ points: [], color: draft.color, label: draft.label });
+      redrawCanvas();
+    } catch (error) {
+      console.error('Failed to save annotation:', error);
+      setAnnotationError('Failed to save annotation.');
+    } finally {
+      setAnnotationSaving(false);
+    }
+  }, [draft.color, draft.label, draft.points, getVideoElement, redrawCanvas, videoId]);
+
+  const handleDeleteAnnotation = useCallback(async (annotationId: string) => {
+    try {
+      await annotationsApi.delete(annotationId);
+      setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
+      redrawCanvas();
+    } catch (error) {
+      console.error('Failed to delete annotation:', error);
+      setAnnotationError('Failed to delete annotation.');
+    }
+  }, [redrawCanvas]);
+
+  const clearDraft = useCallback(() => {
+    setDraft((current) => ({ ...current, points: [] }));
+    redrawCanvas();
+  }, [redrawCanvas]);
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-screen">
@@ -220,7 +408,7 @@ export default function VideoDetailPage() {
         className="glass rounded-3xl border border-white/20 overflow-hidden shadow-2xl"
       >
         {/* Video Player */}
-        <div className="aspect-video bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
+        <div ref={videoWrapRef} className="aspect-video bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
           {/* Ambient background effect */}
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/5 to-pink-500/10 animate-gradient"></div>
           {video.supercut_path ? (
@@ -268,7 +456,93 @@ export default function VideoDetailPage() {
               </div>
             </div>
           )}
+
+          {canAnnotate && (video.status === 'completed' || Boolean(video.supercut_path)) && (
+            <>
+              <canvas
+                ref={canvasRef}
+                className={`absolute inset-0 z-20 ${drawMode ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerLeave={handlePointerUp}
+              />
+
+              <div className="absolute top-4 right-4 z-30 flex items-center gap-2 rounded-2xl border border-white/15 bg-slate-950/80 px-3 py-2 backdrop-blur">
+                <button
+                  type="button"
+                  onClick={() => setDrawMode((current) => !current)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${drawMode ? 'bg-amber-500 text-slate-950' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                >
+                  {drawMode ? 'Exit draw mode' : 'Draw mode'}
+                </button>
+                <label className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1.5 text-xs text-white/70">
+                  Color
+                  <input
+                    type="color"
+                    value={draft.color}
+                    onChange={(event) => setDraft((current) => ({ ...current, color: event.target.value }))}
+                    className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                  />
+                </label>
+              </div>
+            </>
+          )}
         </div>
+
+        {canAnnotate && (video.status === 'completed' || Boolean(video.supercut_path)) && (
+          <div className="border-t border-white/10 bg-slate-950/60 p-5">
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="text"
+                value={draft.label}
+                onChange={(event) => setDraft((current) => ({ ...current, label: event.target.value }))}
+                placeholder="Optional label for this drawing"
+                className="min-w-[220px] flex-1 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-amber-500"
+              />
+              <button
+                type="button"
+                onClick={clearDraft}
+                className="rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm font-medium text-white/80 hover:bg-white/10"
+              >
+                Clear sketch
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveAnnotation}
+                disabled={annotationSaving || draft.points.length < 2}
+                className="rounded-xl bg-amber-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {annotationSaving ? 'Saving...' : 'Save annotation'}
+              </button>
+            </div>
+
+            {annotationError && <p className="mt-3 text-sm text-red-400">{annotationError}</p>}
+
+            <div className="mt-5 space-y-3">
+              <h3 className="text-sm font-semibold uppercase tracking-widest text-white/50">Saved annotations</h3>
+              {annotations.length === 0 ? (
+                <p className="text-sm text-white/40">No saved annotations yet.</p>
+              ) : (
+                annotations.map((annotation) => (
+                  <div key={annotation.id} className="flex items-start justify-between gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-white">{annotation.label || annotation.annotation_type}</p>
+                      <p className="text-xs text-white/40">{annotation.timestamp_ms} ms · {annotation.annotation_type}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteAnnotation(annotation.id)}
+                      className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-300 hover:bg-red-500/20"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Video Info */}
         <div className="p-8 relative">

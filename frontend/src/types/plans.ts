@@ -14,64 +14,79 @@ export {
 
 import { FEATURE_MAP, type AccountType, type FeatureKey, type Tier } from './subscriptionPlans';
 
+const FREE_PLAYER_FEATURES = [
+  '3 biomechanics analyses/month',
+  'Public library access',
+  'Community voting',
+];
+
+const COACH_FREE_FEATURES = [
+  'Public library access',
+  'Basic coach profile',
+];
+
+const BASIC_PLAYER_FEATURES = [
+  ...FREE_PLAYER_FEATURES,
+  '15 biomechanics analyses/month',
+  '5 coach submissions/month',
+  'AI Chat assistant',
+  'Ad-free experience',
+];
+
+const COACH_STARTER_FEATURES = [
+  ...COACH_FREE_FEATURES,
+  '50 OCR match hours/month',
+  '150 player submissions/month',
+  'Player dashboard (up to 10 players)',
+  'Video annotation tools',
+  'Upload match videos',
+  'AI Chat assistant',
+];
+
+const COACH_PRO_FEATURES = [
+  ...COACH_STARTER_FEATURES,
+  '150 OCR match hours/month',
+  '600 player submissions/month',
+  '100 players in dashboard',
+  'Priority OCR processing',
+  'CSV data export',
+];
+
 export const PLAN_CUMULATIVE_FEATURES: Record<Tier, string[]> = {
   free: [
-    '3 biomechanics analyses/month',
-    'Public library access',
-    'Community voting',
-  ],
-  coach_free: [
-    'Public library access',
-    'Basic coach profile',
+    ...FREE_PLAYER_FEATURES,
   ],
   basic: [
-    '15 biomechanics analyses/month',
-    '5 coach submissions/month',
-    'AI Chat assistant',
-    'Ad-free experience',
-    'Public library access',
+    ...BASIC_PLAYER_FEATURES,
   ],
   platinum: [
+    ...BASIC_PLAYER_FEATURES,
     '50 biomechanics analyses/month',
     '15 coach submissions/month',
-    'AI Chat assistant',
     'Professional PDF reports',
     'Pro benchmarking',
     'Scouting visibility (opt-in)',
-    'Ad-free experience',
+  ],
+  coach_free: [
+    ...COACH_FREE_FEATURES,
   ],
   coach_starter: [
-    '50 OCR match hours/month',
-    '150 player submissions/month',
-    'Player dashboard (up to 10 players)',
-    'Video annotation tools',
-    'Upload match videos',
-    'AI Chat assistant',
-    'Public library access',
+    ...COACH_STARTER_FEATURES,
   ],
   coach_pro: [
-    '150 OCR match hours/month',
-    '600 player submissions/month',
-    '100 players in dashboard',
-    'Priority OCR processing',
-    'CSV data export',
-    'Video annotation tools',
-    'AI Chat assistant',
-    'Upload match videos',
+    ...COACH_PRO_FEATURES,
   ],
   academy: [
+    ...COACH_PRO_FEATURES,
     '500 OCR match hours/month',
     '1,500 player submissions/month',
     'White-label reports',
     'Multi-seat role controls',
     'Recruitment desk',
     'Unlimited players in dashboard',
-    'Priority OCR processing',
-    'CSV data export',
-    'AI Chat assistant',
-    'Upload match videos',
   ],
 };
+
 
 export function getFeatureRequiredTier(feature: FeatureKey, accountType: AccountType): Tier {
   if (feature === 'ai_chat') {

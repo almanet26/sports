@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { api } from '../lib/api';
+import { adminApi } from '../lib/api';
 
 interface Coach {
   id: string;
@@ -23,7 +23,7 @@ export default function CoachVerificationPage() {
 
   const loadPendingCoaches = async () => {
     try {
-      const res = await api.get('/admin/coaches/pending');
+      const res = await adminApi.getPendingCoaches();
       setCoaches(res.data.coaches || []);
     } catch (error) {
       console.error('Failed to load coaches:', error);
@@ -34,7 +34,7 @@ export default function CoachVerificationPage() {
 
   const handleApprove = async (coachId: string) => {
     try {
-      await api.post(`/admin/coaches/${coachId}/approve`);
+      await adminApi.approveCoach(coachId);
       alert('Coach approved successfully!');
       loadPendingCoaches();
     } catch (error: any) {
@@ -46,7 +46,7 @@ export default function CoachVerificationPage() {
     if (!confirm('Are you sure you want to reject this coach?')) return;
     
     try {
-      await api.post(`/admin/coaches/${coachId}/reject`);
+      await adminApi.rejectCoach(coachId);
       alert('Coach rejected');
       loadPendingCoaches();
     } catch (error: any) {
@@ -56,9 +56,7 @@ export default function CoachVerificationPage() {
 
   const downloadDocument = async (coachId: string, coachName: string) => {
     try {
-      const response = await api.get(`/admin/coaches/${coachId}/document`, {
-        responseType: 'blob'
-      });
+      const response = await adminApi.getCoachDocument(coachId);
       
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');

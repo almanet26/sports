@@ -5,7 +5,8 @@
  * Right column: Rich text editor (initialized with ai_draft_text)
  * Action:       "Publish to Player" button (PUT request)
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import type { PointerEvent as ReactPointerEvent } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -13,6 +14,7 @@ import {
 } from 'recharts';
 import { useThemeStore } from '../../store/themeStore';
 import { submissionsApi, resolveMediaUrl, type SubmissionDetail } from '../../lib/api';
+import { useSubscriptionStore } from '../../stores/authStore';
 
 // Metric colors for charts
 const METRIC_COLORS: Record<string, string> = {
@@ -30,6 +32,14 @@ const METRIC_COLORS: Record<string, string> = {
   r_wrist_y: '#ef4444',
 };
 
+type Point = { x: number; y: number };
+type SavedSketch = {
+  coordinates: Point[];
+  color: string;
+  timestamp: number;
+  snapshot_data_url?: string;
+};
+
 export default function AnalysisEditor() {
   const { submissionId } = useParams<{ submissionId: string }>();
   const navigate = useNavigate();
@@ -42,6 +52,19 @@ export default function AnalysisEditor() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [drawMode, setDrawMode] = useState(false);
+  const [isDrawing, setIsDrawing] = useState(false);
+  const [draftPoints, setDraftPoints] = useState<Point[]>([]);
+  const [annotationLabel, setAnnotationLabel] = useState('');
+  const [annotationColor, setAnnotationColor] = useState('#f59e0b');
+  const [savedSketches, setSavedSketches] = useState<SavedSketch[]>([]);
+  const [annotationError, setAnnotationError] = useState('');
+  const reviewVideoRef = useRef<HTMLDivElement | null>(null);
+  const reviewPlayerRef = useRef<HTMLVideoElement | null>(null);
+  const reviewCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const accountType = useSubscriptionStore((s) => s.accountType);
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
+  const canAnnotate = accountType === 'ADMIN' || (accountType === 'COACH' && subscriptionTier !== 'coach_free');
 
   // Fetch submission detail
   const fetchDetail = useCallback(async () => {
@@ -76,15 +99,175 @@ export default function AnalysisEditor() {
     );
   }, [chartData]);
 
+  useEffect(() => {
+    if (!submissionId || !canAnnotate) return;
+    try {
+      const raw = localStorage.getItem(`coach-sketch:${submissionId}`);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as SavedSketch[];
+      if (Array.isArray(parsed)) {
+        setSavedSketches(
+          parsed.filter(
+            (sketch) => sketch && typeof sketch === 'object' && Array.isArray(sketch.coordinates) && sketch.coordinates.length > 1
+          )
+        );
+      }
+    } catch {
+      // Ignore malformed local drafts.
+    }
+  }, [canAnnotate, submissionId]);
+
+  useEffect(() => {
+    if (!submissionId || !canAnnotate) return;
+    localStorage.setItem(`coach-sketch:${submissionId}`, JSON.stringify(savedSketches));
+  }, [canAnnotate, savedSketches, submissionId]);
+
+  const syncReviewCanvas = useCallback(() => {
+    const canvas = reviewCanvasRef.current;
+    const container = reviewVideoRef.current;
+    if (!canvas || !container) return;
+
+    const rect = container.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(1, Math.round(rect.width * dpr));
+    canvas.height = Math.max(1, Math.round(rect.height * dpr));
+    canvas.style.width = `${rect.width}px`;
+    canvas.style.height = `${rect.height}px`;
+
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }, []);
+
+  const drawSketchPath = useCallback((context: CanvasRenderingContext2D, path: Point[], color: string) => {
+    if (path.length < 2) return;
+    context.strokeStyle = color;
+    context.lineWidth = 3;
+    context.lineCap = 'round';
+    context.lineJoin = 'round';
+    context.beginPath();
+    context.moveTo(path[0].x, path[0].y);
+    for (let i = 1; i < path.length; i += 1) {
+      context.lineTo(path[i].x, path[i].y);
+    }
+    context.stroke();
+  }, []);
+
+  const redrawReviewCanvas = useCallback(() => {
+    const canvas = reviewCanvasRef.current;
+    const container = reviewVideoRef.current;
+    if (!canvas || !container) return;
+    const context = canvas.getContext('2d');
+    if (!context) return;
+
+    const rect = container.getBoundingClientRect();
+    context.clearRect(0, 0, rect.width, rect.height);
+    savedSketches.forEach((sketch) => drawSketchPath(context, sketch.coordinates, sketch.color));
+    if (draftPoints.length > 0) drawSketchPath(context, draftPoints, annotationColor);
+  }, [annotationColor, draftPoints, drawSketchPath, savedSketches]);
+
+  const getReviewPoint = useCallback((event: ReactPointerEvent<HTMLCanvasElement>): Point | null => {
+    const canvas = reviewCanvasRef.current;
+    if (!canvas) return null;
+    const rect = canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }, []);
+
+  useEffect(() => {
+    syncReviewCanvas();
+    redrawReviewCanvas();
+    const handleResize = () => {
+      syncReviewCanvas();
+      redrawReviewCanvas();
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [redrawReviewCanvas, syncReviewCanvas]);
+
+  const handleSketchPointerDown = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!drawMode || !canAnnotate) return;
+    const point = getReviewPoint(event);
+    if (!point) return;
+    setIsDrawing(true);
+    setDraftPoints([point]);
+  }, [canAnnotate, drawMode, getReviewPoint]);
+
+  const handleSketchPointerMove = useCallback((event: ReactPointerEvent<HTMLCanvasElement>) => {
+    if (!isDrawing || !drawMode || !canAnnotate) return;
+    const point = getReviewPoint(event);
+    if (!point) return;
+    setDraftPoints((current) => [...current, point]);
+  }, [canAnnotate, drawMode, getReviewPoint, isDrawing]);
+
+  const stopSketch = useCallback(() => {
+    if (!isDrawing) return;
+    setIsDrawing(false);
+  }, [isDrawing]);
+
+  const saveSketch = useCallback(() => {
+    if (draftPoints.length < 2) return;
+    // Capture the video playback position in seconds (not Unix epoch ms).
+    const videoTimeSec = reviewPlayerRef.current?.currentTime ?? 0;
+    let snapshotDataUrl: string | undefined;
+    try {
+      const video = reviewPlayerRef.current;
+      const container = reviewVideoRef.current;
+      if (video && container && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA) {
+        const rect = container.getBoundingClientRect();
+        const frameCanvas = document.createElement('canvas');
+        frameCanvas.width = Math.max(1, Math.round(rect.width));
+        frameCanvas.height = Math.max(1, Math.round(rect.height));
+        const ctx = frameCanvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0, frameCanvas.width, frameCanvas.height);
+          // Overlay the video timestamp on the snapshot so the PDF shows it.
+          ctx.font = 'bold 14px sans-serif';
+          ctx.fillStyle = 'rgba(0,0,0,0.55)';
+          ctx.fillRect(6, 4, 90, 22);
+          ctx.fillStyle = '#ffffff';
+          ctx.fillText(`@ ${videoTimeSec.toFixed(2)}s`, 10, 20);
+          snapshotDataUrl = frameCanvas.toDataURL('image/jpeg', 0.9);
+        }
+      }
+    } catch {
+      // Snapshot is optional; sketches still save without it.
+    }
+    setSavedSketches((current) => [
+      ...current,
+      {
+        coordinates: draftPoints,
+        color: annotationColor,
+        timestamp: videoTimeSec,   // video time in seconds, not Unix ms
+        snapshot_data_url: snapshotDataUrl,
+      },
+    ]);
+    setDraftPoints([]);
+    setAnnotationError('');
+  }, [draftPoints, annotationColor]);
+
+
+  const clearSketch = useCallback(() => {
+    setDraftPoints([]);
+    setAnnotationError('');
+  }, []);
+
   // Publish handler
   const handlePublish = async () => {
     if (!submissionId || !editedText.trim()) return;
     setPublishing(true);
     setPublishError('');
     try {
-      const { data } = await submissionsApi.publish(submissionId, editedText);
+      const { data } = await submissionsApi.publish(
+        submissionId,
+        editedText,
+        savedSketches
+      );
       setSubmission(data);
       setPublishSuccess(true);
+      // Clear sketches from localStorage after successful publish
+      if (submissionId) {
+        localStorage.removeItem(`coach-sketch:${submissionId}`);
+      }
       setTimeout(() => navigate('/coach/submissions'), 2000);
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Publish failed';
@@ -171,21 +354,101 @@ export default function AnalysisEditor() {
                 <i className="fas fa-video mr-2 text-blue-400"></i>Video
               </h2>
             </div>
-            <div className="aspect-video bg-black">
+            <div ref={reviewVideoRef} className="aspect-video bg-black relative overflow-hidden">
               {submission.annotated_video_url ? (
                 <video
+                  ref={reviewPlayerRef}
                   controls
-                  className="w-full h-full"
+                  crossOrigin="anonymous"
+                  className="w-full h-full relative z-10"
                   src={resolveMediaUrl(submission.annotated_video_url)}
                 />
               ) : (
                 <video
+                  ref={reviewPlayerRef}
                   controls
-                  className="w-full h-full"
+                  crossOrigin="anonymous"
+                  className="w-full h-full relative z-10"
                   src={resolveMediaUrl(submission.video_url)}
                 />
               )}
+
+              {canAnnotate && (
+                <>
+                  <canvas
+                    ref={reviewCanvasRef}
+                    className={`absolute inset-0 z-20 ${drawMode ? 'cursor-crosshair' : 'pointer-events-none'}`}
+                    onPointerDown={handleSketchPointerDown}
+                    onPointerMove={handleSketchPointerMove}
+                    onPointerUp={stopSketch}
+                    onPointerLeave={stopSketch}
+                  />
+                  <div className="absolute top-3 right-3 z-30 flex items-center gap-2 rounded-2xl border border-white/10 bg-black/70 px-3 py-2 backdrop-blur">
+                    <button
+                      type="button"
+                      onClick={() => setDrawMode((current) => !current)}
+                      className={`rounded-lg px-3 py-1.5 text-xs font-semibold ${drawMode ? 'bg-amber-500 text-black' : 'bg-white/10 text-white hover:bg-white/20'}`}
+                    >
+                      {drawMode ? 'Stop drawing' : 'Draw'}
+                    </button>
+                    <label className="flex items-center gap-2 rounded-lg bg-white/5 px-2 py-1.5 text-xs text-white/70">
+                      Color
+                      <input
+                        type="color"
+                        value={annotationColor}
+                        onChange={(event) => setAnnotationColor(event.target.value)}
+                        className="h-6 w-8 cursor-pointer rounded border-0 bg-transparent p-0"
+                      />
+                    </label>
+                  </div>
+                </>
+              )}
             </div>
+            {canAnnotate && (
+              <div className={`border-t px-5 py-4 ${dark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'}`}>
+                <div className="flex flex-wrap items-center gap-3">
+                  <input
+                    type="text"
+                    value={annotationLabel}
+                    onChange={(event) => setAnnotationLabel(event.target.value)}
+                    placeholder="Optional note for this sketch"
+                    className={`min-w-[220px] flex-1 rounded-xl border px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${dark ? 'border-white/10 bg-white/5 text-white placeholder-white/30' : 'border-gray-300 bg-white text-gray-800 placeholder-gray-400'}`}
+                  />
+                  <button
+                    type="button"
+                    onClick={clearSketch}
+                    className={`rounded-xl px-4 py-3 text-sm font-medium ${dark ? 'bg-white/5 text-white/80 hover:bg-white/10' : 'bg-white text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    Clear
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (draftPoints.length < 2) {
+                        setAnnotationError('Draw on the video first.');
+                        return;
+                      }
+                      saveSketch();
+                    }}
+                    className="rounded-xl bg-blue-500 px-4 py-3 text-sm font-semibold text-white hover:bg-blue-400"
+                  >
+                    Save sketch
+                  </button>
+                </div>
+                {annotationError && <p className="mt-2 text-sm text-red-400">{annotationError}</p>}
+                {savedSketches.length > 0 && (
+                  <div className={`mt-2 text-xs ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+                    <span className="font-medium">{savedSketches.length} sketch{savedSketches.length > 1 ? 'es' : ''} saved: </span>
+                    {savedSketches.map((s, i) => (
+                      <span key={i} className="mr-2">
+                        #{i + 1} @ {typeof s.timestamp === 'number' ? `${s.timestamp.toFixed(1)}s` : '?'}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+              </div>
+            )}
           </div>
 
           {/* Key Frame */}

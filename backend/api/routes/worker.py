@@ -423,9 +423,19 @@ def _run_bowling(
             key_frame_url = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/{frame_blob_name}"
             os.remove(frame_tmp)
 
-    # AI feedback
+    # AI feedback — text-only: the metrics summary in the prompt is rich enough.
+    # Passing the video to the Files API causes key rejection in this worker context.
     prompt = BOWLING_ANALYSIS_PROMPT.format(metrics_summary=display_df.describe().to_string())
-    ai_text = _bowling_gemini.call_gemini(prompt, video_path) if _bowling_gemini else "AI feedback unavailable."
+    if _bowling_gemini:
+        _bowling_gemini.current_index = 0
+        logger.info("[WORKER] Bowling Gemini call (text-only) — submission=%s", submission_id)
+        try:
+            ai_text = _bowling_gemini.call_gemini(prompt, None)
+        except Exception as gemini_err:
+            logger.exception("[WORKER] Bowling Gemini failed: %s", gemini_err)
+            ai_text = _bowling_gemini._fallback_feedback()
+    else:
+        ai_text = "AI feedback unavailable."
 
     biometrics = {
         "records": raw_df.to_dict(orient="records") if not raw_df.empty else [],
@@ -488,7 +498,18 @@ def _run_batting(
         "**PERFORMANCE SUMMARY**\n\n"
         "Tone: Direct, professional, encouraging but honest."
     )
-    ai_text = _batting_gemini.call_gemini(prompt, video_path) if _batting_gemini else "AI feedback unavailable."
+    # AI feedback — text-only: the metrics summary in the prompt is rich enough.
+    # Passing the video to the Files API causes key rejection in this worker context.
+    if _batting_gemini:
+        _batting_gemini.current_index = 0
+        logger.info("[WORKER] Batting Gemini call (text-only) — submission=%s", submission_id)
+        try:
+            ai_text = _batting_gemini.call_gemini(prompt, None)
+        except Exception as gemini_err:
+            logger.exception("[WORKER] Batting Gemini failed: %s", gemini_err)
+            ai_text = _batting_gemini._fallback_feedback()
+    else:
+        ai_text = "AI feedback unavailable."
 
     biometrics = {
         "records": raw_df.to_dict(orient="records") if not raw_df.empty else [],

@@ -42,7 +42,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 _GEMINI_KEYS: list[str] = [
     k
     for k in [os.getenv(f"GEMINI_API_KEY_{i}") for i in range(1, 6)]
-    + [os.getenv("GEMINI_API_KEY"), os.getenv("GOOGLE_API_KEY")]
+    + [os.getenv("GEMINI_API_KEY"), os.getenv("GOOGLE_GEMINI_API_KEY"), os.getenv("GOOGLE_API_KEY")]
     if k
 ]
 _GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")

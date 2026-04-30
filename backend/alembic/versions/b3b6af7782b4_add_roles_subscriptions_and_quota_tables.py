@@ -171,7 +171,7 @@ def upgrade() -> None:
         ('free', 'free', 'Free', 0, 36500, 3, 0.0, 0, 0),
         ('coach_free', 'coach_free', 'Coach Free', 0, 36500, 0, 0.0, 0, 0),
         ('basic', 'basic', 'Basic', 20000, 90, 15, 0.0, 5, 0),
-        ('platinum', 'platinum', 'Platinum', 50000, 365, 50, 0.0, 0, 0),
+        ('platinum', 'platinum', 'Platinum', 50000, 365, 50, 0.0, 15, 0),
         ('coach_starter', 'coach_starter', 'Coach Starter', 199900, 90, 999, 50.0, 150, 10),
         ('coach_pro', 'coach_pro', 'Coach Pro', 499900, 180, 999, 150.0, 600, 0),
         ('academy', 'academy', 'Academy', 1499900, 365, 999, 500.0, 1500, 0)

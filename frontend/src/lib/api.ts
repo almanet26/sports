@@ -39,9 +39,6 @@ export const api = axios.create({
   },
 });
 
-const SUBSCRIPTIONS_SEGMENT = 'subscriptions';
-const ADMIN_SEGMENT = 'admin';
-const PLANS_SEGMENT = 'plans';
 
 // Request interceptor - attach JWT token
 api.interceptors.request.use(
@@ -131,6 +128,11 @@ export const authApi = {
     phone?: string;
     team?: string;
   }) => api.post('/auth/register', data),
+
+  registerMultipart: (formData: FormData) =>
+    api.post('/auth/register', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
   
   logout: () => api.post('/auth/logout'),
   
@@ -254,6 +256,21 @@ export const videosApi = {
   // Get supercut stream URL (for highlight reel)
   getSupercutUrl: (videoId: string) => 
     `${API_BASE_URL}/api/v1/videos/${videoId}/supercut`,
+};
+
+export const annotationsApi = {
+  list: (videoId: string) => api.get<VideoAnnotation[]>(`/annotations/${videoId}`),
+  create: (payload: {
+    video_id: string;
+    timestamp_ms: number;
+    annotation_type: VideoAnnotation['annotation_type'];
+    coordinates: unknown;
+    label?: string;
+    color?: string;
+  }) => api.post<VideoAnnotation>('/annotations', payload),
+  update: (annotationId: string, payload: Partial<Pick<VideoAnnotation, 'coordinates' | 'label' | 'color'>>) =>
+    api.put<VideoAnnotation>(`/annotations/${annotationId}`, payload),
+  delete: (annotationId: string) => api.delete(`/annotations/${annotationId}`),
 };
 
 // Jobs endpoints (OCR processing)
@@ -420,6 +437,17 @@ export interface SubmissionDetail extends SubmissionSummary {
   }>;
 }
 
+export interface VideoAnnotation {
+  id: string;
+  video_id: string;
+  coach_id: string;
+  timestamp_ms: number;
+  annotation_type: 'line' | 'circle' | 'arrow' | 'text';
+  coordinates: unknown;
+  label?: string | null;
+  color: string;
+}
+
 export interface CoachListItem {
   id: string;
   name: string;
@@ -491,9 +519,12 @@ export const submissionsApi = {
   analyze: (submissionId: string) =>
     api.post<SubmissionDetail>(`/submissions/${submissionId}/analyze`, null, { timeout: 1800000 }), // 30 min for large videos
 
-  /** Coach: Publish with edited text */
-  publish: (submissionId: string, editedText: string) =>
-    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { edited_text: editedText }),
+  /** Coach: Publish with edited text and sketches */
+  publish: (submissionId: string, editedText: string, sketches?: any[]) =>
+    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { 
+      edited_text: editedText,
+      sketches: sketches || [],
+    }),
 
   /** Get single submission detail */
   getById: (submissionId: string) =>
@@ -596,28 +627,9 @@ export async function pollSubmissionResult(
   }
   throw new Error('Processing timed out. Your results will appear in History when ready.');
 }
-// Plans API (public billing list + admin plan management)
-type PlanUpdatePayload = Partial<Pick<
-  PlanConfig,
-  | 'display_name'
-  | 'price_inr'
-  | 'duration_days'
-  | 'max_biomech_per_month'
-  | 'max_ocr_hours_per_month'
-  | 'max_submissions_per_month'
-  | 'max_players_in_dashboard'
->>;
 
-export const plansApi = {
-  list: () => api.get<PlanConfig[]>(`/${SUBSCRIPTIONS_SEGMENT}/${PLANS_SEGMENT}`),
-  listAdmin: () => api.get<PlanConfig[]>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}`),
-  update: (planKey: string, data: PlanUpdatePayload) =>
-    api.patch<PlanConfig>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}/${planKey}`, data),
-};
 // Subscription API
 export const subscriptionApi = {
-  listAvailablePlans: () => api.get<PlanConfig[]>(`/${SUBSCRIPTIONS_SEGMENT}/${PLANS_SEGMENT}`),
-
   getMySubscription: () => api.get('/subscriptions/me'),
 
   // Subscribe current user to a plan
@@ -625,10 +637,6 @@ export const subscriptionApi = {
     api.post('/subscriptions/subscribe', {
       plan_key: planKey,
     }),
-
-  // Backward-compatible alias used by older code paths
-  getUserSubscription: () => api.get('/subscriptions/me'),
-
 };
 
 // Billing API
@@ -648,17 +656,21 @@ export const adminApi = {
   getStats: () => api.get('/admin/stats'),
 
   // Coach verification
-  getPendingCoaches: (limit = 5) =>
+  getPendingCoaches: (limit = 20) =>
     api.get('/admin/coaches/pending', { params: { limit } }),
-  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
-    api.patch(`/admin/coaches/${coachId}/verify`, null, { params: { action } }),
+  approveCoach: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/approve`),
+  rejectCoach: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/reject`),
+  getCoachDocument: (coachId: string) =>
+    api.get(`/admin/coaches/${coachId}/document`, { responseType: 'blob' }),
 
   // Activity feed
   getActivityFeed: (limit = 20) =>
     api.get('/admin/activity', { params: { limit } }),
 
   // Plan management
-  listPlans: () => api.get<PlanConfig[]>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}`),
+  listPlans: () => api.get<PlanConfig[]>('/admin/plans'),
   updatePlan: (planKey: string, data: {
     display_name?: string;
     price_inr?: number;
@@ -667,7 +679,7 @@ export const adminApi = {
     max_ocr_hours_per_month?: number;
     max_submissions_per_month?: number;
     max_players_in_dashboard?: number;
-  }) => api.patch<PlanConfig>(`/${ADMIN_SEGMENT}/${PLANS_SEGMENT}/${planKey}`, data),
+  }) => api.patch<PlanConfig>(`/admin/plans/${planKey}`, data),
 
   // User management
   listUsers: (params: {

@@ -8,8 +8,12 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlalchemy import text
+from dotenv import load_dotenv
 from database.crud import bowling
 from database.config import SessionLocal, engine, Base
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import all models to ensure they're registered with SQLAlchemy
 from database.models import (
@@ -94,6 +98,56 @@ def _ensure_submission_status_enum(db_session) -> None:
         db_session.rollback()
         logger.warning("Submission status enum patch skipped/failed: %s", patch_err)
 
+
+def _ensure_plan_config(db_session) -> None:
+    """Keep plan_config aligned with the current monetization rules."""
+    try:
+        plan_rows = [
+            # plan_key, role, display_name, price_inr, duration_days, max_biomech, max_ocr_hours, max_submissions, max_players
+            ("free",           "free",          "Free",          0,     36500, 3,   0,   0,    0),
+            ("coach_free",     "coach_free",    "Coach Free",    0,     36500, 0,   0,   0,    0),
+            ("basic_90d",      "basic",         "Basic",         499,   90,   15,   0,   5,    0),
+            ("platinum_180d",  "platinum",      "Platinum",      1499,  180,  50,   0,   15,   0),
+            ("coach_starter",  "coach_starter", "Coach Starter", 1999,  90,   999,  50,  150,  10),
+            ("coach_pro",      "coach_pro",     "Coach Pro",     4999,  180,  999,  150, 600,  100),
+            ("academy",        "academy",       "Academy",       14999, 365,  999,  500, 1500, -1),
+        ]
+
+        for plan_key, role, display_name, price_inr, duration_days, biomech, ocr_hours, submissions, players in plan_rows:
+            db_session.execute(
+                text(
+                    "INSERT INTO plan_config "
+                    "(plan_key, role, display_name, price_inr, duration_days, max_biomech_per_month, max_ocr_hours_per_month, max_submissions_per_month, max_players_in_dashboard) "
+                    "VALUES (:plan_key, :role, :display_name, :price_inr, :duration_days, :max_biomech_per_month, :max_ocr_hours_per_month, :max_submissions_per_month, :max_players_in_dashboard) "
+                    "ON CONFLICT(plan_key) DO UPDATE SET "
+                    "role = excluded.role, "
+                    "display_name = excluded.display_name, "
+                    "price_inr = excluded.price_inr, "
+                    "duration_days = excluded.duration_days, "
+                    "max_biomech_per_month = excluded.max_biomech_per_month, "
+                    "max_ocr_hours_per_month = excluded.max_ocr_hours_per_month, "
+                    "max_submissions_per_month = excluded.max_submissions_per_month, "
+                    "max_players_in_dashboard = excluded.max_players_in_dashboard"
+                ),
+                {
+                    "plan_key": plan_key,
+                    "role": role,
+                    "display_name": display_name,
+                    "price_inr": price_inr,
+                    "duration_days": duration_days,
+                    "max_biomech_per_month": biomech,
+                    "max_ocr_hours_per_month": ocr_hours,
+                    "max_submissions_per_month": submissions,
+                    "max_players_in_dashboard": players,
+                },
+            )
+
+        db_session.commit()
+        logger.info("Plan config patch check completed.")
+    except Exception as patch_err:
+        db_session.rollback()
+        logger.warning("Plan config patch skipped/failed: %s", patch_err)
+
 # Ensure storage directories exist (skip on Cloud Run — ephemeral, uses /tmp/)
 _CLOUD_RUN = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
 if not _CLOUD_RUN:
@@ -134,6 +188,7 @@ async def lifespan(app: FastAPI):
         _ensure_users_schema(db)
         _ensure_videos_schema(db)
         _ensure_submission_status_enum(db)
+        _ensure_plan_config(db)
         logger.info("Database tables ready.")
         
         db.close()

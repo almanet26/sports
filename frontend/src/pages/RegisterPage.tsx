@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { api } from '../lib/api';
+import { authApi } from '../lib/api';
 
 interface RegisterFormData {
   name: string;
@@ -72,9 +72,7 @@ export default function RegisterPage() {
       if (formData.team) submitData.append('team', formData.team);
       if (formData.coachDocument) submitData.append('coach_document', formData.coachDocument);
 
-      const response = await api.post('/auth/register', submitData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      const response = await authApi.registerMultipart(submitData);
 
       console.log('Registration successful:', response.data);
 

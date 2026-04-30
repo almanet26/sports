@@ -123,12 +123,15 @@ def publish_submission(
     *,
     coach_final_text: str,
     pdf_report_url: str,
+    coach_sketches: list[dict] | None = None,
 ) -> VideoSubmission:
     """DRAFT_REVIEW → PUBLISHED — coach approved."""
     submission.coach_final_text = coach_final_text
     submission.pdf_report_url = pdf_report_url
     submission.published_at = datetime.utcnow()
     submission.status = SubmissionStatus.PUBLISHED
+    if coach_sketches:
+        submission.coach_sketches = coach_sketches
     db.commit()
     db.refresh(submission)
     return submission

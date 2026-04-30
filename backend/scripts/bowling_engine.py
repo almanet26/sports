@@ -497,7 +497,13 @@ class GeminiManager:
                 return
             key = val.strip()
             # Gemini API keys are expected to be Google API keys (typically AIza*).
-            if "your_api_key" in key or len(key) < 20 or not key.startswith("AIza"):
+            key_lower = key.lower()
+            if (
+                "your_api_key" in key_lower
+                or "replace_me" in key_lower
+                or len(key) < 20
+                or not re.fullmatch(r"AIza[A-Za-z0-9_-]{20,}", key)
+            ):
                 return
             if key in seen:
                 return
@@ -508,6 +514,7 @@ class GeminiManager:
             _maybe_add(os.getenv(f"GEMINI_API_KEY_{i}"))
 
         _maybe_add(os.getenv("GEMINI_API_KEY"))
+        _maybe_add(os.getenv("GOOGLE_GEMINI_API_KEY"))
         _maybe_add(os.getenv("GOOGLE_API_KEY"))
 
         self.current_index = 0

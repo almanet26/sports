@@ -84,6 +84,7 @@ class VideoSubmission(Base):
     # Text: AI draft vs Coach final 
     ai_draft_text = Column(Text, nullable=True)                # Raw Gemini output
     coach_final_text = Column(Text, nullable=True)             # Coach-edited & approved text
+    coach_sketches = Column(JSON, nullable=True)               # Array of coach annotation sketches {timestamp, coordinates, color}
 
     # Published Report 
     pdf_report_url = Column(String(512), nullable=True)        # Final published PDF
