@@ -20,7 +20,16 @@ import UploadPage from './pages/UploadPage';
 import HighlightsPage from './pages/HighlightsPage';
 import VideoDetailPage from './pages/VideoDetailPage';
 import RequestsPage from './pages/RequestsPage';
-import ProfilePage from './pages/ProfilePage';
+import PlayerProfilePage from './pages/PlayerProfilePage';
+import CoachProfilePage from './pages/CoachProfilePage';
+
+// Profile Dispatcher - Renders the correct profile based on user role
+function ProfileDispatcher() {
+  const user = useAuthStore((state) => state.user);
+  if (user?.role === 'PLAYER') return <PlayerProfilePage />;
+  if (user?.role === 'COACH' || user?.role === 'ADMIN') return <CoachProfilePage />;
+  return <Navigate to="/dashboard" replace />;
+}
 import PlayerPerformance from './pages/PlayerPerformance';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
@@ -173,7 +182,7 @@ export default function AppRouter() {
             <Route path="/library" element={<HighlightsPage />} />
             <Route path="/video/:videoId" element={<VideoDetailPage />} />
             <Route path="/requests" element={<RequestsPage />} />
-            <Route path="/settings" element={<ProfilePage />} />
+            <Route path="/settings" element={<ProfileDispatcher />} />
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
@@ -192,6 +201,7 @@ export default function AppRouter() {
               <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
               <Route path="/player/subscription" element={<SubscriptionPage />} />
               <Route path="/player/chat" element={<ChatPage />} />
+              <Route path="/player/profile" element={<PlayerProfilePage />} />
             </Route>
           </Route>
         </Route>
@@ -203,6 +213,7 @@ export default function AppRouter() {
               <Route path="/coach" element={<CoachDashboard />} />
               <Route path="/coach/upload" element={<UploadPage />} />
               <Route path="/coach/chat" element={<CoachChatPage />} />
+              <Route path="/coach/profile" element={<CoachProfilePage />} />
               <Route path="/coach/player/:id" element={<PlayerPerformance />} />
               <Route path="/coach/submissions" element={<CoachInboxPage />} />
               <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
@@ -226,7 +237,8 @@ export default function AppRouter() {
 
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
-        <Route path="/profile" element={<Navigate to="/settings" replace />} />
+        <Route path="/profile" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/settings" element={<ProfileDispatcher />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
