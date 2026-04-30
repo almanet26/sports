@@ -25,6 +25,7 @@ from database.models import (
     AdminAuditLog,
     PlayerPerformanceEntry,
 )
+from database.models.gamification import PlayerBadge, PlayerStreak
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -341,6 +342,10 @@ app.include_router(notification.router, prefix="/api/v1", tags=["notifications"]
 # Player performance (match stats logging)
 from api.routes.performance import router as performance_router
 app.include_router(performance_router, prefix="/api/v1", tags=["performance"])
+
+# Gamification routes
+from api.routes.gamification import router as gamification_router
+app.include_router(gamification_router, prefix="/api/v1", tags=["gamification"])
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])

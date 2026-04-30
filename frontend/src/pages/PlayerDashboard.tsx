@@ -515,6 +515,19 @@ export default function PlayerDashboard(){
             </Link>
 
             <Link
+              to="/player/achievements"
+              className="w-full glass rounded-2xl p-4 border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center gap-3 group"
+            >
+              <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-yellow-400 to-orange-500 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <i className="fas fa-medal text-white"></i>
+              </div>
+              <div>
+                <p className="font-medium">Achievements</p>
+                <p className="text-xs text-white/50">Badges & streaks</p>
+              </div>
+            </Link>
+
+            <Link
               to="/requests"
               className="w-full glass rounded-2xl p-4 border border-white/10 hover:border-white/20 transition-all duration-300 flex items-center gap-3 group"
             >

@@ -32,6 +32,7 @@ function ProfileDispatcher() {
 }
 import PlayerPerformance from './pages/PlayerPerformance';
 import CoachPlayerPerformance from './pages/CoachPlayerPerformance';
+import PlayerGamification from './pages/PlayerGamification';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
@@ -205,6 +206,7 @@ export default function AppRouter() {
               <Route path="/player/subscription" element={<SubscriptionPage />} />
               <Route path="/player/chat" element={<ChatPage />} />
               <Route path="/player/profile" element={<PlayerProfilePage />} />
+              <Route path="/player/achievements" element={<PlayerGamification />} />
             </Route>
           </Route>
         </Route>

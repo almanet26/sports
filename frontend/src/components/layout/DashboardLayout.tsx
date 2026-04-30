@@ -24,6 +24,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'basic' },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
     { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
+    { to: "/player/achievements", icon: "fas fa-medal", label: "Achievements" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
   ],
