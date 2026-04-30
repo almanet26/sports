@@ -28,6 +28,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
     { to: "/player/my-coaches", icon: "fas fa-user-tie", label: "My Coaches" },
+    { to: "/player/achievements", icon: "fas fa-medal", label: "Achievements" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/browse-content", icon: "fas fa-graduation-cap", label: "Learning Hub" },
     { to: "/coach/messages", icon: "fas fa-comments", label: "Messages" },

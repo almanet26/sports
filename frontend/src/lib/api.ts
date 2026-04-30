@@ -878,6 +878,49 @@ export interface PerformanceStats {
   draws: number;
 }
 
+// Gamification API
+export interface GamificationBadge {
+  key: string;
+  label: string;
+  icon: string;
+  color: string;
+  rarity: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
+  description: string;
+  earned: boolean;
+  progress_current: number;
+  progress_target: number;
+  progress_pct: number;
+  earned_at: string | null;
+}
+
+export interface GamificationData {
+  level: {
+    name: string;
+    icon: string;
+    color: string;
+    xp_pct: number;
+    next_level: string | null;
+    badges_to_next: number;
+  };
+  streak: {
+    current: number;
+    longest: number;
+    last_activity: string | null;
+    week_activity: { date: string; active: boolean }[];
+  };
+  badges: {
+    earned: GamificationBadge[];
+    locked: GamificationBadge[];
+    total_earned: number;
+    total: number;
+    next_badge: GamificationBadge | null;
+  };
+}
+
+export const gamificationApi = {
+  getMyData: () => api.get<GamificationData>('/gamification/me'),
+};
+
 export const performanceApi = {
   log: (data: Omit<PerformanceEntry, 'id' | 'player_id' | 'created_at'>) =>
     api.post<PerformanceEntry>('/performance/', data),

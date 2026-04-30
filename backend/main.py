@@ -26,6 +26,7 @@ from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
 from database.models.player_performance import PlayerPerformanceEntry
+from database.models.gamification import PlayerBadge, PlayerStreak
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
@@ -296,6 +297,7 @@ from api.routes import (
 )
 from api.routes import plan, subscription, sessions
 from api.routes import performance
+from api.routes import gamification
 try:
     from api.routes import earnings, reviews
     EARNINGS_AVAILABLE = True
@@ -312,6 +314,9 @@ app.include_router(match.router, prefix="/api/v1", tags=["matches"])
 
 # Performance routes
 app.include_router(performance.router, prefix="/api/v1", tags=["performance"])
+
+# Gamification routes
+app.include_router(gamification.router, prefix="/api/v1", tags=["gamification"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
