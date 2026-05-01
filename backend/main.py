@@ -1,5 +1,6 @@
 import logging
 import os
+import warnings
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,48 +8,61 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlalchemy import text
+from dotenv import load_dotenv
 from database.crud import bowling
 from database.config import SessionLocal, engine, Base
 
+# Load environment variables from .env file
+load_dotenv()
+
 # Import all models to ensure they're registered with SQLAlchemy
 from database.models import (
-    User, UserSession, ProcessingJob,
+    User, UserSession,
     Video, HighlightEvent, HighlightJob, MatchRequest, UserVote,
     BattingAnalysis,
     VideoSubmission,
+    VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
+    AdminAuditLog,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
+# Suppress noisy upstream protobuf deprecation warning from Google client internals.
+warnings.filterwarnings(
+    "ignore",
+    message=r"SymbolDatabase\.GetPrototype\(\) is deprecated\..*",
+    category=UserWarning,
+)
+
 
 def _ensure_users_schema(db_session) -> None:
-    """Patch legacy users schema for both PostgreSQL and SQLite."""
+    """One-time forward-migration for columns that still exist on older DB instances."""
     try:
         dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
 
         if dialect == "sqlite":
-            # SQLite support for ADD COLUMN IF NOT EXISTS depends on engine version.
-            # Use PRAGMA + plain ADD COLUMN for broad compatibility.
             cols = db_session.execute(text("PRAGMA table_info(users)")).fetchall()
             existing = {str(c[1]).lower() for c in cols}
-
-            if "subscription_plan" not in existing:
-                db_session.execute(text("ALTER TABLE users ADD COLUMN subscription_plan VARCHAR(50) DEFAULT 'BASIC'"))
             if "coach_status" not in existing:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_status VARCHAR(20) DEFAULT 'pending'"))
             if "coach_document_url" not in existing:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_document_url TEXT"))
-            if "stripe_customer_id" not in existing:
-                db_session.execute(text("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)"))
         else:
-            # Safe on Postgres and no-ops when columns already exist.
-            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(50) DEFAULT 'BASIC'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_status VARCHAR(20) DEFAULT 'pending'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_document_url TEXT"))
-            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)"))
 
-        db_session.execute(text("UPDATE users SET subscription_plan = 'BASIC' WHERE subscription_plan IS NULL"))
+        # Ensure users.role holds only account-type values (PLAYER|COACH|ADMIN).
+        # Any row that still carries an old subscription-tier value (free, basic …)
+        # is mapped back to PLAYER — the safe default.
+        db_session.execute(
+            text(
+                "UPDATE users "
+                "SET role = 'PLAYER' "
+                "WHERE role NOT IN ('PLAYER', 'COACH', 'ADMIN')"
+            )
+        )
+
         db_session.commit()
         logger.info("Users schema patch check completed.")
     except Exception as patch_err:
@@ -83,6 +97,56 @@ def _ensure_submission_status_enum(db_session) -> None:
     except Exception as patch_err:
         db_session.rollback()
         logger.warning("Submission status enum patch skipped/failed: %s", patch_err)
+
+
+def _ensure_plan_config(db_session) -> None:
+    """Keep plan_config aligned with the current monetization rules."""
+    try:
+        plan_rows = [
+            # plan_key, role, display_name, price_inr, duration_days, max_biomech, max_ocr_hours, max_submissions, max_players
+            ("free",           "free",          "Free",          0,     36500, 3,   0,   0,    0),
+            ("coach_free",     "coach_free",    "Coach Free",    0,     36500, 0,   0,   0,    0),
+            ("basic_90d",      "basic",         "Basic",         499,   90,   15,   0,   5,    0),
+            ("platinum_180d",  "platinum",      "Platinum",      1499,  180,  50,   0,   15,   0),
+            ("coach_starter",  "coach_starter", "Coach Starter", 1999,  90,   999,  50,  150,  10),
+            ("coach_pro",      "coach_pro",     "Coach Pro",     4999,  180,  999,  150, 600,  100),
+            ("academy",        "academy",       "Academy",       14999, 365,  999,  500, 1500, -1),
+        ]
+
+        for plan_key, role, display_name, price_inr, duration_days, biomech, ocr_hours, submissions, players in plan_rows:
+            db_session.execute(
+                text(
+                    "INSERT INTO plan_config "
+                    "(plan_key, role, display_name, price_inr, duration_days, max_biomech_per_month, max_ocr_hours_per_month, max_submissions_per_month, max_players_in_dashboard) "
+                    "VALUES (:plan_key, :role, :display_name, :price_inr, :duration_days, :max_biomech_per_month, :max_ocr_hours_per_month, :max_submissions_per_month, :max_players_in_dashboard) "
+                    "ON CONFLICT(plan_key) DO UPDATE SET "
+                    "role = excluded.role, "
+                    "display_name = excluded.display_name, "
+                    "price_inr = excluded.price_inr, "
+                    "duration_days = excluded.duration_days, "
+                    "max_biomech_per_month = excluded.max_biomech_per_month, "
+                    "max_ocr_hours_per_month = excluded.max_ocr_hours_per_month, "
+                    "max_submissions_per_month = excluded.max_submissions_per_month, "
+                    "max_players_in_dashboard = excluded.max_players_in_dashboard"
+                ),
+                {
+                    "plan_key": plan_key,
+                    "role": role,
+                    "display_name": display_name,
+                    "price_inr": price_inr,
+                    "duration_days": duration_days,
+                    "max_biomech_per_month": biomech,
+                    "max_ocr_hours_per_month": ocr_hours,
+                    "max_submissions_per_month": submissions,
+                    "max_players_in_dashboard": players,
+                },
+            )
+
+        db_session.commit()
+        logger.info("Plan config patch check completed.")
+    except Exception as patch_err:
+        db_session.rollback()
+        logger.warning("Plan config patch skipped/failed: %s", patch_err)
 
 # Ensure storage directories exist (skip on Cloud Run — ephemeral, uses /tmp/)
 _CLOUD_RUN = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
@@ -124,6 +188,7 @@ async def lifespan(app: FastAPI):
         _ensure_users_schema(db)
         _ensure_videos_schema(db)
         _ensure_submission_status_enum(db)
+        _ensure_plan_config(db)
         logger.info("Database tables ready.")
         
         db.close()
@@ -230,14 +295,14 @@ def db_health_check():
 
 # Include API Routers 
 from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
-from api.routes import plan, subscription
+from api.routes import match, notification
+from api.routes import subscription
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
-app.include_router(plan.router, prefix="/api/v1", tags=["admin"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"])
 
 from api.routes import admin as admin_users
@@ -252,6 +317,10 @@ app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 
 # Match request/voting routes
 app.include_router(requests.router, prefix="/api/v1", tags=["requests"])
+
+# Matches and notifications routes
+app.include_router(match.router, prefix="/api/v1", tags=["matches"])
+app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])
@@ -271,6 +340,7 @@ else:
     logger.warning("Batting analysis feature disabled (MediaPipe not available)")
 
 # Submissions routes
+app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
 if SUBMISSIONS_AVAILABLE and submissions is not None:
     app.include_router(submissions.router, prefix="/api/v1/submissions", tags=["submissions"])
     logger.info("B2B2C Submissions pipeline enabled")
@@ -290,6 +360,41 @@ if WORKER_AVAILABLE and worker is not None:
     logger.info("Internal worker endpoint enabled")
 else:
     logger.warning("Internal worker endpoint disabled")
+
+# Usage tracking — internal callback + user-facing billing dashboard
+from api.routes.usage import internal_router as usage_internal_router
+from api.routes.usage import billing_router as usage_billing_router
+
+app.include_router(usage_internal_router, prefix="/internal/usage", tags=["internal"])
+app.include_router(usage_billing_router, prefix="/api/v1/billing", tags=["billing"])
+
+# Phase 4 player-facing features
+from api.routes.report import router as report_router
+from api.routes.chat import router as chat_router
+from api.routes.benchmarks import router as benchmarks_router
+from api.routes.profile import router as profile_router
+from api.routes.scouting import router as scouting_router
+
+app.include_router(report_router,     prefix="/api/v1", tags=["report"])
+app.include_router(chat_router,       prefix="/api/v1", tags=["chat"])
+app.include_router(benchmarks_router, prefix="/api/v1", tags=["benchmarks"])
+app.include_router(profile_router,    prefix="/api/v1", tags=["profile"])
+app.include_router(scouting_router,   prefix="/api/v1", tags=["scouting"])
+
+# Phase 5 coach-facing features
+from api.routes.annotations import router as annotations_router
+from api.routes.dashboard import router as dashboard_router
+from api.routes.coach_inbox import router as coach_inbox_router
+from api.routes.academy import router as academy_router
+
+app.include_router(annotations_router, prefix="/api/v1", tags=["annotations"])
+app.include_router(dashboard_router,   prefix="/api/v1", tags=["dashboard"])
+app.include_router(coach_inbox_router, prefix="/api/v1", tags=["coach-inbox"])
+app.include_router(academy_router,     prefix="/api/v1", tags=["academy"])
+    
+# Subscription expiry cron — POST /internal/cron/expire-subscriptions
+from services.subscription_expiry import register_expiry_endpoint
+register_expiry_endpoint(app)
 
 
 # Entry Point 

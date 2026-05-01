@@ -8,11 +8,13 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../../store/themeStore';
+import { useSubscriptionStore } from '../../stores/authStore';
 import {
   submissionsApi,
   resolveMediaUrl,
   type SubmissionSummary,
   type CoachListItem,
+  type PlayerSubmissionItem,
 } from '../../lib/api';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string }> = {
@@ -20,6 +22,8 @@ const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string
   PROCESSING: { label: 'AI Processing', color: 'blue', icon: 'fas fa-cog fa-spin' },
   DRAFT_REVIEW: { label: 'Coach Reviewing', color: 'purple', icon: 'fas fa-edit' },
   PUBLISHED: { label: 'Published', color: 'green', icon: 'fas fa-check-circle' },
+  REVIEWED: { label: 'Reviewed', color: 'green', icon: 'fas fa-check-circle' },
+  DISMISSED: { label: 'Dismissed', color: 'gray', icon: 'fas fa-times-circle' },
 };
 
 export default function PlayerSubmissions() {
@@ -29,15 +33,22 @@ export default function PlayerSubmissions() {
   // State
   const [coaches, setCoaches] = useState<CoachListItem[]>([]);
   const [selectedCoach, setSelectedCoach] = useState('');
+  const [requestNote, setRequestNote] = useState('');
   const [analysisType, setAnalysisType] = useState<'BATTING' | 'BOWLING'>('BATTING');
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [requesting, setRequesting] = useState(false);
+  const [requestError, setRequestError] = useState('');
+  const [requestSuccess, setRequestSuccess] = useState('');
 
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
+  const [mySubmissions, setMySubmissions] = useState<PlayerSubmissionItem[]>([]);
   const [loadingList, setLoadingList] = useState(true);
-  const [activeTab, setActiveTab] = useState<'upload' | 'all' | 'published'>('upload');
+  const [activeTab, setActiveTab] = useState<'upload' | 'all' | 'published' | 'my'>('upload');
+  const submissionQuota = useSubscriptionStore((s) => s.quotaUsage.submissions);
+  const remainingSubmissions = Math.max(0, submissionQuota.limit - submissionQuota.used);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -45,20 +56,44 @@ export default function PlayerSubmissions() {
   const fetchCoaches = useCallback(async () => {
     try {
       const { data } = await submissionsApi.listCoaches();
-      setCoaches(data.coaches);
+      if (data?.coaches?.length) {
+        setCoaches(data.coaches);
+        return;
+      }
     } catch {
-      /* ignore */
+      // fallthrough to fallback attempt
+    }
+
+    // Fallback: some dev setups run backend on :8001 while the frontend
+    // defaults to :8000. Try a direct fetch to the common alternate port.
+    try {
+      const token = localStorage.getItem('access_token');
+      const res = await fetch('http://127.0.0.1:8001/api/v1/coaches', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.coaches) setCoaches(json.coaches);
+        return;
+      }
+    } catch {
+      // ignore fallback failures — callers already handle empty list UI
     }
   }, []);
 
   const fetchSubmissions = useCallback(async () => {
     setLoadingList(true);
     try {
-      const { data } =
-        activeTab === 'published'
-          ? await submissionsApi.playerReports()
-          : await submissionsApi.playerAll();
-      setSubmissions(data.submissions);
+      if (activeTab === 'published') {
+        const { data } = await submissionsApi.playerReports();
+        setSubmissions(data.submissions);
+      } else if (activeTab === 'my') {
+        const { data } = await submissionsApi.playerMy();
+        setMySubmissions(data.submissions);
+      } else {
+        const { data } = await submissionsApi.playerAll();
+        setSubmissions(data.submissions);
+      }
     } catch {
       /* ignore */
     } finally {
@@ -95,6 +130,28 @@ export default function PlayerSubmissions() {
     }
   };
 
+  const handleSubmitCoachRequest = async () => {
+    if (!selectedCoach || submissionQuota.limit <= 0) return;
+    setRequesting(true);
+    setRequestError('');
+    setRequestSuccess('');
+    try {
+      await submissionsApi.createPlayerSubmission({
+        coachId: selectedCoach,
+        note: requestNote.trim() || undefined,
+      });
+      setRequestNote('');
+      setRequestSuccess('Coach request sent.');
+      setActiveTab('my');
+      fetchSubmissions();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Request failed';
+      setRequestError(msg);
+    } finally {
+      setRequesting(false);
+    }
+  };
+
   // Drag & drop
   const [dragOver, setDragOver] = useState(false);
   const handleDrop = (e: React.DragEvent) => {
@@ -106,7 +163,7 @@ export default function PlayerSubmissions() {
 
   // Status badge renderer
   const StatusBadge = ({ status }: { status: string }) => {
-    const cfg = STATUS_CONFIG[status] || STATUS_CONFIG.PENDING;
+    const cfg = STATUS_CONFIG[status.toUpperCase()] || STATUS_CONFIG.PENDING;
     const bg = dark
       ? `bg-${cfg.color}-500/20 text-${cfg.color}-400 border-${cfg.color}-500/30`
       : `bg-${cfg.color}-100 text-${cfg.color}-700 border-${cfg.color}-300`;
@@ -133,7 +190,7 @@ export default function PlayerSubmissions() {
 
       {/* Tabs */}
       <div className="flex gap-2">
-        {(['upload', 'all', 'published'] as const).map((tab) => (
+        {(['upload', 'all', 'published', 'my'] as const).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -148,6 +205,7 @@ export default function PlayerSubmissions() {
             {tab === 'upload' && <><i className="fas fa-upload mr-2"></i>Upload</>}
             {tab === 'all' && <><i className="fas fa-list mr-2"></i>All Submissions</>}
             {tab === 'published' && <><i className="fas fa-file-pdf mr-2"></i>Published Reports</>}
+            {tab === 'my' && <><i className="fas fa-inbox mr-2"></i>My Requests</>}
           </button>
         ))}
       </div>
@@ -293,7 +351,7 @@ export default function PlayerSubmissions() {
                   ) : (
                     <span>
                       <i className="fas fa-paper-plane mr-2"></i>
-                      Submit to Coach
+                      Upload Video
                     </span>
                   )}
                 </motion.button>
@@ -315,6 +373,67 @@ export default function PlayerSubmissions() {
                     {uploadError}
                   </p>
                 )}
+              </div>
+            </div>
+
+            <div className={`mt-6 rounded-xl border p-4 ${dark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-gray-50'}`}>
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div>
+                  <h3 className={`text-lg font-semibold ${dark ? 'text-white' : 'text-gray-900'}`}>
+                    Coach request
+                  </h3>
+                  <p className={`text-sm ${dark ? 'text-white/50' : 'text-gray-500'}`}>
+                    Send a note to a coach. Available only when your plan includes submissions.
+                  </p>
+                </div>
+                <span className={`text-xs px-3 py-1 rounded-full border ${submissionQuota.limit > 0 ? 'border-emerald-500/30 text-emerald-400' : 'border-amber-500/30 text-amber-400'} ${dark ? 'bg-white/5' : 'bg-white'}`}>
+                  {submissionQuota.limit > 0 ? `${submissionQuota.used}/${submissionQuota.limit} submissions used` : 'Not available on this plan'}
+                </span>
+              </div>
+
+              <div>
+                <label className={`block text-sm font-medium mb-2 ${dark ? 'text-white/70' : 'text-gray-700'}`}>
+                  Note
+                </label>
+                <textarea
+                  value={requestNote}
+                  onChange={(e) => setRequestNote(e.target.value)}
+                  rows={8}
+                  placeholder="Add a short note for the coach"
+                  className={`w-full rounded-xl px-4 py-4 border transition-all focus:ring-2 focus:ring-blue-500 resize-none min-h-[14rem] ${
+                    dark
+                      ? 'bg-white/5 border-white/20 text-white placeholder-white/30'
+                      : 'bg-white border-gray-300 text-gray-800 placeholder-gray-400'
+                  }`}
+                />
+                <p className={`mt-2 text-xs ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+                  The coach is selected above in the upload panel.
+                </p>
+              </div>
+
+              <div className="mt-4 flex items-center gap-3">
+                {submissionQuota.limit > 0 ? (
+                  <motion.button
+                    whileHover={{ scale: 1.02 }}
+                    whileTap={{ scale: 0.98 }}
+                    disabled={!selectedCoach || requesting || remainingSubmissions <= 0}
+                    onClick={handleSubmitCoachRequest}
+                    className={`px-5 py-3 rounded-xl text-white font-semibold transition-all ${
+                      !selectedCoach || requesting || remainingSubmissions <= 0
+                        ? 'bg-gray-500 cursor-not-allowed opacity-50'
+                        : 'bg-gradient-to-r from-purple-500 to-pink-600 hover:shadow-lg hover:shadow-purple-500/25'
+                    }`}
+                  >
+                    {requesting ? 'Sending…' : 'Send Request'}
+                  </motion.button>
+                ) : (
+                  <span className={`text-sm ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+                    Upgrade to Basic to unlock coach submissions.
+                  </span>
+                )}
+
+                {requestSuccess && <span className="text-sm text-emerald-400">{requestSuccess}</span>}
+                {requestError && <span className="text-sm text-red-400">{requestError}</span>}
               </div>
             </div>
           </motion.div>
@@ -385,6 +504,61 @@ export default function PlayerSubmissions() {
                         <i className="fas fa-file-pdf"></i>
                         Download Report
                       </motion.a>
+                    )}
+                  </motion.div>
+                ))}
+              </div>
+            )}
+          </motion.div>
+        )}
+
+        {activeTab === 'my' && (
+          <motion.div
+            key="my"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+          >
+            {loadingList ? (
+              <div className="flex items-center justify-center py-20">
+                <i className="fas fa-spinner fa-spin text-3xl text-blue-400"></i>
+              </div>
+            ) : mySubmissions.length === 0 ? (
+              <div className={`text-center py-20 rounded-2xl border ${dark ? 'glass border-white/10' : 'bg-white border-gray-200'}`}>
+                <i className={`fas fa-inbox text-5xl mb-4 ${dark ? 'text-white/20' : 'text-gray-300'}`}></i>
+                <p className={dark ? 'text-white/50' : 'text-gray-500'}>
+                  No coach requests yet.
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {mySubmissions.map((sub) => (
+                  <motion.div
+                    key={sub.id}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    className={`rounded-2xl p-5 border transition-all hover:shadow-lg ${
+                      dark ? 'glass border-white/10 hover:border-white/20' : 'bg-white border-gray-200 hover:border-blue-300 shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <p className={`font-medium text-sm ${dark ? 'text-white' : 'text-gray-800'}`}>
+                          {sub.coach_name || 'Unknown coach'}
+                        </p>
+                        <p className={`text-xs mt-0.5 ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+                          {new Date(sub.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <StatusBadge status={sub.status} />
+                    </div>
+                    <p className={`text-xs ${dark ? 'text-white/50' : 'text-gray-500'}`}>
+                      {sub.note || 'No note provided'}
+                    </p>
+                    {sub.reviewed_at && (
+                      <p className={`mt-3 text-xs ${dark ? 'text-white/40' : 'text-gray-500'}`}>
+                        Reviewed {new Date(sub.reviewed_at).toLocaleString()}
+                      </p>
                     )}
                   </motion.div>
                 ))}

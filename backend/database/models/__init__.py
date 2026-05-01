@@ -17,6 +17,17 @@ from database.models.bowling import BowlingAnalysis
 from database.models.batting import BattingAnalysis
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.subscription import Subscription
+from database.models.monthly_usage import MonthlyUsage
+from database.models.plan_config import PlanConfig
+from database.models.chat_history import ChatHistory
+from database.models.pro_benchmark import ProBenchmark
+from database.models.player_profile import PlayerProfile
+from database.models.video_annotation import VideoAnnotation
+from database.models.coach_player import CoachPlayer
+from database.models.player_submission import PlayerSubmission
+from database.models.academy_branding import AcademyBranding
+from database.models.admin_audit_log import AdminAuditLog
+from database.models.coach_shortlist import CoachShortlist
 __all__ = [
     # User models
     "User",
@@ -36,6 +47,22 @@ __all__ = [
     # Submissions 
     "VideoSubmission",
     "SubmissionStatus",
+    # Subscriptions and quota
+    "Subscription",
+    "MonthlyUsage",
+    "PlanConfig",
+    # Phase 4 player features
+    "ChatHistory",
+    "ProBenchmark",
+    "PlayerProfile",
+    # Phase 5 coach features
+    "VideoAnnotation",
+    "CoachPlayer",
+    "PlayerSubmission",
+    "AcademyBranding",
+    "AdminAuditLog",
+    # Scouting
+    "CoachShortlist",
     # Enums
     "VideoVisibility",
     "VideoStatus",

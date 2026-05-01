@@ -7,8 +7,17 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    api.get("/api/notifications")
-      .then(res => setNotifications(res.data))
+    api
+      .get("/notifications")
+      .then((res) => setNotifications(Array.isArray(res.data) ? res.data : []))
+      .catch((err) => {
+        if (err?.response?.status === 404) {
+          // Endpoint may be disabled in some backend builds.
+          setNotifications([]);
+          return;
+        }
+        throw err;
+      })
       .finally(() => setLoading(false));
   }, []);
 

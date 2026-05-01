@@ -22,18 +22,24 @@ import re
 import shutil
 import tempfile
 import uuid
+import base64
+import binascii
 from pathlib import Path
 from datetime import datetime
+from uuid import UUID
 
 import cv2
 import numpy as np
 import pandas as pd
 import google.cloud.storage as gcs
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.config import get_db
+from database.models.player_submission import PlayerSubmission
 from database.models.user import User
+from database.models.subscription import Subscription
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.crud.submission import (
     create_submission,
@@ -52,6 +58,8 @@ from schemas.submission import (
     CoachListItem,
     CoachListResponse,
 )
+from dependencies.feature_gate import require_feature
+from dependencies.quota_gate import quota_check, increment_usage_atomic
 from utils.auth import get_current_user
 
 # Engine imports
@@ -88,6 +96,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+public_router = APIRouter(tags=["submissions-public"])
+
+_COACH_SUBMISSION_TIERS = ("coach_starter", "coach_pro", "academy")
 
 #  Storage dirs — use /tmp/ on Cloud Run (ephemeral), local storage/ for dev
 _USE_TMP = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
@@ -136,6 +147,47 @@ if _videos_search_cls is None:
     logger.warning("Tutorial resolver init — youtubesearchpython unavailable; will rely on yt-dlp/search fallback")
 else:
     logger.info("Tutorial resolver init — youtubesearchpython VideosSearch available")
+
+
+def _resolve_video_path(video_url: str) -> str:
+    """
+    Resolve video_url (which may be a GCS blob path or local path) to a local file path.
+    
+    - If video_url starts with gs:// or is a GCS blob path, download it to temp storage
+    - If video_url is /static/submissions/, replace with storage/submissions/
+    - Otherwise, assume it's already a valid local path
+    
+    Returns the local file path for Gemini API upload.
+    """
+    # Case 1: GCS blob path (e.g., "raw_videos/abc123_filename.mp4")
+    if _gcs_bucket_upload and not video_url.startswith(("http://", "https://", "/", "gs://")):
+        try:
+            logger.info("Downloading GCS video: %s", video_url)
+            blob = _gcs_bucket_upload.blob(video_url)
+            
+            # Download to temp storage
+            temp_filename = f"temp_{uuid.uuid4()}_{Path(video_url).name}"
+            local_path = TEMP_FRAMES_DIR / temp_filename  # Use temp frames dir for temporary videos
+            with open(local_path, "wb") as f:
+                blob.download_to_file(f)
+            
+            logger.info("Downloaded GCS video to %s", local_path)
+            return str(local_path)
+        except Exception as e:
+            logger.error("Failed to download GCS video %s: %s", video_url, e)
+            raise HTTPException(status_code=500, detail=f"Failed to download video: {e}")
+    
+    # Case 2: Local /static/ path
+    if video_url.startswith("/static/submissions/"):
+        video_file_path = video_url.replace("/static/submissions/", "storage/submissions/")
+        if not os.path.isfile(video_file_path):
+            raise HTTPException(status_code=404, detail="Video file not found on disk.")
+        return video_file_path
+    
+    # Case 3: Assume already a valid local path
+    if not os.path.isfile(video_url):
+        raise HTTPException(status_code=404, detail=f"Video file not found: {video_url}")
+    return video_url
 
 
 def _is_specific_youtube_link(url: str) -> bool:
@@ -457,10 +509,41 @@ def list_coaches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return all users with role=COACH (for player's upload dropdown)."""
+    """Return coaches who can actually receive submissions."""
     coaches = (
         db.query(User)
-        .filter(User.role == "COACH", User.is_active == True, User.deleted_at == None)
+        .join(Subscription, Subscription.user_id == User.id)
+        .filter(
+            User.role == "COACH",
+            User.is_active == True,
+            User.deleted_at == None,
+            Subscription.status == "active",
+            Subscription.role.in_(_COACH_SUBMISSION_TIERS),
+        )
+        .distinct(User.id)
+        .all()
+    )
+    return CoachListResponse(
+        coaches=[
+            CoachListItem(id=c.id, name=c.name, email=c.email, team=c.team)
+            for c in coaches
+        ]
+    )
+
+
+@public_router.get("/coaches", response_model=CoachListResponse)
+def list_coaches_public(db: Session = Depends(get_db)):
+    coaches = (
+        db.query(User)
+        .join(Subscription, Subscription.user_id == User.id)
+        .filter(
+            User.role == "COACH",
+            User.is_active == True,
+            User.deleted_at == None,
+            Subscription.status == "active",
+            Subscription.role.in_(_COACH_SUBMISSION_TIERS),
+        )
+        .distinct(User.id)
         .all()
     )
     return CoachListResponse(
@@ -581,6 +664,95 @@ def player_all_submissions(
     )
 
 
+class PlayerSubmissionCreate(BaseModel):
+    coach_id: str
+    note: str | None = None
+    job_id: str | None = None
+
+
+class PlayerSubmissionItem(BaseModel):
+    id: str
+    coach_name: str | None = None
+    job_id: str | None = None
+    status: str
+    note: str | None = None
+    created_at: str
+    reviewed_at: str | None = None
+
+
+class PlayerSubmissionListResponse(BaseModel):
+    submissions: list[PlayerSubmissionItem]
+    total: int
+
+
+@public_router.post("/submissions", status_code=201, response_model=PlayerSubmissionItem)
+def create_player_submission(
+    body: PlayerSubmissionCreate,
+    _quota: tuple = Depends(quota_check("player_submission")),
+    current_user: User = Depends(require_feature("player_submission")),
+    db: Session = Depends(get_db),
+) -> PlayerSubmissionItem:
+    coach = db.query(User).filter(User.id == body.coach_id, User.role == "COACH").first()
+    if not coach:
+        raise HTTPException(status_code=404, detail="Coach not found")
+
+    submission = PlayerSubmission(
+        player_id=current_user.id,
+        coach_id=body.coach_id,
+        job_id=body.job_id or None,
+        note=body.note,
+        status="pending",
+    )
+    db.add(submission)
+    db.flush()
+
+    ok = increment_usage_atomic(current_user.id, "submission_count", "max_submissions_per_month", 1, db)
+    if not ok:
+        db.rollback()
+        raise HTTPException(status_code=429, detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached (concurrent request)."})
+
+    db.commit()
+    db.refresh(submission)
+
+    return PlayerSubmissionItem(
+        id=submission.id,
+        coach_name=coach.name,
+        job_id=submission.job_id,
+        status=submission.status,
+        note=submission.note,
+        created_at=submission.created_at.isoformat() if submission.created_at else "",
+        reviewed_at=submission.reviewed_at.isoformat() if submission.reviewed_at else None,
+    )
+
+
+@public_router.get("/submissions/my", response_model=PlayerSubmissionListResponse)
+def my_player_submissions(
+    current_user: User = Depends(require_feature("player_submission")),
+    db: Session = Depends(get_db),
+) -> PlayerSubmissionListResponse:
+    rows = (
+        db.query(PlayerSubmission)
+        .filter(PlayerSubmission.player_id == current_user.id)
+        .order_by(PlayerSubmission.created_at.desc())
+        .all()
+    )
+    return PlayerSubmissionListResponse(
+        submissions=[
+            PlayerSubmissionItem(
+                id=r.id,
+                coach_name=r.coach.name if r.coach else None,
+                job_id=r.job_id,
+                status=r.status,
+                note=r.note,
+                created_at=r.created_at.isoformat() if r.created_at else "",
+                reviewed_at=r.reviewed_at.isoformat() if r.reviewed_at else None,
+            )
+            for r in rows
+        ],
+        total=len(rows),
+    )
+
+
 #  COACH: Inbox
 @router.get("/coach/me", response_model=SubmissionListResponse)
 def coach_inbox(
@@ -632,11 +804,17 @@ def coach_run_analysis(
     # Mark PROCESSING
     mark_processing(db, sub)
 
-    # Resolve video file path on disk
-    video_file_path = sub.video_url.replace("/static/submissions/", "storage/submissions/")
-
-    if not os.path.isfile(video_file_path):
-        raise HTTPException(status_code=404, detail="Video file not found on disk.")
+    # Resolve video file path (handles both GCS and local storage)
+    try:
+        video_file_path = _resolve_video_path(sub.video_url)
+    except HTTPException:
+        raise
+    except Exception as e:
+        sub.status = SubmissionStatus.PENDING
+        db.commit()
+        error_msg = f"Video resolution failed: {type(e).__name__}: {str(e)}"
+        logger.exception("VIDEO RESOLUTION ERROR — %s", error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
     try:
         if sub.analysis_type == "BOWLING":
@@ -699,6 +877,9 @@ def coach_publish(
     if not edited_text:
         raise HTTPException(status_code=400, detail="edited_text cannot be empty.")
 
+    # Store sketches if provided
+    sketches = body.sketches or []
+
     try:
         # Build metrics DataFrame from stored raw_biometrics
         metrics_df = pd.DataFrame()
@@ -712,6 +893,78 @@ def coach_publish(
             img = cv2.imread(str(key_frame_path))
             if img is not None:
                 images["Key Frame"] = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Convert sketches to images for PDF, preferring captured frame snapshots.
+        sketch_images: dict[str, np.ndarray] = {}
+        if sketches:
+            try:
+                # Render each sketch as a photo-like frame + annotation overlay.
+                for idx, sketch in enumerate(sketches, start=1):
+                    if "coordinates" not in sketch:
+                        continue
+
+                    coords = sketch.get("coordinates") or []
+                    if len(coords) < 2:
+                        continue
+
+                    # Read video timestamp (seconds, float) stored by the frontend.
+                    video_ts = sketch.get("timestamp")
+                    ts_label = f"@ {float(video_ts):.2f}s" if video_ts is not None else ""
+
+                    base_img: np.ndarray | None = None
+                    snapshot_data_url = sketch.get("snapshot_data_url")
+                    if isinstance(snapshot_data_url, str) and snapshot_data_url.startswith("data:image"):
+                        try:
+                            encoded = snapshot_data_url.split(",", 1)[1]
+                            decoded = base64.b64decode(encoded)
+                            arr = np.frombuffer(decoded, dtype=np.uint8)
+                            frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                            if frame_bgr is not None:
+                                base_img = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        except (IndexError, ValueError, binascii.Error):
+                            base_img = None
+
+                    if base_img is None:
+                        if images and "Key Frame" in images:
+                            base_img = images["Key Frame"].copy()
+                        else:
+                            base_img = np.ones((720, 1280, 3), dtype=np.uint8) * 255
+
+                    sketch_canvas = base_img.copy()
+                    color = sketch.get("color", "#000000")
+                    try:
+                        hex_color = str(color).lstrip("#")
+                        r = int(hex_color[0:2], 16)
+                        g = int(hex_color[2:4], 16)
+                        b = int(hex_color[4:6], 16)
+                        bgr = (b, g, r)
+                    except Exception:
+                        bgr = (0, 0, 0)
+
+                    for i in range(len(coords) - 1):
+                        pt1 = (int(coords[i]["x"]), int(coords[i]["y"]))
+                        pt2 = (int(coords[i + 1]["x"]), int(coords[i + 1]["y"]))
+                        cv2.line(sketch_canvas, pt1, pt2, bgr, 3)
+
+                    # Burn timestamp label into the image (BGR color space).
+                    if ts_label:
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale, thickness = 0.7, 2
+                        (tw, th), _ = cv2.getTextSize(ts_label, font, font_scale, thickness)
+                        # Convert canvas back to BGR for OpenCV overlay then back to RGB.
+                        canvas_bgr = cv2.cvtColor(sketch_canvas, cv2.COLOR_RGB2BGR)
+                        cv2.rectangle(canvas_bgr, (6, 6), (tw + 14, th + 16), (0, 0, 0), -1)
+                        cv2.putText(canvas_bgr, ts_label, (10, th + 10), font, font_scale, (255, 255, 255), thickness)
+                        sketch_canvas = cv2.cvtColor(canvas_bgr, cv2.COLOR_BGR2RGB)
+
+                    # Use timestamp in dict key so PDF section heading shows it.
+                    section_label = f"Coach Annotation {idx} {ts_label}".strip()
+                    sketch_images[section_label] = sketch_canvas
+
+                images.update(sketch_images)
+            except Exception as sketch_err:
+                logger.warning("Failed to render sketches for PDF: %s", sketch_err)
+
 
         # Generate PDF using coach's final text (NOT the AI draft)
         if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
@@ -738,6 +991,7 @@ def coach_publish(
             sub,
             coach_final_text=edited_text,
             pdf_report_url=pdf_report_url,
+            coach_sketches=sketches,  # Save sketches to DB
         )
 
         logger.info("Submission %s published by coach %s", sub.id, current_user.id)
@@ -752,7 +1006,7 @@ def coach_publish(
 #  DETAIL: Get single submission
 @router.get("/{submission_id}", response_model=SubmissionDetail)
 def get_submission(
-    submission_id: str,
+    submission_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -761,7 +1015,7 @@ def get_submission(
     - Player can see own submissions (PUBLISHED shows everything, others show status only).
     - Coach can see submissions assigned to them.
     """
-    sub = get_submission_by_id(db, submission_id)
+    sub = get_submission_by_id(db, str(submission_id))
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found.")
 
@@ -821,7 +1075,20 @@ def _run_batting_analysis(
         metrics_summary=display_df.describe().to_string(),
         phase_info=phase_info,
     )
-    ai_text = _batting_gemini.call_gemini(prompt, video_path) if _batting_gemini else "AI feedback unavailable."
+    if _batting_gemini:
+        # Reset key rotation so stale index from prior failures doesn't skip valid keys.
+        _batting_gemini.current_index = 0
+        logger.info("[SUB] Batting Gemini call (text-only) — submission=%s", submission_id)
+        try:
+            # Pass video_path=None: the MediaPipe metrics summary in the prompt is
+            # already rich enough. Video upload in the submissions context causes
+            # Files API key rejections that don't affect the standalone batting route.
+            ai_text = _batting_gemini.call_gemini(prompt, None)
+        except Exception as gemini_err:
+            logger.exception("[SUB] Batting Gemini call failed: %s", gemini_err)
+            ai_text = _batting_gemini._fallback_feedback()
+    else:
+        ai_text = "AI feedback unavailable."
     ai_text, _ = _post_process_report_with_video_links(ai_text, "batting")
 
     # Pack biometrics for JSON storage
@@ -866,7 +1133,20 @@ def _run_bowling_analysis(
     prompt = BOWLING_ANALYSIS_PROMPT.format(
         metrics_summary=display_df.describe().to_string()
     )
-    ai_text = _bowling_gemini.call_gemini(prompt, video_path) if _bowling_gemini else "AI feedback unavailable."
+    if _bowling_gemini:
+        # Reset key rotation so stale index from prior failures doesn't skip valid keys.
+        _bowling_gemini.current_index = 0
+        logger.info("[SUB] Bowling Gemini call (text-only) — submission=%s", submission_id)
+        try:
+            # Pass video_path=None: the MediaPipe metrics summary in the prompt is
+            # already rich enough. Video upload in the submissions context causes
+            # Files API key rejections that don't affect the standalone bowling route.
+            ai_text = _bowling_gemini.call_gemini(prompt, None)
+        except Exception as gemini_err:
+            logger.exception("[SUB] Bowling Gemini call failed: %s", gemini_err)
+            ai_text = _bowling_gemini._fallback_feedback()
+    else:
+        ai_text = "AI feedback unavailable."
     ai_text, _ = _post_process_report_with_video_links(ai_text, "bowling")
 
     biometrics = {

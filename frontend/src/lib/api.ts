@@ -1,5 +1,5 @@
-
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
+import type { PlanConfig } from '../types/subscriptionPlans';
 
 // Base URL from environment or default
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -11,8 +11,23 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
  */
 export function resolveMediaUrl(path: string | null | undefined): string {
   if (!path) return '';
-  if (path.startsWith('http://') || path.startsWith('https://')) return path;
-  return `${API_BASE_URL}${path.startsWith('/') ? '' : '/'}${path}`;
+  if (path.startsWith('http://') || path.startsWith('https://')) {
+    try {
+      const absolute = new URL(path);
+      if (absolute.pathname.startsWith('/storage/')) {
+        absolute.pathname = absolute.pathname.replace('/storage/', '/static/');
+        return absolute.toString();
+      }
+    } catch {
+      // Fall back to original path when URL parsing fails.
+    }
+    return path;
+  }
+  // Legacy DB rows may store /storage/... paths; backend serves these under /static/...
+  const normalizedPath = path.startsWith('/storage/')
+    ? path.replace('/storage/', '/static/')
+    : path;
+  return `${API_BASE_URL}${normalizedPath.startsWith('/') ? '' : '/'}${normalizedPath}`;
 }
 
 // Create axios instance
@@ -23,6 +38,7 @@ export const api = axios.create({
     'Content-Type': 'application/json',
   },
 });
+
 
 // Request interceptor - attach JWT token
 api.interceptors.request.use(
@@ -112,6 +128,11 @@ export const authApi = {
     phone?: string;
     team?: string;
   }) => api.post('/auth/register', data),
+
+  registerMultipart: (formData: FormData) =>
+    api.post('/auth/register', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }),
   
   logout: () => api.post('/auth/logout'),
   
@@ -235,6 +256,21 @@ export const videosApi = {
   // Get supercut stream URL (for highlight reel)
   getSupercutUrl: (videoId: string) => 
     `${API_BASE_URL}/api/v1/videos/${videoId}/supercut`,
+};
+
+export const annotationsApi = {
+  list: (videoId: string) => api.get<VideoAnnotation[]>(`/annotations/${videoId}`),
+  create: (payload: {
+    video_id: string;
+    timestamp_ms: number;
+    annotation_type: VideoAnnotation['annotation_type'];
+    coordinates: unknown;
+    label?: string;
+    color?: string;
+  }) => api.post<VideoAnnotation>('/annotations', payload),
+  update: (annotationId: string, payload: Partial<Pick<VideoAnnotation, 'coordinates' | 'label' | 'color'>>) =>
+    api.put<VideoAnnotation>(`/annotations/${annotationId}`, payload),
+  delete: (annotationId: string) => api.delete(`/annotations/${annotationId}`),
 };
 
 // Jobs endpoints (OCR processing)
@@ -401,6 +437,17 @@ export interface SubmissionDetail extends SubmissionSummary {
   }>;
 }
 
+export interface VideoAnnotation {
+  id: string;
+  video_id: string;
+  coach_id: string;
+  timestamp_ms: number;
+  annotation_type: 'line' | 'circle' | 'arrow' | 'text';
+  coordinates: unknown;
+  label?: string | null;
+  color: string;
+}
+
 export interface CoachListItem {
   id: string;
   name: string;
@@ -408,10 +455,34 @@ export interface CoachListItem {
   team?: string;
 }
 
+export interface PlayerSubmissionRequest {
+  coachId: string;
+  note?: string;
+  jobId?: string;
+}
+
+export interface PlayerSubmissionItem {
+  id: string;
+  coach_name?: string | null;
+  job_id?: string | null;
+  status: string;
+  note?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
 export const submissionsApi = {
   /** List available coaches for the player's dropdown */
   listCoaches: () =>
-    api.get<{ coaches: CoachListItem[] }>('/submissions/coaches'),
+    api.get<{ coaches: CoachListItem[] }>('/coaches'),
+
+  /** Player: Create a submission for a coach */
+  createPlayerSubmission: (data: PlayerSubmissionRequest) =>
+    api.post<PlayerSubmissionItem>('/submissions', {
+      coach_id: data.coachId,
+      note: data.note,
+      job_id: data.jobId,
+    }),
 
   /** Player: Upload video to a coach */
   upload: (file: File, coachId: string, analysisType: string = 'BATTING', onProgress?: (p: number) => void) => {
@@ -436,6 +507,10 @@ export const submissionsApi = {
   playerAll: (limit = 50, offset = 0) =>
     api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/player/all', { params: { limit, offset } }),
 
+  /** Player: My coach submissions */
+  playerMy: () =>
+    api.get<{ submissions: PlayerSubmissionItem[]; total: number }>('/submissions/my'),
+
   /** Coach: Inbox (PENDING + DRAFT_REVIEW) */
   coachInbox: (status?: string, limit = 50, offset = 0) =>
     api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/coach/me', { params: { status, limit, offset } }),
@@ -444,9 +519,12 @@ export const submissionsApi = {
   analyze: (submissionId: string) =>
     api.post<SubmissionDetail>(`/submissions/${submissionId}/analyze`, null, { timeout: 1800000 }), // 30 min for large videos
 
-  /** Coach: Publish with edited text */
-  publish: (submissionId: string, editedText: string) =>
-    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { edited_text: editedText }),
+  /** Coach: Publish with edited text and sketches */
+  publish: (submissionId: string, editedText: string, sketches?: any[]) =>
+    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { 
+      edited_text: editedText,
+      sketches: sketches || [],
+    }),
 
   /** Get single submission detail */
   getById: (submissionId: string) =>
@@ -549,65 +627,200 @@ export async function pollSubmissionResult(
   }
   throw new Error('Processing timed out. Your results will appear in History when ready.');
 }
-// Plans API (Admin)
-export const plansApi = {
-  // Create new plan
-  create: (data: {
-    name: string;
-    monthly_price: number;
-    yearly_price: number;
-    features: string;
-  }) => api.post('/plans', data),
 
-  // Get all plans
-  list: () => api.get('/plans'),
-
-  // Update plan
-  update: (
-    planId: number,
-    data: {
-      name: string;
-      monthly_price: number;
-      yearly_price: number;
-      features: string;
-    }
-  ) => api.put(`/plans/${planId}`, data),
-
-  // Delete plan
-  delete: (planId: number) => api.delete(`/plans/${planId}`),
-};
 // Subscription API
 export const subscriptionApi = {
+  getMySubscription: () => api.get('/subscriptions/me'),
 
-  // Subscribe user to a plan
-  subscribe: (userId: string, planId: number) =>
-    api.post("/subscriptions/subscribe", {
-      user_id: userId,
-      plan_id: planId
+  // Subscribe current user to a plan
+  subscribe: (planKey: string) =>
+    api.post('/subscriptions/subscribe', {
+      plan_key: planKey,
     }),
+};
 
-  // Get subscription of a user
-  getUserSubscription: (userId: string) =>
-    api.get(`/subscriptions/user/${userId}`)
+// Billing API
+export const billingApi = {
+  /** Create a Razorpay order for the given plan_key */
+  createOrder: (planKey: string) =>
+    api.post('/billing/create-order', { plan_key: planKey }),
 
+  /** Monthly quota usage for the current user */
+  getUsage: () =>
+    api.get('/billing/usage'),
 };
 
 // Admin API
 export const adminApi = {
-  // Get admin stats
+  // Stats
   getStats: () => api.get('/admin/stats'),
-  
-  // Get pending coach verifications
-  getPendingCoaches: (limit = 5) => 
+
+  // Coach verification
+  getPendingCoaches: (limit = 20) =>
     api.get('/admin/coaches/pending', { params: { limit } }),
-  
-  // Verify coach (approve/reject)
-  verifyCoach: (coachId: string, action: 'verified' | 'rejected') => 
-    api.patch(`/admin/coaches/${coachId}/verify`, null, { params: { action } }),
-  
-  // Get activity feed
-  getActivityFeed: (limit = 20) => 
+  approveCoach: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/approve`),
+  rejectCoach: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/reject`),
+  getCoachDocument: (coachId: string) =>
+    api.get(`/admin/coaches/${coachId}/document`, { responseType: 'blob' }),
+  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
+    api.post(`/admin/coaches/${coachId}/${action === 'verified' ? 'approve' : 'reject'}`),
+
+  // Activity feed
+  getActivityFeed: (limit = 20) =>
     api.get('/admin/activity', { params: { limit } }),
+
+  // Plan management
+  listPlans: () => api.get<PlanConfig[]>('/admin/plans'),
+  updatePlan: (planKey: string, data: {
+    display_name?: string;
+    price_inr?: number;
+    duration_days?: number;
+    max_biomech_per_month?: number;
+    max_ocr_hours_per_month?: number;
+    max_submissions_per_month?: number;
+    max_players_in_dashboard?: number;
+  }) => api.patch<PlanConfig>(`/admin/plans/${planKey}`, data),
+
+  // User management
+  listUsers: (params: {
+    page?: number;
+    per_page?: number;
+    search?: string;
+    role?: string;
+    subscription_status?: string;
+    plan?: string;
+    is_active?: boolean;
+  }) => api.get('/admin/users', { params }),
+  overrideSubscription: (userId: string, data: {
+    plan_key: string;
+    status: string;
+    expires_at?: string;
+  }) => api.patch(`/admin/users/${userId}/subscription`, data),
+  impersonateUser: (userId: string) =>
+    api.post(`/admin/users/${userId}/impersonate`),
+
+  // Audit log
+  getAuditLog: (page = 1, perPage = 50) =>
+    api.get('/admin/audit-log', { params: { page, per_page: perPage } }),
 };
 
-export default api;
+// ── Profile API ───────────────────────────────────────────────────────────────
+export const profileApi = {
+  /** Create / update the player's own profile (identity fields only) */
+  setup: (data: {
+    display_name?: string;
+    city?: string;
+    state?: string;
+    bat_style?: string;
+    bowl_style?: string;
+    age?: number;
+    cricket_role?: 'batsman' | 'bowler' | 'all_rounder' | 'wicket_keeper';
+    experience_level?: 'beginner' | 'intermediate' | 'advanced' | 'professional';
+    preferred_format?: 'T20' | 'ODI' | 'Test' | 'All';
+    profile_image_url?: string;
+  }) => api.post('/profile/setup', data),
+
+  /** Toggle scouting visibility (Platinum players only) */
+  toggleScouting: (visible: boolean) =>
+    api.patch('/profile/scouting', { scouting_visible: visible }),
+
+  /** Fetch the player's own profile (use user_id from auth store) */
+  getPublic: (userId: string) => api.get(`/profile/${userId}/public`),
+};
+
+// ── Scouting API (Academy coaches only) ──────────────────────────────────────
+export interface ScoutingPlayerStats {
+  avg_bat_speed: number | null;
+  peak_bat_speed: number | null;
+  avg_wrist_speed: number | null;
+  avg_release_height: number | null;
+  best_front_knee_angle: number | null;
+  best_shoulder_rotation: number | null;
+  best_elbow_angle: number | null;
+  best_release_consistency: number | null;
+}
+
+export interface ScoutingPlayerSummary {
+  user_id: string;
+  display_name: string | null;
+  city: string | null;
+  state: string | null;
+  cricket_role: string | null;
+  experience_level: string | null;
+  preferred_format: string | null;
+  bat_style: string | null;
+  bowl_style: string | null;
+  age: number | null;
+  profile_image_url: string | null;
+  total_analyses: number;
+  analyses_last_updated: string | null;
+  scouting_visible: boolean;
+  stats: ScoutingPlayerStats;
+}
+
+export interface ScoutingPlayersResponse {
+  players: ScoutingPlayerSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface ScoutingPlayerDetail extends ScoutingPlayerSummary {
+  recent_batting: Array<{
+    id: string;
+    date: string;
+    metrics: Record<string, number | null>;
+  }>;
+  recent_bowling: Array<{
+    id: string;
+    date: string;
+    metrics: Record<string, number | null>;
+  }>;
+  shortlisted: boolean;
+  coach_note: string | null;
+}
+
+export interface ScoutingFilters {
+  page?: number;
+  page_size?: number;
+  city?: string;
+  state?: string;
+  cricket_role?: string;
+  experience_level?: string;
+  preferred_format?: string;
+  min_analyses?: number;
+  bat_style?: string;
+  bowl_style?: string;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+}
+
+export const scoutingApi = {
+  /** List all players (academy coaches see everyone) */
+  listPlayers: (filters?: ScoutingFilters) =>
+    api.get<ScoutingPlayersResponse>('/scouting/players', { params: filters }),
+
+  /** Get a single player's full scouting profile */
+  getPlayer: (userId: string) =>
+    api.get<ScoutingPlayerDetail>(`/scouting/players/${userId}`),
+
+  /** Add player to coach's shortlist */
+  addToShortlist: (playerId: string, note?: string) =>
+    api.post('/scouting/shortlist', { player_id: playerId, note }),
+
+  /** Get the coach's full shortlist */
+  getShortlist: () => api.get('/scouting/shortlist'),
+
+  /** Update the note on a shortlisted player */
+  updateNote: (playerId: string, note: string | null) =>
+    api.patch(`/scouting/shortlist/${playerId}`, { note }),
+
+  /** Remove a player from the shortlist */
+  removeFromShortlist: (playerId: string) =>
+    api.delete(`/scouting/shortlist/${playerId}`),
+};
+
+export default api;
