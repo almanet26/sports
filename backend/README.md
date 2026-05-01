@@ -67,6 +67,42 @@ This opens an interactive window where you can draw a rectangle over the scorebo
 
 ---
 
+## 🔐 Test Role Accounts (Monetization)
+
+Use these seeded accounts for role and quota gate testing.
+
+| Email | Role | Tier | Subscription Expires | Status |
+|-------|------|------|--------|--------|
+| player.free@test.com | PLAYER | free | 2126-04-05 | Active |
+| player.basic@test.com | PLAYER | basic | 2026-07-28 | Active |
+| player.platinum@test.com | PLAYER | platinum | 2027-04-29 | Active |
+| coach.free@test.com | COACH | coach_free | 2126-04-05 | Active |
+| coach.starter@test.com | COACH | coach_starter | 2026-07-28 | Active |
+| coach.pro@test.com | COACH | coach_pro | 2026-10-26 | Active |
+| coach.academy@test.com | COACH | academy | 2027-04-29 | Active |
+| admin@test.com | ADMIN | academy | 2027-04-29 | Active |
+
+**Password**: Test@12345 (all accounts)
+
+### Regenerate Users and Fresh JWTs
+
+Run this whenever you need fresh tokens printed in terminal:
+
+```bash
+cd backend
+python scripts/seed_roles.py
+```
+
+If `plan_config` is missing or empty, run migrations first:
+
+```bash
+cd backend
+alembic upgrade head
+python scripts/seed_roles.py
+```
+
+---
+
 ## 🐛 Troubleshooting
 
 ### Issue: "FFmpeg not found"

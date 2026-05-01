@@ -5,6 +5,7 @@ JWT Token utilities for authentication
 from datetime import datetime, timedelta
 from typing import Optional
 import jwt
+from jwt.exceptions import PyJWTError
 from passlib.context import CryptContext
 from fastapi import HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -80,7 +81,7 @@ def verify_access_token(token: str) -> dict:
         return payload
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.JWTError:
+    except PyJWTError:
         raise HTTPException(status_code=401, detail="Could not validate credentials")
 
 

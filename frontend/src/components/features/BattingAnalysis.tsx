@@ -1,5 +1,7 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
 import { battingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, type SubmissionDetail } from "../../lib/api";
+import { useSubscriptionStore } from "../../stores/authStore";
+import UpgradePrompt from "../gates/UpgradePrompt";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Progress } from "../ui/Progress";
@@ -263,6 +265,7 @@ const BattingAnalysis: React.FC = () => {
   const [showHistory, setShowHistory] = useState(false);
 
   const acceptedTypes = ".mp4,.mov,.avi";
+  const biomechUsage = useSubscriptionStore((s) => s.quotaUsage.biomech);
 
   // Fetch history on mount & after new analysis
   useEffect(() => {
@@ -285,6 +288,8 @@ const BattingAnalysis: React.FC = () => {
     },
     []
   );
+
+  const refreshQuota = useSubscriptionStore((s) => s.refreshQuota);
 
   const handleAnalyze = useCallback(async () => {
     if (!file) return;
@@ -309,6 +314,9 @@ const BattingAnalysis: React.FC = () => {
       // Map SubmissionDetail → BattingResult for the existing UI
       setResult(mapSubmissionToBattingResult(sub));
       setPhase("done");
+
+      // Sync quota state with backend after successful analysis
+      await refreshQuota();
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data
@@ -317,7 +325,7 @@ const BattingAnalysis: React.FC = () => {
       setErrorMsg(msg);
       setPhase("error");
     }
-  }, [file]);
+  }, [file, refreshQuota]);
 
   const reset = useCallback(() => {
     setFile(null);
@@ -327,6 +335,10 @@ const BattingAnalysis: React.FC = () => {
     setUploadProgress(0);
     if (fileRef.current) fileRef.current.value = "";
   }, []);
+
+  if (biomechUsage.limit > 0 && biomechUsage.used >= biomechUsage.limit) {
+    return <UpgradePrompt requiredTier="basic" />;
+  }
 
 
 

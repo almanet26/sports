@@ -16,6 +16,21 @@ import {
 import { videosApi, requestsApi, adminApi } from '../lib/api';
 import { useUser } from '../store/authStore';
 
+interface PlatformStats {
+  users: { total: number; players: number; coaches: number; new_this_month: number };
+  subscriptions: {
+    active: number; expired: number; past_due: number;
+    by_plan: Record<string, number>;
+  };
+  usage: {
+    biomech_jobs_this_month: number;
+    ocr_jobs_this_month: number;
+    total_videos_stored: number;
+    pdf_reports_generated: number;
+  };
+  revenue: { total_payments_captured: number; this_month: number; last_month: number };
+}
+
 interface DashboardStats {
   totalVideos: number;
   pendingJobs: number;
@@ -66,6 +81,8 @@ interface ActivityItem {
 
 export default function AdminDashboard() {
   const user = useUser();
+  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [stats, setStats] = useState<DashboardStats>({
     totalVideos: 0,
     pendingJobs: 0,
@@ -133,7 +150,7 @@ export default function AdminDashboard() {
         adminApi.getPendingCoaches(5),
         adminApi.getActivityFeed(15),
       ]);
-      
+
       setStats({
         totalVideos: videosResponse.data.total || 0,
         pendingJobs: 0,
@@ -145,7 +162,12 @@ export default function AdminDashboard() {
         subscription_breakdown: statsResponse.data.subscription_breakdown,
         revenue: statsResponse.data.revenue,
       });
-      
+
+      // Store the extended platform stats if the new fields are present
+      if (statsResponse.data.users) {
+        setPlatformStats(statsResponse.data as PlatformStats);
+      }
+
       setPendingRequests(requestsResponse.data.requests || []);
       setPendingCoaches(coachesResponse.data.coaches || []);
       setActivities(activityResponse.data.activities || []);
@@ -153,7 +175,13 @@ export default function AdminDashboard() {
       console.error('Failed to fetch dashboard data:', error);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
+  };
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    fetchDashboardData();
   };
 
   const handleCoachAction = async (coachId: string, action: 'verified' | 'rejected') => {
@@ -465,6 +493,70 @@ export default function AdminDashboard() {
           <p className="text-xs text-green-400 mt-1">↑ 8% conversion</p>
         </motion.div>
       </div>
+
+      {/* Platform Stats — real-time numbers */}
+      {platformStats && (
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-3xl p-6 border border-white/20 mb-8"
+        >
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
+                <i className="fas fa-chart-line text-white"></i>
+              </div>
+              <div>
+                <p className="font-semibold">Platform Health</p>
+                <p className="text-sm text-white/50">Live numbers — click Refresh to update</p>
+              </div>
+            </div>
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              className="px-4 py-2 rounded-xl glass border border-white/20 hover:bg-white/10 transition-all text-sm flex items-center gap-2 disabled:opacity-50"
+            >
+              <i className={`fas fa-sync-alt ${refreshing ? 'fa-spin' : ''}`}></i> Refresh
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+            {[
+              { label: 'Total Users',       value: platformStats.users.total,             icon: 'fa-users',         color: 'from-blue-500 to-cyan-500' },
+              { label: 'Players',           value: platformStats.users.players,           icon: 'fa-running',       color: 'from-cyan-500 to-teal-500' },
+              { label: 'Coaches',           value: platformStats.users.coaches,           icon: 'fa-chalkboard-teacher', color: 'from-green-500 to-emerald-500' },
+              { label: 'New This Month',    value: platformStats.users.new_this_month,    icon: 'fa-user-plus',     color: 'from-indigo-500 to-purple-500' },
+              { label: 'Active Subs',       value: platformStats.subscriptions.active,    icon: 'fa-check-circle',  color: 'from-green-500 to-emerald-500' },
+              { label: 'Expired Subs',      value: platformStats.subscriptions.expired,   icon: 'fa-times-circle',  color: 'from-red-500 to-pink-500' },
+              { label: 'Past Due Subs',     value: platformStats.subscriptions.past_due,  icon: 'fa-exclamation-circle', color: 'from-amber-500 to-orange-500' },
+              { label: 'Biomech Jobs/mo',   value: platformStats.usage.biomech_jobs_this_month, icon: 'fa-dumbbell', color: 'from-purple-500 to-pink-500' },
+            ].map((card) => (
+              <div key={card.label} className="glass rounded-2xl p-4 border border-white/10">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={`w-8 h-8 rounded-lg bg-gradient-to-r ${card.color} flex items-center justify-center`}>
+                    <i className={`fas ${card.icon} text-white text-xs`}></i>
+                  </div>
+                  <span className="text-xs text-white/50">{card.label}</span>
+                </div>
+                <p className="text-2xl font-bold">{card.value.toLocaleString()}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Subscription by plan */}
+          <div className="mt-5 pt-5 border-t border-white/10">
+            <p className="text-sm text-white/50 mb-3">Active subscriptions by plan</p>
+            <div className="flex flex-wrap gap-3">
+              {Object.entries(platformStats.subscriptions.by_plan).map(([plan, count]) => (
+                <div key={plan} className="glass rounded-xl px-4 py-2 border border-white/10 text-sm flex items-center gap-2">
+                  <span className="text-white/50 font-mono">{plan}</span>
+                  <span className="font-bold">{count}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Bottom Row - Pending Items & Activity Feed */}
       <div className="grid lg:grid-cols-3 gap-6">

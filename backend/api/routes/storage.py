@@ -14,6 +14,7 @@ Environment Variables Required:
 """
 
 import logging
+import asyncio
 import os
 import threading
 import uuid
@@ -29,6 +30,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from database.config import get_db
+from dependencies.quota_gate import increment_usage
+from dependencies.quota_gate import quota_check
 from database.models.user import User
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.video import Video, HighlightJob, VideoVisibility, VideoStatus
@@ -258,6 +261,9 @@ def _process_submission_locally(submission_id: str) -> None:
             key_frame_url=key_frame_url,
         )
 
+        if sub.analysis_type in ("BOWLING", "BATTING"):
+            asyncio.run(increment_usage(sub.player_id, "biomech_count", 1, db))
+
         # Generate local PDF so player flow has an immediate downloadable report.
         try:
             import pandas as pd
@@ -403,6 +409,9 @@ def generate_upload_url(
     if analysis_type not in ("FULL_MATCH", "BATTING", "BOWLING"):
         raise HTTPException(status_code=400, detail="analysis_type must be FULL_MATCH, BATTING or BOWLING")
 
+    if analysis_type in ("BATTING", "BOWLING"):
+        quota_check("biomechanics_analysis")(current_user, db)
+
     # unique blob path
     unique_id = uuid.uuid4().hex[:12]
     safe_name = filename.replace(" ", "_")
@@ -510,6 +519,9 @@ def create_resumable_session(
     analysis_type = (payload.analysis_type or "FULL_MATCH").upper()
     if analysis_type not in ("FULL_MATCH", "BATTING", "BOWLING"):
         raise HTTPException(status_code=400, detail="analysis_type must be FULL_MATCH, BATTING or BOWLING")
+
+    if analysis_type in ("BATTING", "BOWLING"):
+        quota_check("biomechanics_analysis")(current_user, db)
 
     if not GCS_AVAILABLE:
         raise HTTPException(status_code=503, detail="GCS is not configured for resumable uploads.")
@@ -661,6 +673,9 @@ def start_processing(
 
     if sub is None:
         raise HTTPException(status_code=404, detail="Submission not found.")
+
+    if sub.analysis_type in ("BATTING", "BOWLING"):
+        quota_check("biomechanics_analysis")(current_user, db)
 
     # Auth: owner (player or coach) or admin
     is_owner = sub.player_id == current_user.id or sub.coach_id == current_user.id
