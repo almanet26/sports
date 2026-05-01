@@ -114,6 +114,7 @@ storage/
 .env
 .env.local
 .env.*.local
+.env.example
 *_secrets.py
 secrets.json
 credentials.json
