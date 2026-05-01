@@ -26,7 +26,7 @@ spec:
       timeoutSeconds: 3600             # 60 min — video analysis can be slow
 
       containers:
-        - image: asia-south1-docker.pkg.dev/${GCP_PROJECT}/sports-backend/api:latest
+        - image: asia-south1-docker.pkg.dev/sports-ai-489110/sports-backend/api:latest
 
           ports:
             - containerPort: 8080

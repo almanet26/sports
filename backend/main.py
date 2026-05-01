@@ -207,6 +207,8 @@ if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         "http://localhost:8000",
+        "https://sports-teal-two.vercel.app",
+        "https://sports-l8at.vercel.app",
     ]
     _frontend = os.getenv("FRONTEND_URL", "").strip()
     if _frontend and _frontend not in ALLOWED_ORIGINS:
