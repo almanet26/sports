@@ -5,13 +5,13 @@
 
 substitutions:
   _REGION: asia-south1
-  _PROJECT: sports-ai-489110
+  _PROJECT: your-gcp-project-id
   _SERVICE: sports-backend
-  _IMAGE: asia-south1-docker.pkg.dev/sports-ai-489110/sports-backend/api
-  _GCS_BUCKET: sports-ai-storage
-  _FRONTEND_URL: https://sports-teal-two.vercel.app
-  _WORKER_URL: https://sports-backend-kh55fwhmvq-el.a.run.app
-  _WORKER_SA_EMAIL: 261249483566-compute@developer.gserviceaccount.com
+  _IMAGE: asia-south1-docker.pkg.dev/your-gcp-project-id/sports-backend/api
+  _GCS_BUCKET: your-gcs-bucket
+  _FRONTEND_URL: https://your-app.vercel.app
+  _WORKER_URL: https://your-worker.run.app
+  _WORKER_SA_EMAIL: your-sa@your-project.iam.gserviceaccount.com
   _TASK_QUEUE: video-processing
 
 steps:

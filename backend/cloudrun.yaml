@@ -26,7 +26,7 @@ spec:
       timeoutSeconds: 3600             # 60 min — video analysis can be slow
 
       containers:
-        - image: asia-south1-docker.pkg.dev/sports-ai-489110/sports-backend/api:latest   
+        - image: asia-south1-docker.pkg.dev/${GCP_PROJECT}/sports-backend/api:latest
 
           ports:
             - containerPort: 8080
@@ -36,24 +36,42 @@ spec:
             - name: CLOUD_RUN
               value: "1"
             - name: GCS_BUCKET_NAME
-              value: sports-ai-storage
+              valueFrom:
+                secretKeyRef:
+                  name: GCS_BUCKET_NAME
+                  key: latest
             - name: FRONTEND_URL
-              value: https://sports-teal-two.vercel.app
+              valueFrom:
+                secretKeyRef:
+                  name: FRONTEND_URL
+                  key: latest
             - name: ALLOWED_ORIGINS
-              value: https://sports-teal-two.vercel.app,https://sports-l8at.vercel.app
+              valueFrom:
+                secretKeyRef:
+                  name: ALLOWED_ORIGINS
+                  key: latest
             - name: GEMINI_MODEL
               value: gemini-2.5-flash
             # Cloud Tasks
             - name: GCP_PROJECT
-              value: sports-ai-489110
+              valueFrom:
+                secretKeyRef:
+                  name: GCP_PROJECT
+                  key: latest
             - name: GCP_LOCATION
               value: asia-south1
             - name: GCP_TASK_QUEUE
               value: video-processing
             - name: WORKER_SERVICE_URL
-              value: https://sports-backend-kh55fwhmvq-el.a.run.app
+              valueFrom:
+                secretKeyRef:
+                  name: WORKER_SERVICE_URL
+                  key: latest
             - name: WORKER_SERVICE_ACCOUNT_EMAIL
-              value: 261249483566-compute@developer.gserviceaccount.com
+              valueFrom:
+                secretKeyRef:
+                  name: WORKER_SERVICE_ACCOUNT_EMAIL
+                  key: latest
 
             # ---- Sensitive vars from Secret Manager ----
             # Create once: gcloud secrets create SECRET_NAME --data-file=-

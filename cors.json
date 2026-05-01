@@ -4,7 +4,7 @@
       "http://localhost:5173",
       "http://localhost:5174",
       "http://localhost:3000",
-      "https://sports-teal-two.vercel.app"
+      "https://your-app.vercel.app"
     ],
     "method": ["PUT", "OPTIONS"],
     "responseHeader": ["Content-Type", "Content-Length", "Authorization"],

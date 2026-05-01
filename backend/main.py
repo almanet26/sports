@@ -200,7 +200,6 @@ A platform for automated cricket highlight generation using OCR-based event dete
 # Get allowed origins from environment or use defaults for local dev
 ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "").split(",")
 if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
-    # Default origins for local development + production deployments
     ALLOWED_ORIGINS = [
         "http://localhost:5173",
         "http://localhost:5174",
@@ -208,10 +207,7 @@ if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
         "http://localhost:8000",
-        "https://sports-teal-two.vercel.app",  # Vercel production frontend
-        "https://sports-l8at.vercel.app",        # Fork deployment
     ]
-    # Append additional production frontend URL from env if set
     _frontend = os.getenv("FRONTEND_URL", "").strip()
     if _frontend and _frontend not in ALLOWED_ORIGINS:
         ALLOWED_ORIGINS.append(_frontend)
@@ -282,18 +278,18 @@ def db_health_check():
 
 # Include API Routers 
 from api.routes import (
-    auth, videos, player_videos, jobs, requests, player_stats, 
-    bowling, BOWLING_AVAILABLE, 
-    batting, BATTING_AVAILABLE, 
-    submissions, SUBMISSIONS_AVAILABLE, 
-    storage, GCS_AVAILABLE, 
-    worker, WORKER_AVAILABLE, 
+    auth, videos, jobs, requests, player_stats,
+    bowling, BOWLING_AVAILABLE,
+    batting, BATTING_AVAILABLE,
+    submissions, SUBMISSIONS_AVAILABLE,
+    storage, GCS_AVAILABLE,
+    worker, WORKER_AVAILABLE,
     admin_coaches,
     coach_content, COACH_CONTENT_AVAILABLE,
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE,
     reviews, earnings, notification,
-    match
+    match, profile,
 )
 from api.routes import plan, subscription, sessions
 from api.routes import performance
@@ -308,6 +304,7 @@ except ImportError:
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
+app.include_router(profile.router, prefix="/api/v1", tags=["profile"])
 
 # Match routes
 app.include_router(match.router, prefix="/api/v1", tags=["matches"])
@@ -368,7 +365,6 @@ app.include_router(notification.router, prefix="/api/v1", tags=["notifications"]
 
 # Video management routes
 app.include_router(videos.router, prefix="/api/v1", tags=["videos"])
-app.include_router(player_videos.router, prefix="/api/v1", tags=["player-videos"])
 
 # OCR processing job routes
 app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
