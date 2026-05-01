@@ -706,4 +706,121 @@ export const adminApi = {
     api.get('/admin/audit-log', { params: { page, per_page: perPage } }),
 };
 
-export default api;
+// ── Profile API ───────────────────────────────────────────────────────────────
+export const profileApi = {
+  /** Create / update the player's own profile (identity fields only) */
+  setup: (data: {
+    display_name?: string;
+    city?: string;
+    state?: string;
+    bat_style?: string;
+    bowl_style?: string;
+    age?: number;
+    cricket_role?: 'batsman' | 'bowler' | 'all_rounder' | 'wicket_keeper';
+    experience_level?: 'beginner' | 'intermediate' | 'advanced' | 'professional';
+    preferred_format?: 'T20' | 'ODI' | 'Test' | 'All';
+    profile_image_url?: string;
+  }) => api.post('/profile/setup', data),
+
+  /** Toggle scouting visibility (Platinum players only) */
+  toggleScouting: (visible: boolean) =>
+    api.patch('/profile/scouting', { scouting_visible: visible }),
+
+  /** Fetch the player's own profile (use user_id from auth store) */
+  getPublic: (userId: string) => api.get(`/profile/${userId}/public`),
+};
+
+// ── Scouting API (Academy coaches only) ──────────────────────────────────────
+export interface ScoutingPlayerStats {
+  avg_bat_speed: number | null;
+  peak_bat_speed: number | null;
+  avg_wrist_speed: number | null;
+  avg_release_height: number | null;
+  best_front_knee_angle: number | null;
+  best_shoulder_rotation: number | null;
+  best_elbow_angle: number | null;
+  best_release_consistency: number | null;
+}
+
+export interface ScoutingPlayerSummary {
+  user_id: string;
+  display_name: string | null;
+  city: string | null;
+  state: string | null;
+  cricket_role: string | null;
+  experience_level: string | null;
+  preferred_format: string | null;
+  bat_style: string | null;
+  bowl_style: string | null;
+  age: number | null;
+  profile_image_url: string | null;
+  total_analyses: number;
+  analyses_last_updated: string | null;
+  scouting_visible: boolean;
+  stats: ScoutingPlayerStats;
+}
+
+export interface ScoutingPlayersResponse {
+  players: ScoutingPlayerSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface ScoutingPlayerDetail extends ScoutingPlayerSummary {
+  recent_batting: Array<{
+    id: string;
+    date: string;
+    metrics: Record<string, number | null>;
+  }>;
+  recent_bowling: Array<{
+    id: string;
+    date: string;
+    metrics: Record<string, number | null>;
+  }>;
+  shortlisted: boolean;
+  coach_note: string | null;
+}
+
+export interface ScoutingFilters {
+  page?: number;
+  page_size?: number;
+  city?: string;
+  state?: string;
+  cricket_role?: string;
+  experience_level?: string;
+  preferred_format?: string;
+  min_analyses?: number;
+  bat_style?: string;
+  bowl_style?: string;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+}
+
+export const scoutingApi = {
+  /** List all players (academy coaches see everyone) */
+  listPlayers: (filters?: ScoutingFilters) =>
+    api.get<ScoutingPlayersResponse>('/scouting/players', { params: filters }),
+
+  /** Get a single player's full scouting profile */
+  getPlayer: (userId: string) =>
+    api.get<ScoutingPlayerDetail>(`/scouting/players/${userId}`),
+
+  /** Add player to coach's shortlist */
+  addToShortlist: (playerId: string, note?: string) =>
+    api.post('/scouting/shortlist', { player_id: playerId, note }),
+
+  /** Get the coach's full shortlist */
+  getShortlist: () => api.get('/scouting/shortlist'),
+
+  /** Update the note on a shortlisted player */
+  updateNote: (playerId: string, note: string | null) =>
+    api.patch(`/scouting/shortlist/${playerId}`, { note }),
+
+  /** Remove a player from the shortlist */
+  removeFromShortlist: (playerId: string) =>
+    api.delete(`/scouting/shortlist/${playerId}`),
+};
+
+export default api;

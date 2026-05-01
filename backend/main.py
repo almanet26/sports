@@ -373,11 +373,13 @@ from api.routes.report import router as report_router
 from api.routes.chat import router as chat_router
 from api.routes.benchmarks import router as benchmarks_router
 from api.routes.profile import router as profile_router
+from api.routes.scouting import router as scouting_router
 
 app.include_router(report_router,     prefix="/api/v1", tags=["report"])
 app.include_router(chat_router,       prefix="/api/v1", tags=["chat"])
 app.include_router(benchmarks_router, prefix="/api/v1", tags=["benchmarks"])
 app.include_router(profile_router,    prefix="/api/v1", tags=["profile"])
+app.include_router(scouting_router,   prefix="/api/v1", tags=["scouting"])
 
 # Phase 5 coach-facing features
 from api.routes.annotations import router as annotations_router

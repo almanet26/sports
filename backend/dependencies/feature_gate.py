@@ -46,6 +46,9 @@ ACCOUNT_TYPE_FOR_FEATURE: dict[str, Optional[str]] = {
     "pro_benchmarking":      None,
     "injury_risk_alerts":    None,
     "priority_processing":   None,
+    # Scouting
+    "scouting_visibility":   "PLAYER",  # Only players toggle their own visibility
+    "scouting_access":       "COACH",   # Only coaches browse the directory
 }
 
 # Coach subscription tiers (used for account-type check fallback).

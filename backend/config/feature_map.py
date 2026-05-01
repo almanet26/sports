@@ -29,4 +29,7 @@ FEATURE_MAP: dict[str, str] = {
     "white_label_reports":   "academy",
     "multi_seat_roles":      "academy",
     "recruitment_desk":      "academy",
+    # Scouting
+    "scouting_visibility":   "platinum",  # Players opt in to scouting (Platinum+)
+    "scouting_access":       "academy",   # Coaches browse ALL players (Academy only)
 }

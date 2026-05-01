@@ -30,6 +30,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/coach/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'coach_starter' },
     { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload", minTier: 'coach_starter' },
     { to: "/coach/submissions", icon: "fas fa-inbox", label: "Video Reviews", minTier: 'coach_starter' },
+    { to: "/coach/scouting", icon: "fas fa-search", label: "Scouting", minTier: 'academy' },
     { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/billing", icon: "fas fa-star", label: "Subscription" },

@@ -25,7 +25,9 @@ export type FeatureKey =
   | 'priority_processing'
   | 'white_label_reports'
   | 'multi_seat_roles'
-  | 'recruitment_desk';
+  | 'recruitment_desk'
+  | 'scouting_visibility'
+  | 'scouting_access';
 
 export const FEATURE_MAP: Record<FeatureKey, Tier> = {
   biomechanics_analysis: 'free',
@@ -43,6 +45,8 @@ export const FEATURE_MAP: Record<FeatureKey, Tier> = {
   white_label_reports: 'academy',
   multi_seat_roles: 'academy',
   recruitment_desk: 'academy',
+  scouting_visibility: 'platinum',
+  scouting_access: 'academy',
 };
 
 export type SubscriptionStatus = 'active' | 'inactive' | 'past_due' | 'expired';

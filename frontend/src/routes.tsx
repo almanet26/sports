@@ -45,6 +45,7 @@ import StatsPage from './pages/PlayerStatsPage';
 import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
+import ScoutingPage from './pages/ScoutingPage';
 
 // Auth Initializer (runs once on module load)
 let authInitialized = false;
@@ -217,6 +218,7 @@ export default function AppRouter() {
               <Route path="/coach/player/:id" element={<PlayerPerformance />} />
               <Route path="/coach/submissions" element={<CoachInboxPage />} />
               <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
+              <Route path="/coach/scouting" element={<ScoutingPage />} />
             </Route>
           </Route>
         </Route>
