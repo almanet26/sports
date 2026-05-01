@@ -394,6 +394,7 @@ else:
 # Submissions routes
 if SUBMISSIONS_AVAILABLE and submissions is not None:
     app.include_router(submissions.router, prefix="/api/v1/submissions", tags=["submissions"])
+    app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
     logger.info("B2B2C Submissions pipeline enabled")
 else:
     logger.warning("Submissions pipeline disabled")

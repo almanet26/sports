@@ -1,21 +1,25 @@
 """
 Player Profile & Scouting Visibility.
 
-POST  /profile/setup             create or update own profile (PLAYER only)
-PATCH /profile/scouting          toggle scouting visibility (Platinum+, PLAYER)
-GET   /profile/{user_id}/public  read public profile (only if scouting_visible=true)
-
-Performance stats (avg_bat_speed etc.) are written by the biomech worker and
-are NOT accepted as user input through these endpoints.
+POST  /profile/setup              create or update own profile (PLAYER only)
+PATCH /profile/scouting           toggle scouting visibility (Platinum+, PLAYER)
+GET   /profile/{user_id}/public   read public profile (only if scouting_visible=true)
+POST  /profile/image              upload/replace profile image (any user)
+POST  /profile/coach-complete     coach completes profile + uploads verification doc
+GET   /profile/coaches/public     list all verified coaches (discovery)
 """
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import secrets
 from datetime import datetime, timezone
-from typing import List, Optional, Literal
+from pathlib import Path
+from typing import List, Literal, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -111,37 +115,16 @@ def setup_profile(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> ProfileResponse:
-    """
-    Create or update the authenticated user's player profile.
-    Only identity fields are accepted — performance stats are populated by the worker.
-    """
     profile = db.query(PlayerProfile).filter(PlayerProfile.user_id == current_user.id).first()
-
     if profile is None:
         profile = PlayerProfile(user_id=current_user.id)
         db.add(profile)
 
-    # Apply player-editable fields (only those explicitly provided)
-    if body.display_name is not None:
-        profile.display_name = body.display_name
-    if body.city is not None:
-        profile.city = body.city
-    if body.state is not None:
-        profile.state = body.state
-    if body.bat_style is not None:
-        profile.bat_style = body.bat_style
-    if body.bowl_style is not None:
-        profile.bowl_style = body.bowl_style
-    if body.age is not None:
-        profile.age = body.age
-    if body.cricket_role is not None:
-        profile.cricket_role = body.cricket_role
-    if body.experience_level is not None:
-        profile.experience_level = body.experience_level
-    if body.preferred_format is not None:
-        profile.preferred_format = body.preferred_format
-    if body.profile_image_url is not None:
-        profile.profile_image_url = body.profile_image_url
+    for field in ("display_name", "city", "state", "bat_style", "bowl_style", "age",
+                  "cricket_role", "experience_level", "preferred_format", "profile_image_url"):
+        val = getattr(body, field)
+        if val is not None:
+            setattr(profile, field, val)
 
     db.commit()
     db.refresh(profile)
@@ -154,49 +137,168 @@ def toggle_scouting(
     current_user: User = Depends(require_feature("scouting_visibility")),
     db: Session = Depends(get_db),
 ):
-    """
-    Enable or disable scouting visibility for the current player.
-    Requires Platinum tier (PLAYER account only).
-    When enabling: profile must have display_name and cricket_role filled in.
-    """
     profile = db.query(PlayerProfile).filter(PlayerProfile.user_id == current_user.id).first()
-
     if profile is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Profile not found. Call POST /profile/setup first.",
-        )
+        raise HTTPException(status_code=404, detail="Profile not found. Call POST /profile/setup first.")
 
     if body.scouting_visible:
-        # Completeness check — only when enabling visibility
         missing: List[str] = []
         if not profile.display_name:
             missing.append("display_name")
         if not profile.cricket_role:
             missing.append("cricket_role")
-
         if missing:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "error": "profile_incomplete",
-                    "missing": missing,
-                    "message": "Complete your profile before enabling scouting visibility.",
-                },
-            )
+            raise HTTPException(status_code=400, detail={
+                "error": "profile_incomplete",
+                "missing": missing,
+                "message": "Complete your profile before enabling scouting visibility.",
+            })
 
     profile.scouting_visible = body.scouting_visible
     db.commit()
     db.refresh(profile)
-
     return {
         "scouting_visible": profile.scouting_visible,
         "message": (
             "Your profile is now visible to coaches in the scouting directory."
-            if profile.scouting_visible
-            else "Your profile is now private."
+            if profile.scouting_visible else "Your profile is now private."
         ),
     }
+
+
+@router.get("/coaches/public")
+def get_public_coaches(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Return all verified coaches for player discovery."""
+    coaches = (
+        db.query(User)
+        .filter(User.role == "COACH", User.coach_status == "verified", User.is_active == True)
+        .all()
+    )
+    return {
+        "coaches": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "profile_bio": c.profile_bio,
+                "specialization": c.specialization,
+                "intro_video_url": c.intro_video_url,
+                "profile_image_url": c.profile_image_url,
+                "coach_category": c.coach_category,
+                "years_of_experience": c.years_of_experience,
+            }
+            for c in coaches
+        ]
+    }
+
+
+@router.post("/image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace profile image for any user — GCS or local fallback."""
+    ALLOWED_IMAGE = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE:
+        raise HTTPException(status_code=400, detail="Invalid image format. Allowed: jpg, jpeg, png, webp, gif")
+
+    MAX_SIZE = 5 * 1024 * 1024
+    try:
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(status_code=413, detail="File too large. Max 5MB.")
+
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+        unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+        if gcs_bucket:
+            import google.cloud.storage as gcs_lib
+            blob = gcs_lib.Client().bucket(gcs_bucket).blob(f"profile_images/{unique_filename}")
+            blob.upload_from_string(content, content_type=file.content_type or "image/jpeg")
+            profile_image_url = f"https://storage.googleapis.com/{gcs_bucket}/profile_images/{unique_filename}"
+        else:
+            storage_dir = Path("storage/profile_images")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            (storage_dir / unique_filename).write_bytes(content)
+            profile_image_url = f"/static/profile_images/{unique_filename}"
+
+        current_user.profile_image_url = profile_image_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"Profile image uploaded for user: {current_user.email}")
+        return {"profile_image_url": profile_image_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Profile image upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
+
+
+@router.post("/coach-complete")
+async def complete_coach_profile(
+    phone: str = Form(None),
+    team: str = Form(None),
+    profile_bio: str = Form(None),
+    specialization: str = Form(None),
+    coach_category: str = Form(None),
+    coach_document: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Coach completes their profile and uploads verification document after first login."""
+    if current_user.role != "COACH":
+        raise HTTPException(status_code=403, detail="Only coaches can use this endpoint")
+    if current_user.coach_status != "incomplete":
+        raise HTTPException(status_code=400, detail="Profile already submitted for review")
+
+    ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+    file_extension = os.path.splitext(coach_document.filename)[1].lower()
+    if file_extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+
+    MAX_FILE_SIZE = 10 * 1024 * 1024
+    try:
+        content = await coach_document.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+        storage_dir = Path("storage/coach_documents")
+        storage_dir.mkdir(parents=True, exist_ok=True)
+        unique_filename = f"{secrets.token_urlsafe(16)}{file_extension}"
+        (storage_dir / unique_filename).write_bytes(content)
+        coach_document_url = f"coach_documents/{unique_filename}"
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Coach document upload failed: {e}")
+        raise HTTPException(status_code=500, detail="Failed to upload document. Please try again.")
+    finally:
+        await coach_document.close()
+
+    if phone:
+        current_user.phone = phone
+    if team:
+        current_user.team = team
+    if profile_bio:
+        current_user.profile_bio = profile_bio
+    if specialization:
+        try:
+            current_user.specialization = json.loads(specialization)
+        except Exception:
+            current_user.specialization = [specialization]
+    if coach_category:
+        current_user.coach_category = coach_category
+
+    current_user.coach_document_url = coach_document_url
+    current_user.coach_status = "pending"
+    db.commit()
+    db.refresh(current_user)
+    logger.info(f"Coach profile completed: {current_user.email}, status -> pending")
+    return current_user
 
 
 @router.get("/{user_id}/public", response_model=PublicProfileResponse)
@@ -204,36 +306,22 @@ def get_public_profile(
     user_id: str,
     db: Session = Depends(get_db),
 ) -> PublicProfileResponse:
-    """
-    Return a player's public profile.
-    Returns 404 if the profile doesn't exist or scouting_visible is false.
-    Callers cannot distinguish the two cases (privacy-preserving).
-    """
     profile = (
         db.query(PlayerProfile)
-        .filter(
-            PlayerProfile.user_id == user_id,
-            PlayerProfile.scouting_visible.is_(True),
-        )
+        .filter(PlayerProfile.user_id == user_id, PlayerProfile.scouting_visible.is_(True))
         .first()
     )
     if profile is None:
         raise HTTPException(status_code=404, detail="Profile not found")
-
     return _to_public_response(profile)
 
 
 # ---------------------------------------------------------------------------
-# Worker helper — called after each batting/bowling analysis completes
+# Worker helper
 # ---------------------------------------------------------------------------
 
 def update_player_scouting_stats(user_id: str, db: Session) -> None:
-    """
-    Aggregate stats from batting_analyses and bowling_analyses and upsert
-    them into player_profiles.  Called by the Cloud Tasks worker callback.
-    """
     try:
-        # ── Batting aggregates ───────────────────────────────────────────────
         bat_row = db.query(
             func.avg(BattingAnalysis.avg_front_knee_angle).label("avg_knee"),
             func.max(BattingAnalysis.avg_front_knee_angle).label("best_knee"),
@@ -243,7 +331,6 @@ def update_player_scouting_stats(user_id: str, db: Session) -> None:
             func.count(BattingAnalysis.id).label("bat_count"),
         ).filter(BattingAnalysis.player_id == user_id).one()
 
-        # ── Bowling aggregates ───────────────────────────────────────────────
         bowl_row = db.query(
             func.avg(BowlingAnalysis.avg_elbow_angle).label("avg_elbow"),
             func.max(BowlingAnalysis.avg_elbow_angle).label("best_elbow"),
@@ -255,7 +342,6 @@ def update_player_scouting_stats(user_id: str, db: Session) -> None:
 
         total_analyses = (bat_row.bat_count or 0) + (bowl_row.bowl_count or 0)
 
-        # ── Upsert player_profiles ───────────────────────────────────────────
         profile = db.query(PlayerProfile).filter(PlayerProfile.user_id == user_id).first()
         if profile is None:
             profile = PlayerProfile(user_id=user_id)
@@ -263,7 +349,6 @@ def update_player_scouting_stats(user_id: str, db: Session) -> None:
 
         profile.best_front_knee_angle = bat_row.best_knee
         profile.best_shoulder_rotation = bat_row.best_shoulder
-        # avg_wrist_speed maps to backlift proxy until dedicated field exists
         profile.avg_wrist_speed = bat_row.avg_backlift
         profile.best_elbow_angle = bowl_row.best_elbow
         profile.best_release_consistency = bowl_row.best_consistency
@@ -273,7 +358,6 @@ def update_player_scouting_stats(user_id: str, db: Session) -> None:
 
         db.commit()
         logger.info("Scouting stats updated for player %s (total_analyses=%d)", user_id, total_analyses)
-
     except Exception as exc:
         db.rollback()
         logger.warning("Failed to update scouting stats for player %s: %s", user_id, exc)

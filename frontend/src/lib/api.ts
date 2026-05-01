@@ -764,20 +764,19 @@ export const notificationsApi = {
 
 // Admin API
 export const adminApi = {
-  // Get admin stats
   getStats: () => api.get('/admin/stats'),
-  
-  // Get pending coach verifications
-  getPendingCoaches: (limit = 5) => 
+  getPendingCoaches: (limit = 5) =>
     api.get('/admin/coaches/pending', { params: { limit } }),
-  
-  // Verify coach (approve/reject)
-  verifyCoach: (coachId: string, action: 'verified' | 'rejected') => 
+  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
     api.patch(`/admin/coaches/${coachId}/verify`, null, { params: { action } }),
-  
-  // Get activity feed
-  getActivityFeed: (limit = 20) => 
+  getActivityFeed: (limit = 20) =>
     api.get('/admin/activity', { params: { limit } }),
+  getAuditLog: (page = 1, perPage = 50) =>
+    api.get('/admin/audit-log', { params: { page, per_page: perPage } }),
+  overrideSubscription: (userId: string, data: { plan_key: string; role: string; days: number }) =>
+    api.patch(`/admin/users/${userId}/subscription`, data),
+  impersonateUser: (userId: string) =>
+    api.post(`/admin/users/${userId}/impersonate`),
 };
 
 // ============ Coach Dashboard APIs ============

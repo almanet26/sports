@@ -42,7 +42,7 @@ export default function CoachSettingsPage() {
   }`;
 
   useEffect(() => {
-    api.get('/auth/notifications')
+    api.get('/notifications/preferences')
       .then(r => setNotifs({ ...DEFAULT_NOTIFS, ...r.data }))
       .catch(console.error)
       .finally(() => setNotifsLoading(false));
@@ -76,7 +76,7 @@ export default function CoachSettingsPage() {
     setSavingNotifs(true);
     setNotifsMsg(null);
     try {
-      await api.put('/auth/notifications', notifs);
+      await api.put('/notifications/preferences', notifs);
       setNotifsMsg({ type: 'success', text: 'Preferences saved.' });
       setTimeout(() => setNotifsMsg(null), 3000);
     } catch {

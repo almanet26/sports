@@ -31,7 +31,7 @@ export default function PlayerSettingsPage() {
   useEffect(() => {
     const fetchSettings = async () => {
       try {
-        const response = await api.get('/auth/notifications');
+        const response = await api.get('/notifications/preferences');
         setNotifs(response.data);
       } catch (err) {
         console.error('Failed to fetch notification preferences:', err);
@@ -47,7 +47,7 @@ export default function PlayerSettingsPage() {
     setNotifs(newNotifs);
     setSavingNotifs(true);
     try {
-      await api.put('/auth/notifications', newNotifs);
+      await api.put('/notifications/preferences', newNotifs);
     } catch (err: any) {
       console.error('Failed to update notification preferences:', err);
       setNotifs(notifs);

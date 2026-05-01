@@ -24,16 +24,20 @@ import tempfile
 import uuid
 from pathlib import Path
 from datetime import datetime
+from uuid import UUID
 
 import cv2
 import numpy as np
 import pandas as pd
 import google.cloud.storage as gcs
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.config import get_db
+from database.models.player_submission import PlayerSubmission
 from database.models.user import User
+from database.models.subscription import Subscription
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.video import Video
 from database.crud.submission import (
@@ -54,6 +58,8 @@ from schemas.submission import (
     CoachListItem,
     CoachListResponse,
 )
+from dependencies.feature_gate import require_feature
+from dependencies.quota_gate import quota_check, increment_usage_atomic
 from utils.auth import get_current_user
 
 # Engine imports
@@ -90,6 +96,9 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
+public_router = APIRouter(tags=["submissions-public"])
+
+_COACH_SUBMISSION_TIERS = ("coach_starter", "coach_pro", "academy")
 
 #  Storage dirs — use /tmp/ on Cloud Run (ephemeral), local storage/ for dev
 _USE_TMP = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
@@ -453,16 +462,48 @@ def _post_process_report_with_video_links(report_text: str, discipline: str) -> 
         return report_text, []
 
 
-#  SHARED: List Coaches
+#  SHARED: List Coaches (auth — filters by active subscription tier)
 @router.get("/coaches", response_model=CoachListResponse)
 def list_coaches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return all users with role=COACH (for player's upload dropdown)."""
+    """Return coaches who can actually receive submissions (active paid tier)."""
     coaches = (
         db.query(User)
-        .filter(User.role == "COACH", User.is_active == True, User.deleted_at == None)
+        .join(Subscription, Subscription.user_id == User.id)
+        .filter(
+            User.role == "COACH",
+            User.is_active == True,
+            User.deleted_at == None,
+            Subscription.status == "active",
+            Subscription.role.in_(_COACH_SUBMISSION_TIERS),
+        )
+        .distinct(User.id)
+        .all()
+    )
+    return CoachListResponse(
+        coaches=[
+            CoachListItem(id=c.id, name=c.name, email=c.email, team=c.team)
+            for c in coaches
+        ]
+    )
+
+
+@public_router.get("/coaches", response_model=CoachListResponse)
+def list_coaches_public(db: Session = Depends(get_db)):
+    """Public coach list — no auth required."""
+    coaches = (
+        db.query(User)
+        .join(Subscription, Subscription.user_id == User.id)
+        .filter(
+            User.role == "COACH",
+            User.is_active == True,
+            User.deleted_at == None,
+            Subscription.status == "active",
+            Subscription.role.in_(_COACH_SUBMISSION_TIERS),
+        )
+        .distinct(User.id)
         .all()
     )
     return CoachListResponse(
@@ -974,6 +1015,95 @@ def coach_athletes(
     return {"athletes": athletes, "total": len(athletes)}
 
 
+class PlayerSubmissionCreate(BaseModel):
+    coach_id: str
+    note: str | None = None
+    job_id: str | None = None
+
+
+class PlayerSubmissionItem(BaseModel):
+    id: str
+    coach_name: str | None = None
+    job_id: str | None = None
+    status: str
+    note: str | None = None
+    created_at: str
+    reviewed_at: str | None = None
+
+
+class PlayerSubmissionListResponse(BaseModel):
+    submissions: list[PlayerSubmissionItem]
+    total: int
+
+
+@public_router.post("/submissions", status_code=201, response_model=PlayerSubmissionItem)
+def create_player_submission(
+    body: PlayerSubmissionCreate,
+    _quota: tuple = Depends(quota_check("player_submission")),
+    current_user: User = Depends(require_feature("player_submission")),
+    db: Session = Depends(get_db),
+) -> PlayerSubmissionItem:
+    coach = db.query(User).filter(User.id == body.coach_id, User.role == "COACH").first()
+    if not coach:
+        raise HTTPException(status_code=404, detail="Coach not found")
+
+    submission = PlayerSubmission(
+        player_id=current_user.id,
+        coach_id=body.coach_id,
+        job_id=body.job_id or None,
+        note=body.note,
+        status="pending",
+    )
+    db.add(submission)
+    db.flush()
+
+    ok = increment_usage_atomic(current_user.id, "submission_count", "max_submissions_per_month", 1, db)
+    if not ok:
+        db.rollback()
+        raise HTTPException(status_code=429, detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached."})
+
+    db.commit()
+    db.refresh(submission)
+
+    return PlayerSubmissionItem(
+        id=submission.id,
+        coach_name=coach.name,
+        job_id=submission.job_id,
+        status=submission.status,
+        note=submission.note,
+        created_at=submission.created_at.isoformat() if submission.created_at else "",
+        reviewed_at=submission.reviewed_at.isoformat() if submission.reviewed_at else None,
+    )
+
+
+@public_router.get("/submissions/my", response_model=PlayerSubmissionListResponse)
+def my_player_submissions(
+    current_user: User = Depends(require_feature("player_submission")),
+    db: Session = Depends(get_db),
+) -> PlayerSubmissionListResponse:
+    rows = (
+        db.query(PlayerSubmission)
+        .filter(PlayerSubmission.player_id == current_user.id)
+        .order_by(PlayerSubmission.created_at.desc())
+        .all()
+    )
+    return PlayerSubmissionListResponse(
+        submissions=[
+            PlayerSubmissionItem(
+                id=r.id,
+                coach_name=r.coach.name if r.coach else None,
+                job_id=r.job_id,
+                status=r.status,
+                note=r.note,
+                created_at=r.created_at.isoformat() if r.created_at else "",
+                reviewed_at=r.reviewed_at.isoformat() if r.reviewed_at else None,
+            )
+            for r in rows
+        ],
+        total=len(rows),
+    )
+
+
 #  COACH: Inbox
 @router.get("/coach/me", response_model=SubmissionListResponse)
 def coach_inbox(
@@ -1171,7 +1301,7 @@ def coach_publish(
 #  DETAIL: Get single submission
 @router.get("/{submission_id}", response_model=SubmissionDetail)
 def get_submission(
-    submission_id: str,
+    submission_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

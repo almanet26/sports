@@ -53,7 +53,7 @@ export default function CoachProfileSetupPage() {
       if (form.coach_category) fd.append('coach_category', form.coach_category);
       fd.append('specialization', JSON.stringify(form.specialization));
 
-      await api.post('/auth/coach-profile', fd, {
+      await api.post('/profile/coach-complete', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 

@@ -678,33 +678,27 @@ def get_video(
 @router.get("/{video_id}/stream")
 def stream_video(
     video_id: str,
+    current_user: User = Depends(get_optional_user),
 ):
     """
     Stream the original video file.
-    
-    **Access Control:**
-    - Public videos: accessible to all (no auth required)
+
+    - Public videos: no auth required
     - Private videos: owner or ADMIN only
-    
-    Note: Database session is managed manually to prevent connection
-    timeout during long video streams.
     """
-    # Manually manage DB session to close before streaming
     from database.config import SessionLocal
     db = SessionLocal()
-    
     try:
         video = db.query(Video).filter(Video.id == video_id, Video.deleted_at.is_(None)).first()
-        
         if not video:
             raise HTTPException(status_code=404, detail="Video not found")
-        
-        # For private videos, we'd need auth - but for simplicity, 
-        # only serve public videos without auth on this endpoint
+
         if video.visibility == VideoVisibility.PRIVATE.value:
-            raise HTTPException(status_code=401, detail="Authentication required for private videos")
-        
-        # Extract needed data before closing session
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Authentication required for private videos")
+            if str(video.uploaded_by) != str(current_user.id) and current_user.role != "ADMIN":
+                raise HTTPException(status_code=403, detail="Access denied")
+
         file_path_str = video.file_path
         video_title = video.title
     finally:

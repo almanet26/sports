@@ -106,3 +106,23 @@ def delete_notification(
     db.delete(notif)
     db.commit()
     return {"ok": True}
+
+
+@router.get("/preferences")
+def get_notification_preferences(
+    current_user: User = Depends(get_current_user),
+):
+    default = {"email_submissions": True, "email_published": True, "email_messages": False, "push_all": True}
+    return current_user.notification_preferences or default
+
+
+@router.put("/preferences")
+def update_notification_preferences(
+    data: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    current_user.notification_preferences = data
+    db.commit()
+    db.refresh(current_user)
+    return current_user.notification_preferences

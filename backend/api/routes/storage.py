@@ -683,15 +683,6 @@ def start_processing(
     if not (is_owner or is_admin):
         raise HTTPException(status_code=403, detail="Not authorized to process this submission.")
 
-    # Auto-confirm UPLOADING submissions that have their file on disk
-    if sub.status == SubmissionStatus.UPLOADING:
-        try:
-            if _resolve_local_upload_path(sub.video_url).exists():
-                sub.status = SubmissionStatus.PENDING
-                db.commit()
-        except HTTPException:
-            pass
-
     if sub.status not in (SubmissionStatus.PENDING, SubmissionStatus.ACCEPTED):
         raise HTTPException(
             status_code=409,

@@ -8,6 +8,29 @@ from pydantic import BaseModel, Field, validator
 from datetime import datetime
 import os
 import uuid
+import shutil
+import tempfile
+from google.cloud import storage as gcs
+
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
+
+
+def _upload_to_gcs(file: UploadFile, blob_path: str) -> tuple[str, int]:
+    """Stream UploadFile to GCS without loading it fully into memory.
+    Returns (public_url, file_size)."""
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+    try:
+        size = os.path.getsize(tmp_path)
+        client = gcs.Client()
+        blob = client.bucket(GCS_BUCKET_NAME).blob(blob_path)
+        blob.content_type = file.content_type
+        blob.upload_from_filename(tmp_path)
+        url = f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/{blob_path}"
+        return url, size
+    finally:
+        os.unlink(tmp_path)
 
 router = APIRouter()
 
@@ -70,7 +93,7 @@ class DeleteResponse(BaseModel):
 
 
 @router.post("/content", response_model=ContentResponse, status_code=status.HTTP_201_CREATED)
-async def create_content(
+def create_content(
     title: str = Form(..., min_length=1, max_length=255),
     description: Optional[str] = Form(None, max_length=1000),
     content_type: ContentType = Form(...),
@@ -100,35 +123,16 @@ async def create_content(
     mime_type = None
     
     if file and content_type in [ContentType.VIDEO, ContentType.IMAGE]:
-        storage_dir = f"storage/coach_content/{current_user.id}"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        file_extension = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(storage_dir, unique_filename)
-        
-        content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        
-        file_url = f"/static/coach_content/{current_user.id}/{unique_filename}"
+        ext = os.path.splitext(file.filename)[1]
+        blob_path = f"coach_content/{current_user.id}/{uuid.uuid4()}{ext}"
+        file_url, file_size = _upload_to_gcs(file, blob_path)
         file_name = file.filename
-        file_size = len(content)
         mime_type = file.content_type
-    
+
     if thumbnail:
-        storage_dir = f"storage/coach_content/{current_user.id}/thumbnails"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        thumb_extension = os.path.splitext(thumbnail.filename)[1]
-        unique_thumb = f"{uuid.uuid4()}{thumb_extension}"
-        thumb_path = os.path.join(storage_dir, unique_thumb)
-        
-        with open(thumb_path, "wb") as buffer:
-            content = await thumbnail.read()
-            buffer.write(content)
-        
-        thumbnail_url = f"/static/coach_content/{current_user.id}/thumbnails/{unique_thumb}"
+        ext = os.path.splitext(thumbnail.filename)[1]
+        blob_path = f"coach_content/{current_user.id}/thumbnails/{uuid.uuid4()}{ext}"
+        thumbnail_url, _ = _upload_to_gcs(thumbnail, blob_path)
     
     # Create content record
     content_record = CoachContent(
@@ -234,7 +238,7 @@ def get_content(
 
 
 @router.put("/content/{content_id}", response_model=ContentResponse)
-async def update_content(
+def update_content(
     content_id: str,
     title: Optional[str] = Form(None),
     description: Optional[str] = Form(None),
@@ -276,35 +280,16 @@ async def update_content(
     
     # Handle file updates
     if file:
-        storage_dir = f"storage/coach_content/{current_user.id}"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        file_extension = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(storage_dir, unique_filename)
-        
-        file_content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(file_content)
-        
-        content.file_url = f"/static/coach_content/{current_user.id}/{unique_filename}"
+        ext = os.path.splitext(file.filename)[1]
+        blob_path = f"coach_content/{current_user.id}/{uuid.uuid4()}{ext}"
+        content.file_url, content.file_size = _upload_to_gcs(file, blob_path)
         content.file_name = file.filename
-        content.file_size = len(file_content)
         content.mime_type = file.content_type
-    
+
     if thumbnail:
-        storage_dir = f"storage/coach_content/{current_user.id}/thumbnails"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        thumb_extension = os.path.splitext(thumbnail.filename)[1]
-        unique_thumb = f"{uuid.uuid4()}{thumb_extension}"
-        thumb_path = os.path.join(storage_dir, unique_thumb)
-        
-        with open(thumb_path, "wb") as buffer:
-            thumb_content = await thumbnail.read()
-            buffer.write(thumb_content)
-        
-        content.thumbnail_url = f"/static/coach_content/{current_user.id}/thumbnails/{unique_thumb}"
+        ext = os.path.splitext(thumbnail.filename)[1]
+        blob_path = f"coach_content/{current_user.id}/thumbnails/{uuid.uuid4()}{ext}"
+        content.thumbnail_url, _ = _upload_to_gcs(thumbnail, blob_path)
     
     content.updated_at = datetime.utcnow()
     db.commit()

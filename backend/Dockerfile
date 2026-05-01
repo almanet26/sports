@@ -50,10 +50,10 @@ ENV PORT=8080
 # Cloud Run always sends traffic to $PORT (default 8080)
 EXPOSE 8080
 
-# --workers 1 : Render free tier only has 512MB RAM — MediaPipe alone uses ~400MB
+# --workers 2 : Cloud Run instance has 4GB RAM — 2 workers for concurrency
 CMD exec gunicorn main:app \
     --bind 0.0.0.0:$PORT \
-    --workers 1 \
+    --workers 2 \
     --worker-class uvicorn.workers.UvicornWorker \
     --timeout 3600 \
     --graceful-timeout 30 \

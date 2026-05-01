@@ -5,14 +5,16 @@ Admin API routes for user management.
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
-from typing import Optional, List
-from datetime import datetime
+from typing import Optional, List, Any
+from datetime import datetime, timezone
 import logging
 import uuid
 
 from database.config import get_db
 from database.models.user import User
-from utils.auth import get_current_user
+from database.models.subscription import Subscription
+from database.models.admin_audit_log import AdminAuditLog
+from utils.auth import get_current_user, create_access_token
 from pydantic import BaseModel, ConfigDict
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -67,6 +69,34 @@ class UserListPageResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
+
+
+class SubscriptionOverrideRequest(BaseModel):
+    plan_key: str
+    role: str
+    days: int = 365
+
+
+class AuditLogEntry(BaseModel):
+    id: str
+    admin_id: Optional[str] = None
+    admin_email: str
+    action: str
+    target_type: str
+    target_id: Optional[str] = None
+    before_value: Optional[Any] = None
+    after_value: Optional[Any] = None
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AuditLogPageResponse(BaseModel):
+    entries: List[AuditLogEntry]
+    total: int
+    page: int
+    per_page: int
+    total_pages: int
 
 
 # ── Dependency ────────────────────────────────────────────────────────────────
@@ -279,6 +309,26 @@ def get_admin_stats(
     gold_users = db.query(func.count(User.id)).filter(User.subscription_plan == 'GOLD').scalar()
     monthly_revenue = (silver_users * 29) + (gold_users * 99)
 
+    # Extended platform stats for dashboard health panel
+    now = datetime.now(timezone.utc)
+    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    new_this_month = db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar()
+
+    active_subs = db.query(func.count(Subscription.id)).filter(
+        Subscription.status == 'active', Subscription.expires_at > now
+    ).scalar()
+    expired_subs = db.query(func.count(Subscription.id)).filter(
+        Subscription.status == 'active', Subscription.expires_at <= now
+    ).scalar()
+    past_due_subs = db.query(func.count(Subscription.id)).filter(
+        Subscription.status == 'past_due'
+    ).scalar()
+
+    by_plan_rows = db.query(Subscription.plan_key, func.count(Subscription.id)).filter(
+        Subscription.status == 'active', Subscription.expires_at > now
+    ).group_by(Subscription.plan_key).all()
+    by_plan = {row[0]: row[1] for row in by_plan_rows}
+
     return {
         "total_users": total_users,
         "total_players": total_players,
@@ -289,6 +339,26 @@ def get_admin_stats(
         "pending_coaches": pending_coaches,
         "subscription_breakdown": {"basic": basic_users, "silver": silver_users, "gold": gold_users},
         "revenue": {"monthly": monthly_revenue, "yearly": monthly_revenue * 12},
+        # Extended fields for platform health panel
+        "users": {
+            "total": total_users,
+            "players": total_players,
+            "coaches": total_coaches,
+            "new_this_month": new_this_month,
+        },
+        "subscriptions": {
+            "active": active_subs,
+            "expired": expired_subs,
+            "past_due": past_due_subs,
+            "by_plan": by_plan,
+        },
+        "usage": {
+            "biomech_jobs_this_month": 0,
+            "ocr_jobs_this_month": 0,
+            "total_videos_stored": 0,
+            "pdf_reports_generated": 0,
+        },
+        "revenue": {"total_payments_captured": 0, "this_month": monthly_revenue, "last_month": 0},
     }
 
 
@@ -358,3 +428,115 @@ def verify_coach(
     db.refresh(coach)
     logger.info(f"Coach {coach.email} {action} by admin {current_user.email}")
     return UserDetailResponse.model_validate(coach)
+
+
+@router.patch("/users/{user_id}/subscription")
+def override_subscription(
+    user_id: str,
+    data: SubscriptionOverrideRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    now = datetime.now(timezone.utc)
+    before = {"plan_key": user.subscription_plan, "role": user.role}
+
+    # Expire any existing active subscription
+    db.query(Subscription).filter(
+        Subscription.user_id == user_id, Subscription.status == 'active'
+    ).update({"status": "inactive"})
+
+    new_sub = Subscription(
+        user_id=user_id,
+        plan_key=data.plan_key,
+        role=data.role,
+        status="active",
+        started_at=now,
+        expires_at=now.replace(year=now.year + 1) if data.days >= 365 else now,
+    )
+    # Use timedelta for days
+    from datetime import timedelta
+    new_sub.expires_at = now + timedelta(days=data.days)
+    db.add(new_sub)
+
+    user.subscription_plan = data.plan_key
+
+    audit = AdminAuditLog(
+        admin_id=current_user.id,
+        action="override_subscription",
+        target_type="user_subscription",
+        target_id=user_id,
+        before_value=before,
+        after_value={"plan_key": data.plan_key, "role": data.role, "days": data.days},
+    )
+    db.add(audit)
+    db.commit()
+    logger.info(f"Subscription overridden for {user.email} to {data.plan_key} by {current_user.email}")
+    return {"ok": True, "plan_key": data.plan_key, "expires_at": new_sub.expires_at.isoformat()}
+
+
+@router.post("/users/{user_id}/impersonate")
+def impersonate_user(
+    user_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    if user_id == current_user.id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot impersonate yourself")
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    token = create_access_token({"sub": target.email, "role": target.role, "impersonated_by": current_user.id})
+
+    audit = AdminAuditLog(
+        admin_id=current_user.id,
+        action="impersonate",
+        target_type="impersonation",
+        target_id=user_id,
+        before_value=None,
+        after_value={"target_email": target.email, "target_role": target.role},
+    )
+    db.add(audit)
+    db.commit()
+    logger.info(f"Admin {current_user.email} impersonating {target.email}")
+    return {"access_token": token, "token_type": "bearer", "user": UserDetailResponse.model_validate(target)}
+
+
+@router.get("/audit-log", response_model=AuditLogPageResponse)
+def get_audit_log(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=100),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    query = db.query(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())
+    total = query.count()
+    entries = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    result = []
+    for e in entries:
+        admin_email = e.admin.email if e.admin else "unknown"
+        result.append(AuditLogEntry(
+            id=e.id,
+            admin_id=e.admin_id,
+            admin_email=admin_email,
+            action=e.action,
+            target_type=e.target_type,
+            target_id=e.target_id,
+            before_value=e.before_value,
+            after_value=e.after_value,
+            created_at=e.created_at,
+        ))
+
+    return AuditLogPageResponse(
+        entries=result,
+        total=total,
+        page=page,
+        per_page=per_page,
+        total_pages=(total + per_page - 1) // per_page,
+    )

@@ -24,7 +24,6 @@ class User(Base):
     gender = Column(String, nullable=True)
     jersey_number = Column(Integer, nullable=True)
     team = Column(String, nullable=True)
-    stripe_customer_id = Column(String, nullable=True)
     
     # Coach branding fields
     certifications = Column(JSON, nullable=True)  # [{name, issuer, year, certificate_url}]
@@ -70,12 +69,26 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Relationships (commented out until other models are created)
-    # videos = relationship("Video", back_populates="uploader")
-    # clips = relationship("Clip", back_populates="user")
-    # player_connections = relationship("Connection", foreign_keys="Connection.player_id", back_populates="player")
-    # coach_connections = relationship("Connection", foreign_keys="Connection.coach_id", back_populates="coach")
-    coach_contents = relationship("CoachContent", back_populates="coach")
+    # ── Relationships ─────────────────────────────────────────────────────────
+    # Auth
+    sessions = relationship("UserSession", cascade="all, delete-orphan", foreign_keys="UserSession.user_id")
+
+    # Profile
+    player_profile = relationship("PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+
+    # Subscriptions & usage
+    subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    monthly_usages = relationship("MonthlyUsage", back_populates="user", cascade="all, delete-orphan")
+
+    # Notifications
+    notifications = relationship("Notification", backref="user", cascade="all, delete-orphan", foreign_keys="Notification.user_id")
+    password_reset_requests = relationship("PasswordResetRequest", backref="user", cascade="all, delete-orphan", foreign_keys="PasswordResetRequest.user_id")
+
+    # Coach
+    coach_contents = relationship("CoachContent", back_populates="coach", cascade="all, delete-orphan")
+    coach_sessions = relationship("CoachTrainingSession", cascade="all, delete-orphan", foreign_keys="CoachTrainingSession.coach_id")
+    coach_availability = relationship("CoachAvailability", cascade="all, delete-orphan", foreign_keys="CoachAvailability.coach_id")
+    coach_training_plans = relationship("CoachTrainingPlan", cascade="all, delete-orphan", foreign_keys="CoachTrainingPlan.coach_id")
 
     # Password management methods
     def set_password(self, password: str):
