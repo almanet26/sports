@@ -16,8 +16,15 @@ export default function PlayerStatsPage() {
 
   useEffect(() => {
     api
-      .get("/api/player/stats")
+      .get("/player-stats")
       .then((res) => setStats(res.data))
+      .catch((err) => {
+        if (err?.response?.status === 404) {
+          setStats(null);
+          return;
+        }
+        throw err;
+      })
       .finally(() => setLoading(false));
   }, []);
 

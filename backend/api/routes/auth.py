@@ -1,18 +1,19 @@
-"""
-Authentication API routes.
-"""
+"""Authentication API routes."""
 
-from datetime import timedelta, datetime
+from datetime import timedelta, datetime, timezone
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
-from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import logging
+import secrets
 import os
+from pathlib import Path
 
 from database.config import get_db
+from database.models.subscription import Subscription
 from database.models.user import User
 from database.models.session import UserSession
-from schemas.auth import UserCreate, UserLogin, Token, UserResponse, TokenResponse, ProfileUpdateRequest, IntroVideoResponse
+from schemas.auth import UserCreate, UserLogin, Token, UserResponse, TokenResponse, ProfileUpdateRequest
 from utils.auth import (
     create_refresh_token,
     get_password_hash,
@@ -22,141 +23,114 @@ from utils.auth import (
 )
 from utils.config import settings
 from utils.gcs_upload import upload_file_to_gcs, LIMIT_PROFILE_IMAGE, LIMIT_VIDEO, LIMIT_DOCUMENT
+from schemas.auth import IntroVideoResponse
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
 
+_FREE_EXPIRES_DAYS = 36500  # ~100 years — effectively never for the free tier
 
-@router.post(
-    "/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED
-)
+
+def _seed_subscription(user_id: str, account_type: str, db: Session) -> Subscription:
+    """Insert the initial free (or academy for ADMIN) subscription row."""
+    now = datetime.now(timezone.utc)
+    if account_type == "ADMIN":
+        tier = "academy"
+        plan_key = "academy_365d"
+    elif account_type == "COACH":
+        tier = "coach_free"
+        plan_key = "coach_free"
+    else:
+        tier = "free"
+        plan_key = "free"
+    sub = Subscription(
+        user_id=user_id,
+        plan_key=plan_key,
+        role=tier,
+        status="active",
+        started_at=now,
+        expires_at=now + timedelta(days=_FREE_EXPIRES_DAYS),
+    )
+    db.add(sub)
+    return sub
+
+
+def _get_active_sub(user_id: str, db: Session) -> Optional[Subscription]:
+    return (
+        db.query(Subscription)
+        .filter(Subscription.user_id == user_id, Subscription.status == "active")
+        .order_by(Subscription.started_at.desc())
+        .first()
+    )
+
+
+# ── Registration ───────────────────────────────────────────────────────────────
+
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     name: str = Form(...),
     email: str = Form(...),
     password: str = Form(...),
-    role: str = Form(...),
+    role: str = Form(...),          # PLAYER | COACH
     phone: str = Form(None),
     team: str = Form(None),
-    db: Session = Depends(get_db)
+    coach_document: UploadFile = File(None),
+    db: Session = Depends(get_db),
 ):
-    # Check if user already exists
-    existing_user = db.query(User).filter(User.email == email).first()
-    if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered"
-        )
+    role = role.upper()
+    if role not in ("PLAYER", "COACH"):
+        raise HTTPException(status_code=400, detail="role must be PLAYER or COACH")
 
-    # Create new user — coaches start as 'incomplete' until they complete their profile
-    hashed_password = get_password_hash(password)
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+
+    # ── coach document upload via GCS ────────────────────────────────────────
+    coach_document_url = None
+    if coach_document and role == "COACH":
+        try:
+            coach_document_url = await upload_file_to_gcs(
+                file=coach_document,
+                folder="coach_documents",
+                max_bytes=LIMIT_DOCUMENT,
+                allowed_extensions={".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"},
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("Coach document upload failed: %s", exc)
+            raise HTTPException(status_code=500, detail="Failed to upload document. Please try again.")
+        finally:
+            await coach_document.close()
+
+    # ── create user ───────────────────────────────────────────────────────────
     new_user = User(
         email=email,
-        password_hash=hashed_password,
+        password_hash=get_password_hash(password),
         name=name,
-        role=role,
+        role=role,                  # permanent account type: PLAYER | COACH
         phone=phone,
         team=team,
-        coach_status='incomplete' if role == 'COACH' else None,
+        coach_document_url=coach_document_url,
+        coach_status="pending" if role == "COACH" else None,
     )
-
     db.add(new_user)
+    db.flush()  # get new_user.id without committing
+
+    # ── seed subscription in the same transaction ─────────────────────────────
+    _seed_subscription(new_user.id, role, db)
     db.commit()
     db.refresh(new_user)
 
-    logger.info(f"New user registered: {new_user.email} (ID: {new_user.id}, Role: {role})")
+    logger.info("New user registered: %s (ID: %s, role: %s)", new_user.email, new_user.id, role)
 
-    return new_user
-
-
-@router.post("/coach-profile", response_model=UserResponse)
-async def complete_coach_profile(
-    phone: str = Form(None),
-    team: str = Form(None),
-    profile_bio: str = Form(None),
-    specialization: str = Form(None),
-    coach_category: str = Form(None),
-    coach_document: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Coach completes their profile and uploads verification document after first login."""
-    if current_user.role != 'COACH':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can use this endpoint")
-
-    if current_user.coach_status not in ('incomplete',):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profile already submitted for review")
-
-    try:
-        coach_document_url = await upload_file_to_gcs(
-            file=coach_document,
-            folder="coach_documents",
-            max_bytes=LIMIT_DOCUMENT,
-            allowed_extensions={'.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'},
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Coach document upload failed: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload document. Please try again.")
-    finally:
-        await coach_document.close()
-
-    # Update profile fields
-    if phone:
-        current_user.phone = phone
-    if team:
-        current_user.team = team
-    if profile_bio:
-        current_user.profile_bio = profile_bio
-    if specialization:
-        import json
-        try:
-            current_user.specialization = json.loads(specialization)
-        except Exception:
-            current_user.specialization = [specialization]
-    if coach_category:
-        current_user.coach_category = coach_category
-
-    current_user.coach_document_url = coach_document_url
-    current_user.coach_status = 'pending'
-
-    db.commit()
-    db.refresh(current_user)
-    logger.info(f"Coach profile completed: {current_user.email}, status -> pending")
-
-    return current_user
+    sub = _get_active_sub(new_user.id, db)
+    return _build_profile_response(new_user, sub)
 
 
-@router.post("/profile-image")
-async def upload_profile_image(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    """Upload or replace profile image for any user. Max 1 MB."""
-    try:
-        profile_image_url = await upload_file_to_gcs(
-            file=file,
-            folder="profile_images",
-            max_bytes=LIMIT_PROFILE_IMAGE,
-            allowed_extensions={'.jpg', '.jpeg', '.png', '.webp', '.gif'},
-        )
-        current_user.profile_image_url = profile_image_url
-        db.commit()
-        db.refresh(current_user)
-        logger.info(f"Profile image uploaded for user: {current_user.email}")
-        return {"profile_image_url": profile_image_url}
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Profile image upload failed: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
-    finally:
-        await file.close()
-
+# ── Login ──────────────────────────────────────────────────────────────────────
 
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
-    # Find user
     user = db.query(User).filter(User.email == login_data.email).first()
 
     if not user or not verify_password(login_data.password, user.password_hash):
@@ -166,78 +140,113 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Check if coach was rejected
-    if user.role == 'COACH' and user.coach_status == 'rejected':
+    if user.role == "COACH" and user.coach_status == "pending":
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Your coach application has been rejected. Please contact support for more information.",
+            status_code=403,
+            detail="Your account is pending verification. Please wait until Admin reviews your documents.",
+        )
+    if user.role == "COACH" and user.coach_status == "rejected":
+        raise HTTPException(
+            status_code=403,
+            detail="Your coach application has been rejected. Please contact support.",
         )
 
-    # Update last_login timestamp
-    user.last_login = datetime.utcnow()
+    # Pull active subscription so we can embed tier into the JWT
+    sub = _get_active_sub(user.id, db)
+    if sub:
+        sub_role = sub.role
+    elif user.role == "COACH":
+        sub_role = "coach_free"
+    elif user.role == "ADMIN":
+        sub_role = "academy"
+    else:
+        sub_role = "free"
+    sub_status = sub.status if sub else "inactive"
 
-    # Create access token
-    access_token_expires = timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    user.last_login = datetime.now(timezone.utc)
+
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": user.email, "role": user.role}, expires_delta=access_token_expires
+        data={
+            "sub": user.email,
+            "user_id": user.id,
+            "role": user.role,                  # account type: PLAYER | COACH | ADMIN
+            "subscription_role": sub_role,      # tier: free | basic | platinum …
+            "subscription_status": sub_status,
+        },
+        expires_delta=access_token_expires,
     )
+    refresh_token = create_refresh_token(data={"sub": user.email})
 
-    # Create refresh token
-    refresh_token = create_refresh_token(
-        data={"sub": user.email}
-    )
-
-    # Create session record
-    session = UserSession(
+    db.add(UserSession(
         user_id=user.id,
         refresh_token=refresh_token,
-        expires_at=datetime.utcnow() + timedelta(days=30)
-    )
-    db.add(session)
+        expires_at=datetime.now(timezone.utc) + timedelta(days=30),
+    ))
     db.commit()
 
-    logger.info(f"User logged in: {user.email} (ID: {user.id})")
+    logger.info("User logged in: %s (ID: %s)", user.email, user.id)
 
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": int(access_token_expires.total_seconds()),
-        "user": {
-            "id": str(user.id),
-            "email": user.email,
-            "full_name": user.name,
-            "role": user.role,
-            "team": user.team,
-            "jersey_number": user.jersey_number,
-            "coach_status": user.coach_status,
-        },
     }
 
 
-@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
-def logout(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
-):
-    user_email = current_user.email
-    user_id = current_user.id
+# ── /me ────────────────────────────────────────────────────────────────────────
 
-    try:
-        db.query(UserSession).filter(
-            UserSession.user_id == user_id).delete()
-        db.commit()
-        logger.info(f"User logged out: {user_email} (ID: {user_id})")
-    except Exception as e:
-        db.rollback()
-        logger.error(f"Logout error for user {user_id}: {e}")
-
-    return None
+def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
+    """Merge user row with active subscription for /me and /register responses."""
+    return {
+        "id": user.id,
+        "account_type": user.role,
+        "name": user.name,
+        "email": user.email,
+        "phone": user.phone,
+        "profile_bio": user.profile_bio,
+        "gender": user.gender,
+        "jersey_number": user.jersey_number,
+        "team": user.team,
+        "certifications": user.certifications,
+        "specialization": user.specialization,
+        "intro_video_url": user.intro_video_url,
+        "profile_image_url": user.profile_image_url,
+        "coach_category": user.coach_category,
+        "is_verified": user.is_verified,
+        "created_at": user.created_at,
+        "last_login": user.last_login,
+        "subscription_role": (
+            sub.role
+            if sub
+            else ("coach_free" if user.role == "COACH" else ("academy" if user.role == "ADMIN" else "free"))
+        ),
+        "subscription_status": sub.status if sub else "inactive",
+        "subscription_expires_at": sub.expires_at if sub else None,
+    }
 
 
 @router.get("/me", response_model=UserResponse)
-def get_current_user_info(current_user: User = Depends(get_current_user)):
-    return current_user
+def get_current_user_info(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    sub = _get_active_sub(current_user.id, db)
+    return _build_profile_response(current_user, sub)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    user_id = current_user.id
+    try:
+        db.query(UserSession).filter(UserSession.user_id == user_id).delete()
+        db.commit()
+        logger.info("User logged out: %s (ID: %s)", current_user.email, user_id)
+    except Exception as exc:
+        db.rollback()
+        logger.error("Logout error for user %s: %s", user_id, exc)
+    return None
 
 
 @router.put("/me", response_model=UserResponse)
@@ -246,143 +255,42 @@ def update_current_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from api.routes.notification import create_notification
-    
-    update_dict = update_data.model_dump(exclude_unset=True)
-
-    for field, value in update_dict.items():
+    for field, value in update_data.model_dump(exclude_unset=True).items():
         if hasattr(current_user, field):
             setattr(current_user, field, value)
-
     db.commit()
     db.refresh(current_user)
-    logger.info(f"User profile updated: {current_user.email}")
-    
-    # Create notification
-    create_notification(
-        db=db,
-        user_id=current_user.id,
-        title="Profile Updated",
-        message="Your profile information has been successfully updated.",
-        notif_type="system"
-    )
-
-    return current_user
+    logger.info("User profile updated: %s", current_user.email)
+    sub = _get_active_sub(current_user.id, db)
+    return _build_profile_response(current_user, sub)
 
 
-@router.post("/forgot-password", status_code=201)
-def forgot_password(
-    data: dict,
-    db: Session = Depends(get_db),
-):
-    """User submits a password reset request to admin."""
-    from database.models.password_reset_request import PasswordResetRequest
-    email = data.get("email", "").strip()
-    message = data.get("message", "")
-
-    user = db.query(User).filter(User.email == email).first()
-    if not user:
-        # Don't reveal if email exists
-        return {"ok": True, "message": "If this email exists, your request has been submitted."}
-
-    # Check no pending request already
-    existing = db.query(PasswordResetRequest).filter(
-        PasswordResetRequest.user_id == user.id,
-        PasswordResetRequest.is_resolved == False
-    ).first()
-    if existing:
-        return {"ok": True, "message": "A request is already pending. Please wait for admin to respond."}
-
-    req = PasswordResetRequest(
-        user_id=user.id,
-        email=user.email,
-        name=user.name,
-        message=message,
-    )
-    db.add(req)
-    db.commit()
-    return {"ok": True, "message": "Request submitted. Admin will reset your password shortly."}
-
-
-@router.get("/coaches/public")
-def get_public_coaches(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Return all verified coaches with their public profile info including intro video."""
-    coaches = (
-        db.query(User)
-        .filter(User.role == "COACH", User.coach_status == "verified", User.is_active == True)
-        .all()
-    )
-    return {
-        "coaches": [
-            {
-                "id": c.id,
-                "name": c.name,
-                "profile_bio": c.profile_bio,
-                "specialization": c.specialization,
-                "intro_video_url": c.intro_video_url,
-                "profile_image_url": c.profile_image_url,
-                "coach_category": c.coach_category,
-                "years_of_experience": c.years_of_experience,
-            }
-            for c in coaches
-        ]
-    }
-
-
-@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
-def change_password(
-    data: dict,
+@router.post("/profile-image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    from utils.auth import verify_password, get_password_hash
-    from api.routes.notification import create_notification
-    
-    current_password = data.get("current_password", "")
-    new_password = data.get("new_password", "")
-
-    if not verify_password(current_password, current_user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
-    if len(new_password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters")
-
-    current_user.password_hash = get_password_hash(new_password)
-    db.commit()
-    
-    # Create notification
-    create_notification(
-        db=db,
-        user_id=current_user.id,
-        title="Password Changed",
-        message="Your password was successfully changed. If you didn't make this change, please contact support immediately.",
-        notif_type="system"
-    )
-    
-    logger.info(f"Password changed for user: {current_user.email}")
-    return None
-
-
-@router.get("/notifications")
-def get_notification_preferences(
-    current_user: User = Depends(get_current_user),
-):
-    default = {"email_submissions": True, "email_published": True, "email_messages": False, "push_all": True}
-    return current_user.notification_preferences or default
-
-
-@router.put("/notifications")
-def update_notification_preferences(
-    data: dict,
-    current_user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    current_user.notification_preferences = data
-    db.commit()
-    db.refresh(current_user)
-    return current_user.notification_preferences
+    """Upload or replace profile image. Max 1 MB."""
+    try:
+        profile_image_url = await upload_file_to_gcs(
+            file=file,
+            folder="profile_images",
+            max_bytes=LIMIT_PROFILE_IMAGE,
+            allowed_extensions={".jpg", ".jpeg", ".png", ".webp", ".gif"},
+        )
+        current_user.profile_image_url = profile_image_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info("Profile image uploaded for user: %s", current_user.email)
+        return {"profile_image_url": profile_image_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Profile image upload failed: %s", e)
+        raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
 
 
 @router.post("/coach-intro-video", response_model=IntroVideoResponse)
@@ -392,25 +300,24 @@ async def upload_intro_video(
     db: Session = Depends(get_db),
 ):
     """Upload or replace coach intro video. Max 10 MB."""
-    if current_user.role != 'COACH':
+    if current_user.role != "COACH":
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
-
     try:
         intro_video_url = await upload_file_to_gcs(
             file=file,
             folder="coach_intro_videos",
             max_bytes=LIMIT_VIDEO,
-            allowed_extensions={'.mp4', '.mov', '.avi', '.webm', '.mkv'},
+            allowed_extensions={".mp4", ".mov", ".avi", ".webm", ".mkv"},
         )
         current_user.intro_video_url = intro_video_url
         db.commit()
         db.refresh(current_user)
-        logger.info(f"Intro video uploaded for coach: {current_user.email} -> {intro_video_url}")
+        logger.info("Intro video uploaded for coach: %s", current_user.email)
         return IntroVideoResponse(intro_video_url=intro_video_url)
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Intro video upload failed: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+        logger.error("Intro video upload failed: %s", e)
+        raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
     finally:
         await file.close()

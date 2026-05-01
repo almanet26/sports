@@ -17,7 +17,7 @@ export default function CoachReviewsPage() {
 
   useEffect(() => {
     if (!user?.id) return;
-    reviewsApi.getCoachReviews(user.id)
+    reviewsApi.getCoachReviews()
       .then(r => setReviews(r.data.reviews))
       .catch(console.error)
       .finally(() => setLoading(false));

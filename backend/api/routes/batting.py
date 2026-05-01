@@ -33,6 +33,8 @@ from schemas.batting import (
     DetectedFlaw,
 )
 from utils.auth import get_current_user
+from dependencies.feature_gate import require_feature
+from dependencies.quota_gate import quota_check, increment_usage_atomic
 from scripts.batting_engine import (
     BattingPoseAnalyzer,
     BattingGeminiManager,
@@ -73,7 +75,8 @@ async def analyze_batting(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature("biomechanics_analysis")),
+    _quota: tuple = Depends(quota_check("biomechanics_analysis")),
 ):
     """
     Upload a batting video for biomechanics analysis.
@@ -148,7 +151,7 @@ async def analyze_batting(
 
         summary_stats = display_df.describe().T
 
-        # Persist to DB 
+        # Persist to DB
         analysis = create_batting_analysis(
             db,
             player_id=current_user.id,
@@ -163,6 +166,20 @@ async def analyze_batting(
             ai_feedback=feedback_text,
             report_url=report_url,
         )
+
+        # Charge quota atomically after the analysis persists.
+        # This single UPDATE enforces the limit under concurrent submissions — if two requests passed quota_check at the same time, only those whose count + 1 still fits under the limit will commit here.
+        charged = increment_usage_atomic(
+            current_user.id, "biomech_count", "max_biomech_per_month", 1, db
+        )
+        if not charged:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "quota_exceeded",
+                    "reason": "Monthly biomechanics limit reached (concurrent request).",
+                },
+            )
 
         return BattingAnalysisResponse(
             id=analysis.id,

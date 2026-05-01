@@ -75,7 +75,7 @@ steps:
       - --set-env-vars=CLOUD_RUN=1,GCS_BUCKET_NAME=$_GCS_BUCKET,FRONTEND_URL=$_FRONTEND_URL,ALLOWED_ORIGINS=$_FRONTEND_URL,GEMINI_MODEL=gemini-2.5-flash,GCP_PROJECT=$_PROJECT,GCP_LOCATION=$_REGION,GCP_TASK_QUEUE=$_TASK_QUEUE,WORKER_SERVICE_URL=$_WORKER_URL,WORKER_SERVICE_ACCOUNT_EMAIL=$_WORKER_SA_EMAIL
       # Sensitive vars pulled from Secret Manager
       # Create secrets once: gcloud secrets create DATABASE_URL --data-file=- <<< "your-value"
-      - --update-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,GEMINI_API_KEY_1=GEMINI_API_KEY_1:latest
+      - --update-secrets=DATABASE_URL=DATABASE_URL:latest,JWT_SECRET_KEY=JWT_SECRET_KEY:latest,GEMINI_API_KEY_1=GEMINI_API_KEY_1:latest,YOUTUBE_COOKIES_B64=YOUTUBE_COOKIES_B64:latest,YOUTUBE_PO_TOKEN=YOUTUBE_PO_TOKEN:latest
     waitFor: [Push]
 
 # Store the image in the build artifact list

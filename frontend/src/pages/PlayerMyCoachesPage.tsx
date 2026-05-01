@@ -35,7 +35,7 @@ export default function PlayerMyCoachesPage() {
     if (!reviewModal) return;
     setSubmitting(true);
     try {
-      await reviewsApi.submitReview({ coach_id: reviewModal.id, rating, comment });
+      await reviewsApi.submitReview(reviewModal.id, rating, comment);
       setSuccess('Review submitted!');
       setCoaches(prev => prev.map(c =>
         c.id === reviewModal.id ? { ...c, existing_review: { rating, comment } } : c

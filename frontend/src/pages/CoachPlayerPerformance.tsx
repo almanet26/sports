@@ -58,7 +58,7 @@ export default function CoachPlayerPerformance() {
   );
 
   const { player, summary, flaw_frequency, flaw_trend, submission_timeline } = progress;
-  const trend = TREND_CONFIG[summary.improvement_trend] ?? TREND_CONFIG.insufficient_data;
+  const trend = (TREND_CONFIG as Record<string, typeof TREND_CONFIG[keyof typeof TREND_CONFIG]>)[summary.improvement_trend] ?? TREND_CONFIG.insufficient_data;
 
   const publishedTimeline = submission_timeline.filter(s => s.status === 'PUBLISHED');
   const maxFlaws = Math.max(...publishedTimeline.map(s => s.flaw_count), 1);

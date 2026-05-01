@@ -15,8 +15,9 @@ class SubmissionUploadRequest(BaseModel):
 
 
 class PublishRequest(BaseModel):
-    """Body when Coach publishes: contains the edited rich text."""
+    """Body when Coach publishes: contains the edited rich text and sketches."""
     edited_text: str
+    sketches: Optional[list[dict]] = None  # Array of sketch objects {timestamp, coordinates, color}
 
 
 # Response: Lightweight list items 
