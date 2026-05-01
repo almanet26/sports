@@ -7,10 +7,12 @@
  */
 export {
   useAuthStore,
-  useSubscriptionStore,
   useUser,
   useIsAuthenticated,
   useUserRole,
   useCanUpload,
 } from '../store/authStore';
 export type { User, UserRole } from '../store/authStore';
+
+// stub for main branch compatibility
+export const useSubscriptionStore = () => ({ tier: 'BASIC', isActive: false });

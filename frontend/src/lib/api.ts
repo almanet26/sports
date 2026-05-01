@@ -935,3 +935,13 @@ export const performanceApi = {
 };
 
 export default api;
+
+// ── Stubs for main-branch compatibility ──────────────────────────────────────
+export const billingApi = { getPlans: () => api.get('/billing/plans'), subscribe: () => api.post('/billing/subscribe'), getStatus: () => api.get('/billing/status') };
+export const scoutingApi = { getPlayers: () => api.get('/scouting/players'), getPlayer: (id: string) => api.get(`/scouting/players/${id}`) };
+export const annotationsApi = { list: (id: string) => api.get(`/videos/${id}/annotations`), create: (id: string, data: unknown) => api.post(`/videos/${id}/annotations`, data), delete: (id: string, aId: string) => api.delete(`/videos/${id}/annotations/${aId}`) };
+export const profileApi = { get: () => api.get('/auth/me'), update: (data: unknown) => api.put('/auth/me', data) };
+export type ScoutingPlayerSummary = { id: string; name: string; email: string };
+export type ScoutingPlayerDetail = ScoutingPlayerSummary & { stats: Record<string, unknown> };
+export type ScoutingFilters = { role?: string; search?: string };
+export type VideoAnnotation = { id: string; timestamp: number; text: string };
