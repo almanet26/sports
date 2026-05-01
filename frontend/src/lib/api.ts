@@ -146,6 +146,8 @@ export const authApi = {
     certifications: Array<{name: string; issuer: string; year: string}>;
     specialization: string[];
     coach_category: string;
+    date_of_birth: string;
+    years_of_experience: number;
   }>) => api.put('/auth/me', data),
 
   uploadIntroVideo: (file: File, onProgress?: (p: number) => void) => {

@@ -12,6 +12,7 @@ interface ContentItem {
   file_url?: string;
   thumbnail_url?: string;
   tags?: string;
+  is_public?: boolean;
   views: number;
   likes: number;
   created_at: string;
@@ -98,7 +99,7 @@ export default function CoachContentPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Delete this content?')) return;
     await api.delete(`/coach/content/${id}`);
     setItems(prev => prev.filter(i => i.id !== id));
@@ -202,7 +203,7 @@ export default function CoachContentPage() {
                         <i className="fas fa-eye mr-1"></i>View
                       </a>
                     )}
-                    <button onClick={() => handleDelete(item.id)} className="px-3 py-1.5 rounded-lg text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all">
+                    <button onClick={() => handleDelete(String(item.id))} className="px-3 py-1.5 rounded-lg text-xs border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all">
                       <i className="fas fa-trash-alt"></i>
                     </button>
                   </div>

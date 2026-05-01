@@ -22,7 +22,7 @@ export default function ProfilePage() {
     team: user?.team || '',
     jerseyNumber: user?.jersey_number || '',
     date_of_birth: user?.date_of_birth || '',
-    years_of_experience: user?.years_of_experience || '',
+    years_of_experience: user?.years_of_experience ? String(user.years_of_experience) : '',
   });
 
   // Coach branding state

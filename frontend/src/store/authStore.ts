@@ -34,6 +34,8 @@ export interface User {
   coach_category?: string;
   coach_status?: 'incomplete' | 'pending' | 'verified' | 'rejected';
   availability?: Record<string, string[]>;
+  date_of_birth?: string;
+  years_of_experience?: number;
 }
 
 interface AuthState {

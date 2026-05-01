@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useThemeStore } from "../store/themeStore";
 import { api } from "../lib/api";
-import { toast } from "react-hot-toast";
 
 interface Content {
   id: number;
@@ -44,7 +43,7 @@ export default function MyContent() {
       const response = await api.get("/coach/content");
       setContents(response.data);
     } catch (error) {
-      toast.error("Failed to load content");
+      console.error("Failed to load content");
     } finally {
       setLoading(false);
     }
@@ -76,12 +75,12 @@ export default function MyContent() {
       await api.post("/coach/content", formData, {
         headers: { "Content-Type": "multipart/form-data" },
       });
-      toast.success("Content uploaded successfully!");
+      alert("Content uploaded successfully!");
       setShowUploadModal(false);
       resetForm();
       fetchContents();
-    } catch (error) {
-      toast.error("Failed to upload content");
+    } catch {
+      alert("Failed to upload content");
     } finally {
       setUploading(false);
     }
@@ -92,10 +91,9 @@ export default function MyContent() {
 
     try {
       await api.delete(`/coach/content/${id}`);
-      toast.success("Content deleted successfully");
       fetchContents();
-    } catch (error) {
-      toast.error("Failed to delete content");
+    } catch {
+      alert("Failed to delete content");
     }
   };
 
