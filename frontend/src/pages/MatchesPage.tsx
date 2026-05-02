@@ -23,7 +23,8 @@ import {
   CheckCircle,
   CalendarClock,
 } from "lucide-react";
-import { matchesAPI, Match, CreateMatchData, UpdateMatchData } from "../lib/matchesApi";
+import { matchesAPI } from "../lib/matchesApi";
+import type { Match, CreateMatchData } from "../lib/matchesApi";
 
 type MatchType = "Practice" | "Tournament" | "Friendly";
 type MatchStatus = "Upcoming" | "Today" | "Completed" | "Cancelled" | "Rescheduled";

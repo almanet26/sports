@@ -22,7 +22,6 @@ interface DashboardData {
 
 export default function CoachDashboard() {
   const { theme } = useThemeStore();
-  const user = useAuthStore(s => s.user);
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);

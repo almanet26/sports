@@ -253,5 +253,5 @@ export const useAuthStore = create<AuthState>()(
 export const useUser = () => useAuthStore((state) => state.user);
 export const useIsAuthenticated = () => useAuthStore((state) => state.isAuthenticated);
 export const useUserRole = () => useAuthStore((state) => state.user?.role);
-export const useCanUpload = () => useAuthStore((state) => state.canUpload());
+export const useSubscriptionStore = useAuthStore;
 

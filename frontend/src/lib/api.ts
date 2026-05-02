@@ -936,11 +936,50 @@ export const performanceApi = {
 export default api;
 
 // ── Stubs for main-branch compatibility ──────────────────────────────────────
-export const billingApi = { getPlans: () => api.get('/billing/plans'), subscribe: () => api.post('/billing/subscribe'), getStatus: () => api.get('/billing/status') };
-export const scoutingApi = { getPlayers: () => api.get('/scouting/players'), getPlayer: (id: string) => api.get(`/scouting/players/${id}`) };
-export const annotationsApi = { list: (id: string) => api.get(`/videos/${id}/annotations`), create: (id: string, data: unknown) => api.post(`/videos/${id}/annotations`, data), delete: (id: string, aId: string) => api.delete(`/videos/${id}/annotations/${aId}`) };
-export const profileApi = { get: () => api.get('/auth/me'), update: (data: unknown) => api.put('/auth/me', data) };
-export type ScoutingPlayerSummary = { id: string; name: string; email: string };
-export type ScoutingPlayerDetail = ScoutingPlayerSummary & { stats: Record<string, unknown> };
-export type ScoutingFilters = { role?: string; search?: string };
-export type VideoAnnotation = { id: string; timestamp: number; text: string };
+export const billingApi = {
+  getPlans: () => api.get('/billing/plans'),
+  subscribe: () => api.post('/billing/subscribe'),
+  getStatus: () => api.get('/billing/status'),
+  createOrder: () => api.post('/billing/order'),
+};
+export const scoutingApi = {
+  getPlayers: () => api.get('/scouting/players'),
+  getPlayer: (id: string) => api.get(`/scouting/players/${id}`),
+  listPlayers: (filters?: unknown) => api.get('/scouting/players', { params: filters }),
+  getShortlist: () => api.get('/scouting/shortlist'),
+  addToShortlist: (id: string) => api.post(`/scouting/shortlist/${id}`),
+  removeFromShortlist: (id: string) => api.delete(`/scouting/shortlist/${id}`),
+  updateNote: (id: string, note: string) => api.put(`/scouting/shortlist/${id}/note`, { note }),
+};
+export const annotationsApi = {
+  list: (id: string) => api.get(`/videos/${id}/annotations`),
+  create: (id: string, data: unknown) => api.post(`/videos/${id}/annotations`, data),
+  delete: (id: string, aId: string) => api.delete(`/videos/${id}/annotations/${aId}`),
+};
+export const profileApi = {
+  get: () => api.get('/auth/me'),
+  update: (data: unknown) => api.put('/auth/me', data),
+  getPublic: (id: string) => api.get(`/profile/${id}`),
+  setup: (data: unknown) => api.post('/profile/setup', data),
+  toggleScouting: (visible: boolean) => api.patch('/profile/scouting', { visible }),
+};
+export type ScoutingPlayerSummary = {
+  id: string; name: string; email: string; user_id?: string;
+  display_name?: string; city?: string; state?: string; cricket_role?: string;
+  scouting_visible?: boolean; stats?: Record<string, unknown>;
+  total_analyses?: number; preferred_format?: string; experience_level?: string;
+  bat_style?: string;
+};
+export type ScoutingPlayerDetail = ScoutingPlayerSummary & {
+  age?: number; recent_batting?: unknown[]; recent_bowling?: unknown[];
+  total_analyses?: number; analyses_last_updated?: string;
+};
+export type ScoutingFilters = {
+  search?: string; cricket_role?: string; city?: string; state?: string;
+  experience_level?: string; preferred_format?: string;
+  min_analyses?: number; sort_by?: string; sort_order?: string;
+};
+export type VideoAnnotation = {
+  id: string; timestamp: number; timestamp_ms?: number; text: string;
+  label?: string; annotation_type?: string; coordinates?: unknown; color?: string;
+};
