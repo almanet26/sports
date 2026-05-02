@@ -22,6 +22,8 @@ import re
 import shutil
 import tempfile
 import uuid
+import base64
+import binascii
 from pathlib import Path
 from datetime import datetime
 from uuid import UUID
@@ -39,14 +41,12 @@ from database.models.player_submission import PlayerSubmission
 from database.models.user import User
 from database.models.subscription import Subscription
 from database.models.submission import VideoSubmission, SubmissionStatus
-from database.models.video import Video
 from database.crud.submission import (
     create_submission,
     get_submission_by_id,
     list_submissions_for_player,
     list_submissions_for_coach,
     mark_processing,
-    mark_accepted,
     save_analysis_results,
     publish_submission,
 )
@@ -147,6 +147,47 @@ if _videos_search_cls is None:
     logger.warning("Tutorial resolver init — youtubesearchpython unavailable; will rely on yt-dlp/search fallback")
 else:
     logger.info("Tutorial resolver init — youtubesearchpython VideosSearch available")
+
+
+def _resolve_video_path(video_url: str) -> str:
+    """
+    Resolve video_url (which may be a GCS blob path or local path) to a local file path.
+    
+    - If video_url starts with gs:// or is a GCS blob path, download it to temp storage
+    - If video_url is /static/submissions/, replace with storage/submissions/
+    - Otherwise, assume it's already a valid local path
+    
+    Returns the local file path for Gemini API upload.
+    """
+    # Case 1: GCS blob path (e.g., "raw_videos/abc123_filename.mp4")
+    if _gcs_bucket_upload and not video_url.startswith(("http://", "https://", "/", "gs://")):
+        try:
+            logger.info("Downloading GCS video: %s", video_url)
+            blob = _gcs_bucket_upload.blob(video_url)
+            
+            # Download to temp storage
+            temp_filename = f"temp_{uuid.uuid4()}_{Path(video_url).name}"
+            local_path = TEMP_FRAMES_DIR / temp_filename  # Use temp frames dir for temporary videos
+            with open(local_path, "wb") as f:
+                blob.download_to_file(f)
+            
+            logger.info("Downloaded GCS video to %s", local_path)
+            return str(local_path)
+        except Exception as e:
+            logger.error("Failed to download GCS video %s: %s", video_url, e)
+            raise HTTPException(status_code=500, detail=f"Failed to download video: {e}")
+    
+    # Case 2: Local /static/ path
+    if video_url.startswith("/static/submissions/"):
+        video_file_path = video_url.replace("/static/submissions/", "storage/submissions/")
+        if not os.path.isfile(video_file_path):
+            raise HTTPException(status_code=404, detail="Video file not found on disk.")
+        return video_file_path
+    
+    # Case 3: Assume already a valid local path
+    if not os.path.isfile(video_url):
+        raise HTTPException(status_code=404, detail=f"Video file not found: {video_url}")
+    return video_url
 
 
 def _is_specific_youtube_link(url: str) -> bool:
@@ -462,13 +503,13 @@ def _post_process_report_with_video_links(report_text: str, discipline: str) -> 
         return report_text, []
 
 
-#  SHARED: List Coaches (auth — filters by active subscription tier)
+#  SHARED: List Coaches
 @router.get("/coaches", response_model=CoachListResponse)
 def list_coaches(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Return coaches who can actually receive submissions (active paid tier)."""
+    """Return coaches who can actually receive submissions."""
     coaches = (
         db.query(User)
         .join(Subscription, Subscription.user_id == User.id)
@@ -492,7 +533,6 @@ def list_coaches(
 
 @public_router.get("/coaches", response_model=CoachListResponse)
 def list_coaches_public(db: Session = Depends(get_db)):
-    """Public coach list — no auth required."""
     coaches = (
         db.query(User)
         .join(Subscription, Subscription.user_id == User.id)
@@ -581,81 +621,9 @@ async def player_upload(
         analysis_type=analysis_type,
     )
 
-    # Notify the coach
-    try:
-        from database.models.notification import Notification
-        notif = Notification(
-            user_id=coach_id,
-            title="New Video Submission",
-            message=f"{current_user.name} submitted a {analysis_type.lower()} video for your review.",
-            type="submission",
-        )
-        db.add(notif)
-        db.commit()
-    except Exception as notif_err:
-        logger.warning("Failed to create submission notification: %s", notif_err)
-
     logger.info(
         "Submission %s created: player=%s coach=%s type=%s",
         sub.id, current_user.id, coach_id, analysis_type,
-    )
-    return _to_detail(sub)
-
-
-#  PLAYER: Submit existing gallery video (no re-upload)
-@router.post("/from-video", response_model=SubmissionDetail)
-def player_submit_existing_video(
-    video_id: str = Form(...),
-    coach_id: str = Form(...),
-    analysis_type: str = Form("BATTING"),
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Player submits an already-uploaded private gallery video to a coach.
-
-    This does NOT upload the file again; it links the existing video into a new submission.
-    """
-    if current_user.role not in ("PLAYER", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Only players can submit videos.")
-
-    if analysis_type not in ("BATTING", "BOWLING"):
-        raise HTTPException(status_code=400, detail="analysis_type must be BATTING or BOWLING.")
-
-    coach = db.query(User).filter(User.id == coach_id, User.role == "COACH").first()
-    if not coach:
-        raise HTTPException(status_code=404, detail="Coach not found.")
-
-    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at == None).first()
-    if not video:
-        raise HTTPException(status_code=404, detail="Video not found.")
-
-    if str(video.uploaded_by) != str(current_user.id) and current_user.role != "ADMIN":
-        raise HTTPException(status_code=403, detail="Access denied.")
-
-    # Map local stored path to a served URL; keep remote URLs unchanged.
-    file_path = str(video.file_path or "")
-    if file_path.startswith("http://") or file_path.startswith("https://"):
-        video_url = file_path
-    else:
-        # Typical stored value is "storage/uploads/<uuid>.ext"
-        name = Path(file_path).name if file_path else ""
-        video_url = f"/static/uploads/{name}" if name else file_path
-
-    original_name = video.title or f"{video.id}.mp4"
-
-    sub = create_submission(
-        db,
-        player_id=current_user.id,
-        coach_id=coach_id,
-        original_filename=original_name,
-        video_url=video_url,
-        analysis_type=analysis_type,
-    )
-
-    logger.info(
-        "Submission %s created from existing video: player=%s video=%s coach=%s type=%s",
-        sub.id, current_user.id, video.id, coach_id, analysis_type,
     )
     return _to_detail(sub)
 
@@ -694,325 +662,6 @@ def player_all_submissions(
         submissions=[_to_summary(s) for s in items],
         total=total,
     )
-
-
-#  PLAYER: Own Progress (self-view)
-@router.get("/player/progress")
-def player_own_progress(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Player views their own performance progress across all submissions."""
-    all_subs = (
-        db.query(VideoSubmission)
-        .filter(VideoSubmission.player_id == current_user.id)
-        .order_by(VideoSubmission.created_at.asc())
-        .all()
-    )
-
-    published_subs = [s for s in all_subs if s.status == SubmissionStatus.PUBLISHED]
-    batting_subs   = [s for s in all_subs if s.analysis_type == "BATTING"]
-    bowling_subs   = [s for s in all_subs if s.analysis_type == "BOWLING"]
-
-    total      = len(all_subs)
-    published  = len(published_subs)
-    completion = round((published / total) * 100) if total else 0
-
-    from datetime import date
-    last_sub_date = all_subs[-1].created_at.date() if all_subs else None
-    days_since    = (date.today() - last_sub_date).days if last_sub_date else None
-
-    flaw_counter: dict[str, int] = {}
-    for sub in published_subs:
-        source = sub.coach_final_text or sub.ai_draft_text or ""
-        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
-            flaws = extract_bowling_flaws(source)
-        elif BATTING_ENGINE_AVAILABLE:
-            flaws = extract_detected_flaws(source)
-        else:
-            flaws = []
-        for f in flaws:
-            name = f.get("flaw_name", "").strip()
-            if name:
-                flaw_counter[name] = flaw_counter.get(name, 0) + 1
-
-    flaw_frequency = [
-        {"flaw": k, "count": v}
-        for k, v in sorted(flaw_counter.items(), key=lambda x: -x[1])[:8]
-    ]
-
-    flaw_trend = None
-    if len(published_subs) >= 2:
-        def _flaw_count(sub):
-            source = sub.coach_final_text or sub.ai_draft_text or ""
-            if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
-                return len(extract_bowling_flaws(source))
-            elif BATTING_ENGINE_AVAILABLE:
-                return len(extract_detected_flaws(source))
-            return 0
-
-        first_count  = _flaw_count(published_subs[0])
-        latest_count = _flaw_count(published_subs[-1])
-        delta        = latest_count - first_count
-        trend        = "improving" if delta < 0 else ("declining" if delta > 0 else "stable")
-        flaw_trend   = {
-            "first_report_flaw_count":  first_count,
-            "latest_report_flaw_count": latest_count,
-            "delta":                    delta,
-            "trend":                    trend,
-        }
-
-    timeline = []
-    for sub in all_subs:
-        source = sub.coach_final_text or sub.ai_draft_text or ""
-        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
-            fc = len(extract_bowling_flaws(source))
-        elif BATTING_ENGINE_AVAILABLE:
-            fc = len(extract_detected_flaws(source))
-        else:
-            fc = 0
-        timeline.append({
-            "id":             sub.id,
-            "analysis_type":  sub.analysis_type,
-            "status":         sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status,
-            "created_at":     sub.created_at.isoformat() if sub.created_at else None,
-            "published_at":   sub.published_at.isoformat() if sub.published_at else None,
-            "flaw_count":     fc,
-            "pdf_report_url": _gcs_to_signed_url(sub.pdf_report_url),
-        })
-
-    return {
-        "player": {
-            "id":    current_user.id,
-            "name":  current_user.name,
-            "email": current_user.email,
-            "team":  current_user.team,
-        },
-        "summary": {
-            "total_submissions":          total,
-            "published_reports":          published,
-            "batting_submissions":         len(batting_subs),
-            "bowling_submissions":         len(bowling_subs),
-            "completion_rate":            completion,
-            "days_since_last_submission": days_since,
-            "improvement_trend":          flaw_trend["trend"] if flaw_trend else "insufficient_data",
-        },
-        "flaw_frequency":     flaw_frequency,
-        "flaw_trend":         flaw_trend,
-        "submission_timeline": timeline,
-    }
-
-
-#  COACH: Individual Player Progress
-@router.get("/coach/player/{player_id}/progress")
-def coach_player_progress(
-    player_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Full progress report for a single player derived from submission data."""
-    if current_user.role not in ("COACH", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Only coaches can view player progress.")
-
-    player = db.query(User).filter(User.id == player_id).first()
-    if not player:
-        raise HTTPException(status_code=404, detail="Player not found.")
-
-    # All submissions for this player-coach pair
-    all_subs = (
-        db.query(VideoSubmission)
-        .filter(
-            VideoSubmission.player_id == player_id,
-            VideoSubmission.coach_id == current_user.id,
-        )
-        .order_by(VideoSubmission.created_at.asc())
-        .all()
-    )
-
-    if not all_subs:
-        raise HTTPException(status_code=404, detail="No submissions found for this player.")
-
-    published_subs = [s for s in all_subs if s.status == SubmissionStatus.PUBLISHED]
-    batting_subs   = [s for s in all_subs if s.analysis_type == "BATTING"]
-    bowling_subs   = [s for s in all_subs if s.analysis_type == "BOWLING"]
-
-    total       = len(all_subs)
-    published   = len(published_subs)
-    completion  = round((published / total) * 100) if total else 0
-
-    from datetime import date
-    last_sub_date = all_subs[-1].created_at.date() if all_subs else None
-    days_since    = (date.today() - last_sub_date).days if last_sub_date else None
-
-    # Flaw frequency across all published reports
-    flaw_counter: dict[str, int] = {}
-    for sub in published_subs:
-        source = sub.coach_final_text or sub.ai_draft_text or ""
-        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
-            flaws = extract_bowling_flaws(source)
-        elif BATTING_ENGINE_AVAILABLE:
-            flaws = extract_detected_flaws(source)
-        else:
-            flaws = []
-        for f in flaws:
-            name = f.get("flaw_name", "").strip()
-            if name:
-                flaw_counter[name] = flaw_counter.get(name, 0) + 1
-
-    flaw_frequency = [
-        {"flaw": k, "count": v}
-        for k, v in sorted(flaw_counter.items(), key=lambda x: -x[1])[:8]
-    ]
-
-    # Improvement trend: first vs latest published report flaw count
-    flaw_trend = None
-    if len(published_subs) >= 2:
-        def _flaw_count(sub):
-            source = sub.coach_final_text or sub.ai_draft_text or ""
-            if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
-                return len(extract_bowling_flaws(source))
-            elif BATTING_ENGINE_AVAILABLE:
-                return len(extract_detected_flaws(source))
-            return 0
-
-        first_count  = _flaw_count(published_subs[0])
-        latest_count = _flaw_count(published_subs[-1])
-        delta        = latest_count - first_count
-        trend        = "improving" if delta < 0 else ("declining" if delta > 0 else "stable")
-        flaw_trend   = {
-            "first_report_flaw_count":  first_count,
-            "latest_report_flaw_count": latest_count,
-            "delta":                    delta,
-            "trend":                    trend,
-        }
-
-    # Submission timeline
-    timeline = []
-    for sub in all_subs:
-        source = sub.coach_final_text or sub.ai_draft_text or ""
-        if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
-            fc = len(extract_bowling_flaws(source))
-        elif BATTING_ENGINE_AVAILABLE:
-            fc = len(extract_detected_flaws(source))
-        else:
-            fc = 0
-        timeline.append({
-            "id":              sub.id,
-            "analysis_type":   sub.analysis_type,
-            "status":          sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status,
-            "created_at":      sub.created_at.isoformat() if sub.created_at else None,
-            "published_at":    sub.published_at.isoformat() if sub.published_at else None,
-            "flaw_count":      fc,
-            "pdf_report_url":  _gcs_to_signed_url(sub.pdf_report_url),
-        })
-
-    return {
-        "player": {
-            "id":    player.id,
-            "name":  player.name,
-            "email": player.email,
-            "team":  player.team,
-        },
-        "summary": {
-            "total_submissions":        total,
-            "published_reports":        published,
-            "batting_submissions":       len(batting_subs),
-            "bowling_submissions":       len(bowling_subs),
-            "completion_rate":          completion,
-            "days_since_last_submission": days_since,
-            "improvement_trend":        flaw_trend["trend"] if flaw_trend else "insufficient_data",
-        },
-        "flaw_frequency":    flaw_frequency,
-        "flaw_trend":        flaw_trend,
-        "submission_timeline": timeline,
-    }
-
-
-#  COACH: Accept a submission (no-op for now, acceptance is implicit when running AI)
-@router.post("/{submission_id}/accept")
-def coach_accept_submission(
-    submission_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """
-    Coach explicitly accepts a PENDING submission.
-    For now, this is a no-op that just validates the submission exists.
-    The player is added to 'My Athletes' when the coach runs AI analysis (PENDING → PROCESSING).
-    """
-    if current_user.role not in ("COACH", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Only coaches can accept submissions.")
-
-    sub = get_submission_by_id(db, submission_id)
-    if not sub:
-        raise HTTPException(status_code=404, detail="Submission not found.")
-    if sub.coach_id != current_user.id and current_user.role != "ADMIN":
-        raise HTTPException(status_code=403, detail="Not your submission to accept.")
-    if sub.status != SubmissionStatus.PENDING:
-        raise HTTPException(
-            status_code=409,
-            detail=f"Submission is already {sub.status.value}.",
-        )
-
-    mark_accepted(db, sub)
-    logger.info("Submission %s accepted by coach %s", sub.id, current_user.id)
-    return {"id": sub.id, "status": sub.status.value, "message": "Player added to My Athletes."}
-
-
-#  COACH: My Athletes (players with accepted submissions)
-@router.get("/coach/athletes")
-def coach_athletes(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Return distinct players whose submissions the coach has accepted (moved past PENDING)."""
-    if current_user.role not in ("COACH", "ADMIN"):
-        raise HTTPException(status_code=403, detail="Only coaches can access this endpoint.")
-
-    from sqlalchemy import distinct
-    accepted_statuses = [
-        SubmissionStatus.ACCEPTED,
-        SubmissionStatus.PROCESSING,
-        SubmissionStatus.DRAFT_REVIEW,
-        SubmissionStatus.PUBLISHED,
-    ]
-    subs = (
-        db.query(VideoSubmission)
-        .filter(
-            VideoSubmission.coach_id == current_user.id,
-            VideoSubmission.status.in_(accepted_statuses),
-        )
-        .all()
-    )
-
-    seen = set()
-    athletes = []
-    for sub in subs:
-        if sub.player_id not in seen:
-            seen.add(sub.player_id)
-            player = sub.player
-            if player:
-                # Count total submissions and published ones for this player-coach pair
-                total = db.query(VideoSubmission).filter(
-                    VideoSubmission.coach_id == current_user.id,
-                    VideoSubmission.player_id == sub.player_id,
-                ).count()
-                published = db.query(VideoSubmission).filter(
-                    VideoSubmission.coach_id == current_user.id,
-                    VideoSubmission.player_id == sub.player_id,
-                    VideoSubmission.status == SubmissionStatus.PUBLISHED,
-                ).count()
-                athletes.append({
-                    "id": player.id,
-                    "name": player.name,
-                    "email": player.email,
-                    "team": player.team,
-                    "total_submissions": total,
-                    "published_reports": published,
-                    "joined_at": sub.created_at.isoformat() if sub.created_at else None,
-                })
-
-    return {"athletes": athletes, "total": len(athletes)}
 
 
 class PlayerSubmissionCreate(BaseModel):
@@ -1060,7 +709,7 @@ def create_player_submission(
     ok = increment_usage_atomic(current_user.id, "submission_count", "max_submissions_per_month", 1, db)
     if not ok:
         db.rollback()
-        raise HTTPException(status_code=429, detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached."})
+        raise HTTPException(status_code=429, detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached (concurrent request)."})
 
     db.commit()
     db.refresh(submission)
@@ -1146,20 +795,26 @@ def coach_run_analysis(
         raise HTTPException(status_code=404, detail="Submission not found.")
     if sub.coach_id != current_user.id and current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Not your submission to analyze.")
-    if sub.status not in (SubmissionStatus.PENDING, SubmissionStatus.ACCEPTED):
+    if sub.status != SubmissionStatus.PENDING:
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING or ACCEPTED submissions can be analyzed.",
+            detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING submissions can be analyzed.",
         )
 
     # Mark PROCESSING
     mark_processing(db, sub)
 
-    # Resolve video file path on disk
-    video_file_path = sub.video_url.replace("/static/submissions/", "storage/submissions/")
-
-    if not os.path.isfile(video_file_path):
-        raise HTTPException(status_code=404, detail="Video file not found on disk.")
+    # Resolve video file path (handles both GCS and local storage)
+    try:
+        video_file_path = _resolve_video_path(sub.video_url)
+    except HTTPException:
+        raise
+    except Exception as e:
+        sub.status = SubmissionStatus.PENDING
+        db.commit()
+        error_msg = f"Video resolution failed: {type(e).__name__}: {str(e)}"
+        logger.exception("VIDEO RESOLUTION ERROR — %s", error_msg)
+        raise HTTPException(status_code=500, detail=error_msg)
 
     try:
         if sub.analysis_type == "BOWLING":
@@ -1180,19 +835,6 @@ def coach_run_analysis(
             annotated_video_url=annotated_video_url,
             key_frame_url=key_frame_url,
         )
-        
-        # Notify player that analysis is complete
-        try:
-            from api.routes.notification import create_notification
-            create_notification(
-                db=db,
-                user_id=sub.player_id,
-                title="Analysis Complete",
-                message=f"Your {sub.analysis_type.lower()} video analysis is ready for coach review",
-                notif_type="report"
-            )
-        except Exception as notif_err:
-            logger.warning("Failed to create analysis notification: %s", notif_err)
 
         logger.info("Analysis complete for submission %s → DRAFT_REVIEW", sub.id)
         return _to_detail(sub)
@@ -1235,6 +877,9 @@ def coach_publish(
     if not edited_text:
         raise HTTPException(status_code=400, detail="edited_text cannot be empty.")
 
+    # Store sketches if provided
+    sketches = body.sketches or []
+
     try:
         # Build metrics DataFrame from stored raw_biometrics
         metrics_df = pd.DataFrame()
@@ -1248,6 +893,78 @@ def coach_publish(
             img = cv2.imread(str(key_frame_path))
             if img is not None:
                 images["Key Frame"] = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+        # Convert sketches to images for PDF, preferring captured frame snapshots.
+        sketch_images: dict[str, np.ndarray] = {}
+        if sketches:
+            try:
+                # Render each sketch as a photo-like frame + annotation overlay.
+                for idx, sketch in enumerate(sketches, start=1):
+                    if "coordinates" not in sketch:
+                        continue
+
+                    coords = sketch.get("coordinates") or []
+                    if len(coords) < 2:
+                        continue
+
+                    # Read video timestamp (seconds, float) stored by the frontend.
+                    video_ts = sketch.get("timestamp")
+                    ts_label = f"@ {float(video_ts):.2f}s" if video_ts is not None else ""
+
+                    base_img: np.ndarray | None = None
+                    snapshot_data_url = sketch.get("snapshot_data_url")
+                    if isinstance(snapshot_data_url, str) and snapshot_data_url.startswith("data:image"):
+                        try:
+                            encoded = snapshot_data_url.split(",", 1)[1]
+                            decoded = base64.b64decode(encoded)
+                            arr = np.frombuffer(decoded, dtype=np.uint8)
+                            frame_bgr = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+                            if frame_bgr is not None:
+                                base_img = cv2.cvtColor(frame_bgr, cv2.COLOR_BGR2RGB)
+                        except (IndexError, ValueError, binascii.Error):
+                            base_img = None
+
+                    if base_img is None:
+                        if images and "Key Frame" in images:
+                            base_img = images["Key Frame"].copy()
+                        else:
+                            base_img = np.ones((720, 1280, 3), dtype=np.uint8) * 255
+
+                    sketch_canvas = base_img.copy()
+                    color = sketch.get("color", "#000000")
+                    try:
+                        hex_color = str(color).lstrip("#")
+                        r = int(hex_color[0:2], 16)
+                        g = int(hex_color[2:4], 16)
+                        b = int(hex_color[4:6], 16)
+                        bgr = (b, g, r)
+                    except Exception:
+                        bgr = (0, 0, 0)
+
+                    for i in range(len(coords) - 1):
+                        pt1 = (int(coords[i]["x"]), int(coords[i]["y"]))
+                        pt2 = (int(coords[i + 1]["x"]), int(coords[i + 1]["y"]))
+                        cv2.line(sketch_canvas, pt1, pt2, bgr, 3)
+
+                    # Burn timestamp label into the image (BGR color space).
+                    if ts_label:
+                        font = cv2.FONT_HERSHEY_SIMPLEX
+                        font_scale, thickness = 0.7, 2
+                        (tw, th), _ = cv2.getTextSize(ts_label, font, font_scale, thickness)
+                        # Convert canvas back to BGR for OpenCV overlay then back to RGB.
+                        canvas_bgr = cv2.cvtColor(sketch_canvas, cv2.COLOR_RGB2BGR)
+                        cv2.rectangle(canvas_bgr, (6, 6), (tw + 14, th + 16), (0, 0, 0), -1)
+                        cv2.putText(canvas_bgr, ts_label, (10, th + 10), font, font_scale, (255, 255, 255), thickness)
+                        sketch_canvas = cv2.cvtColor(canvas_bgr, cv2.COLOR_BGR2RGB)
+
+                    # Use timestamp in dict key so PDF section heading shows it.
+                    section_label = f"Coach Annotation {idx} {ts_label}".strip()
+                    sketch_images[section_label] = sketch_canvas
+
+                images.update(sketch_images)
+            except Exception as sketch_err:
+                logger.warning("Failed to render sketches for PDF: %s", sketch_err)
+
 
         # Generate PDF using coach's final text (NOT the AI draft)
         if sub.analysis_type == "BOWLING" and BOWLING_ENGINE_AVAILABLE:
@@ -1274,20 +991,8 @@ def coach_publish(
             sub,
             coach_final_text=edited_text,
             pdf_report_url=pdf_report_url,
+            coach_sketches=sketches,  # Save sketches to DB
         )
-        
-        # Notify player that report is published
-        try:
-            from api.routes.notification import create_notification
-            create_notification(
-                db=db,
-                user_id=sub.player_id,
-                title="Report Published",
-                message=f"Your {sub.analysis_type.lower()} performance report is now available",
-                notif_type="report"
-            )
-        except Exception as notif_err:
-            logger.warning("Failed to create publish notification: %s", notif_err)
 
         logger.info("Submission %s published by coach %s", sub.id, current_user.id)
         return _to_detail(sub)
@@ -1310,7 +1015,7 @@ def get_submission(
     - Player can see own submissions (PUBLISHED shows everything, others show status only).
     - Coach can see submissions assigned to them.
     """
-    sub = get_submission_by_id(db, submission_id)
+    sub = get_submission_by_id(db, str(submission_id))
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found.")
 
@@ -1370,7 +1075,20 @@ def _run_batting_analysis(
         metrics_summary=display_df.describe().to_string(),
         phase_info=phase_info,
     )
-    ai_text = _batting_gemini.call_gemini(prompt, video_path) if _batting_gemini else "AI feedback unavailable."
+    if _batting_gemini:
+        # Reset key rotation so stale index from prior failures doesn't skip valid keys.
+        _batting_gemini.current_index = 0
+        logger.info("[SUB] Batting Gemini call (text-only) — submission=%s", submission_id)
+        try:
+            # Pass video_path=None: the MediaPipe metrics summary in the prompt is
+            # already rich enough. Video upload in the submissions context causes
+            # Files API key rejections that don't affect the standalone batting route.
+            ai_text = _batting_gemini.call_gemini(prompt, None)
+        except Exception as gemini_err:
+            logger.exception("[SUB] Batting Gemini call failed: %s", gemini_err)
+            ai_text = _batting_gemini._fallback_feedback()
+    else:
+        ai_text = "AI feedback unavailable."
     ai_text, _ = _post_process_report_with_video_links(ai_text, "batting")
 
     # Pack biometrics for JSON storage
@@ -1415,7 +1133,20 @@ def _run_bowling_analysis(
     prompt = BOWLING_ANALYSIS_PROMPT.format(
         metrics_summary=display_df.describe().to_string()
     )
-    ai_text = _bowling_gemini.call_gemini(prompt, video_path) if _bowling_gemini else "AI feedback unavailable."
+    if _bowling_gemini:
+        # Reset key rotation so stale index from prior failures doesn't skip valid keys.
+        _bowling_gemini.current_index = 0
+        logger.info("[SUB] Bowling Gemini call (text-only) — submission=%s", submission_id)
+        try:
+            # Pass video_path=None: the MediaPipe metrics summary in the prompt is
+            # already rich enough. Video upload in the submissions context causes
+            # Files API key rejections that don't affect the standalone bowling route.
+            ai_text = _bowling_gemini.call_gemini(prompt, None)
+        except Exception as gemini_err:
+            logger.exception("[SUB] Bowling Gemini call failed: %s", gemini_err)
+            ai_text = _bowling_gemini._fallback_feedback()
+    else:
+        ai_text = "AI feedback unavailable."
     ai_text, _ = _post_process_report_with_video_links(ai_text, "bowling")
 
     biometrics = {

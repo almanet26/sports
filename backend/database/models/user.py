@@ -1,21 +1,31 @@
 import uuid
 from datetime import datetime, timedelta
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, ForeignKey, JSON, Text, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from database.config import Base, SessionLocal
+from database.config import Base
+from database.models.enums import USER_ROLE_VALUES
 
 from passlib.context import CryptContext
 import secrets
 
-# Password hashing context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 
 class User(Base):
     __tablename__ = "users"
 
-    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)   
-    role = Column(String, nullable=False)  # PLAYER, COACH, ADMIN
+    id = Column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()), index=True)
+
+    # Account type — PLAYER | COACH | ADMIN.  Permanent; set at registration.
+    # Subscription tier is stored in subscriptions.role, never here.
+    role = Column(
+        Enum(*USER_ROLE_VALUES, name="user_role_enum", native_enum=False),
+        nullable=False,
+        default="PLAYER",
+        server_default="PLAYER",
+    )
+
     name = Column(String, nullable=False)
     email = Column(String, unique=True, nullable=False, index=True)
     password_hash = Column(String, nullable=False)
@@ -24,163 +34,97 @@ class User(Base):
     gender = Column(String, nullable=True)
     jersey_number = Column(Integer, nullable=True)
     team = Column(String, nullable=True)
-    
-    # Coach branding fields
-    certifications = Column(JSON, nullable=True)  # [{name, issuer, year, certificate_url}]
-    specialization = Column(JSON, nullable=True)  # ["Batting", "Bowling", ...]
+
+    # Coach profile fields
+    certifications = Column(JSON, nullable=True)
+    specialization = Column(JSON, nullable=True)
     intro_video_url = Column(String, nullable=True)
     profile_image_url = Column(String, nullable=True)
-    coach_category = Column(String, nullable=True)  # Under 12, Under 15, Under 18, etc.
-    date_of_birth = Column(String, nullable=True)  # YYYY-MM-DD format
-    years_of_experience = Column(Integer, nullable=True)
-    
-    # Notification preferences
-    notification_preferences = Column(JSON, nullable=True, default=lambda: {
-        "email_submissions": True,
-        "email_published": True,
-        "email_messages": False,
-        "push_all": True,
-    })
+    coach_category = Column(String, nullable=True)
 
-    # Subscription field (BASIC, SILVER, GOLD)
-    subscription_plan = Column(String, default='BASIC', nullable=False)
-    
-    # Coach verification status (pending, verified, rejected)
+    # Coach verification status
     coach_status = Column(String, default='pending', nullable=True)
     coach_document_url = Column(String, nullable=True)
-    
-    # Authentication fields
-    is_active = Column(Boolean, default=True)
+
+    # Authentication
+    is_active = Column(Boolean, default=True, nullable=False, server_default="true")
     is_verified = Column(Boolean, default=False)
     email_verification_token = Column(String, nullable=True)
     email_verified_at = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Password reset
     password_reset_token = Column(String, nullable=True)
     password_reset_expires = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Security
     last_login = Column(DateTime(timezone=True), nullable=True)
     failed_login_attempts = Column(Integer, default=0)
     locked_until = Column(DateTime(timezone=True), nullable=True)
-    
+
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     deleted_at = Column(DateTime(timezone=True), nullable=True)
 
-    # ── Relationships ─────────────────────────────────────────────────────────
-    # Auth
-    sessions = relationship("UserSession", cascade="all, delete-orphan", foreign_keys="UserSession.user_id")
-
-    # Profile
+    # Relationships
+    subscriptions = relationship(
+        "Subscription",
+        back_populates="user",
+        order_by="Subscription.started_at.desc()",
+    )
+    monthly_usages = relationship("MonthlyUsage", back_populates="user")
+    chat_messages = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     player_profile = relationship("PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
-    # Subscriptions & usage
-    subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
-    monthly_usages = relationship("MonthlyUsage", back_populates="user", cascade="all, delete-orphan")
+    # ── password helpers ──────────────────────────────────────────────────────
 
-    # Notifications
-    notifications = relationship("Notification", backref="user", cascade="all, delete-orphan", foreign_keys="Notification.user_id")
-    password_reset_requests = relationship("PasswordResetRequest", backref="user", cascade="all, delete-orphan", foreign_keys="PasswordResetRequest.user_id")
-
-    # Coach
-    coach_contents = relationship("CoachContent", back_populates="coach", cascade="all, delete-orphan")
-    coach_sessions = relationship("CoachTrainingSession", cascade="all, delete-orphan", foreign_keys="CoachTrainingSession.coach_id")
-    coach_availability = relationship("CoachAvailability", cascade="all, delete-orphan", foreign_keys="CoachAvailability.coach_id")
-    coach_training_plans = relationship("CoachTrainingPlan", cascade="all, delete-orphan", foreign_keys="CoachTrainingPlan.coach_id")
-
-    # Password management methods
     def set_password(self, password: str):
-        """Hash and set password"""
         self.password_hash = pwd_context.hash(password)
 
     def verify_password(self, password: str) -> bool:
-        """Verify password against hash"""
         return pwd_context.verify(password, self.password_hash)
 
-    # Email verification methods
+    # ── email verification ────────────────────────────────────────────────────
+
     def generate_email_verification_token(self) -> str:
-        """Generate email verification token"""
         self.email_verification_token = secrets.token_urlsafe(32)
         return self.email_verification_token
 
     def verify_email(self):
-        """Mark email as verified"""
         self.is_verified = True
         self.email_verified_at = datetime.utcnow()
         self.email_verification_token = None
 
-    # Password reset methods
+    # ── password reset ────────────────────────────────────────────────────────
+
     def generate_password_reset_token(self) -> str:
-        """Generate password reset token"""
         self.password_reset_token = secrets.token_urlsafe(32)
         self.password_reset_expires = datetime.utcnow() + timedelta(hours=1)
         return self.password_reset_token
 
     def reset_password(self, new_password: str):
-        """Reset password and clear reset token"""
         self.set_password(new_password)
         self.password_reset_token = None
         self.password_reset_expires = None
         self.failed_login_attempts = 0
         self.locked_until = None
 
-    # Login tracking methods
+    # ── login tracking ────────────────────────────────────────────────────────
+
     def record_login(self):
-        """Record successful login"""
         self.last_login = datetime.utcnow()
         self.failed_login_attempts = 0
         self.locked_until = None
 
     def record_failed_login(self):
-        """Record failed login attempt and lock account if needed"""
         self.failed_login_attempts += 1
         if self.failed_login_attempts >= 5:
             self.locked_until = datetime.utcnow() + timedelta(minutes=30)
 
     def is_account_locked(self) -> bool:
-        """Check if account is locked"""
         if self.locked_until and self.locked_until > datetime.utcnow():
             return True
         return False
 
-    def save(self):
-        """Save the user to the database with exception handling."""
-        db = SessionLocal()
-        try:
-            db.add(self)
-            db.commit()
-            db.refresh(self)
-        except Exception as e:
-            db.rollback()
-            raise e
-        finally:
-            db.close()
-
-    @staticmethod
-    def get_by_email(email):
-        """Get user by email"""
-        db = SessionLocal()
-        try:
-            return db.query(User).filter_by(email=email).first()
-        except Exception as e:
-            db.rollback()
-            raise e
-        finally:
-            db.close()
-
-    @staticmethod
-    def get_by_id(user_id):
-        """Get user by ID"""
-        db = SessionLocal()
-        try:
-            return db.query(User).filter_by(id=user_id).first()
-        except Exception as e:
-            db.rollback()
-            raise e
-        finally:
-            db.close()
-
     def __repr__(self):
-        return f"<User {self.email}>"
+        return f"<User {self.email} ({self.role})>"

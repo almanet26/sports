@@ -10,31 +10,7 @@ Routes:
 - batting: Batting performance analysis
 - admin_coaches: Admin routes for coach verification
 """
-from . import auth, videos, jobs, requests, admin_coaches, reviews, earnings, notification
-
-try:
-    from . import analytics
-    ANALYTICS_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: Analytics feature disabled due to import error: {e}")
-    analytics = None
-    ANALYTICS_AVAILABLE = False
-
-try:
-    from . import messages
-    MESSAGES_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: Messages feature disabled due to import error: {e}")
-    messages = None
-    MESSAGES_AVAILABLE = False
-
-try:
-    from . import coach_content
-    COACH_CONTENT_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: Coach content feature disabled due to import error: {e}")
-    coach_content = None
-    COACH_CONTENT_AVAILABLE = False
+from . import auth, videos, jobs, requests, admin_coaches
 
 
 try:
@@ -79,15 +55,9 @@ except Exception as e:
 
 __all__ = [
     "auth", "videos", "jobs", "requests", "admin_coaches",
-    "analytics", "ANALYTICS_AVAILABLE",
-    "messages", "MESSAGES_AVAILABLE",
-    "coach_content", "COACH_CONTENT_AVAILABLE",
     "bowling", "BOWLING_AVAILABLE",
     "batting", "BATTING_AVAILABLE",
     "submissions", "SUBMISSIONS_AVAILABLE",
     "storage", "GCS_AVAILABLE",
     "worker", "WORKER_AVAILABLE",
-    "reviews",
-    "earnings",
-    "notification",
 ]

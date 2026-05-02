@@ -1,124 +1,232 @@
 """
-Admin API routes for user management.
+Admin API routes — plan management, user management, impersonation, stats, audit log.
+
+All routes require role == "ADMIN".  Any other role receives 403 immediately.
 """
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
-from sqlalchemy import or_, func
-from typing import Optional, List, Any
-from datetime import datetime, timezone
+from __future__ import annotations
+
 import logging
-import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, Optional
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import BaseModel, field_validator
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session
 
 from database.config import get_db
-from database.models.user import User
-from database.models.subscription import Subscription
 from database.models.admin_audit_log import AdminAuditLog
-from utils.auth import get_current_user, create_access_token
-from pydantic import BaseModel, ConfigDict
+from database.models.monthly_usage import MonthlyUsage
+from database.models.plan_config import PlanConfig
+from database.models.subscription import Subscription
+from database.models.user import User
+from utils.auth import create_access_token, get_current_user
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
 
 
-# ── Pydantic Schemas ──────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Admin guard dependency
+# ---------------------------------------------------------------------------
 
-class UserSummaryResponse(BaseModel):
-    id: str
-    name: str
-    email: str
-    role: str
-    is_active: bool
-    created_at: Optional[datetime]
-    last_login: Optional[datetime]
-
-    model_config = ConfigDict(from_attributes=True)
+def require_admin(current_user: User = Depends(get_current_user)) -> User:
+    if current_user.role != "ADMIN":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
+    return current_user
 
 
-class UserDetailResponse(BaseModel):
-    id: str
-    name: str
-    email: str
-    role: str
-    is_active: bool
-    phone: Optional[str] = None
-    team: Optional[str] = None
-    profile_bio: Optional[str] = None
-    gender: Optional[str] = None
-    jersey_number: Optional[int] = None
-    subscription_plan: Optional[str] = None
-    coach_status: Optional[str] = None
-    coach_category: Optional[str] = None
-    specialization: Optional[list] = None
-    certifications: Optional[list] = None
-    intro_video_url: Optional[str] = None
-    profile_image_url: Optional[str] = None
-    created_at: Optional[datetime] = None
-    last_login: Optional[datetime] = None
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 
-    model_config = ConfigDict(from_attributes=True)
+def _write_audit(
+    db: Session,
+    admin_id: str,
+    action: str,
+    target_type: str,
+    target_id: str,
+    before: Any | None = None,
+    after: Any | None = None,
+) -> None:
+    entry = AdminAuditLog(
+        admin_id=admin_id,
+        action=action,
+        target_type=target_type,
+        target_id=str(target_id),
+        before_value=before,
+        after_value=after,
+    )
+    db.add(entry)
 
 
-class UserListPageResponse(BaseModel):
-    users: List[UserSummaryResponse]
-    total: int
-    page: int
-    per_page: int
-    total_pages: int
+def _sub_for_user(user_id: str, db: Session) -> Optional[Subscription]:
+    return (
+        db.query(Subscription)
+        .filter(Subscription.user_id == user_id)
+        .order_by(Subscription.started_at.desc())
+        .first()
+    )
+
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
+
+class PlanUpdateRequest(BaseModel):
+    display_name: Optional[str] = None
+    price_inr: Optional[int] = None
+    duration_days: Optional[int] = None
+    max_biomech_per_month: Optional[int] = None
+    max_ocr_hours_per_month: Optional[float] = None
+    max_submissions_per_month: Optional[int] = None
+    max_players_in_dashboard: Optional[int] = None
+
+    @field_validator("price_inr")
+    @classmethod
+    def price_non_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < 0:
+            raise ValueError("price_inr must be >= 0")
+        return v
+
+    @field_validator(
+        "duration_days",
+        "max_biomech_per_month",
+        "max_submissions_per_month",
+        "max_players_in_dashboard",
+        mode="before",
+    )
+    @classmethod
+    def limits_non_negative(cls, v: int | None) -> int | None:
+        if v is not None and v < -1:
+            raise ValueError("limit must be >= -1 (-1 means unlimited)")
+        return v
+
+    @field_validator("max_ocr_hours_per_month", mode="before")
+    @classmethod
+    def ocr_non_negative(cls, v: float | None) -> float | None:
+        if v is not None and v < -1:
+            raise ValueError("max_ocr_hours_per_month must be >= -1")
+        return v
+
+
+class SubscriptionOverrideRequest(BaseModel):
+    plan_key: str
+    status: str
+    expires_at: Optional[str] = None   # ISO datetime string
+
+    @field_validator("status")
+    @classmethod
+    def valid_status(cls, v: str) -> str:
+        if v not in ("active", "expired", "past_due"):
+            raise ValueError("status must be active | expired | past_due")
+        return v
 
 
 class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
-class SubscriptionOverrideRequest(BaseModel):
-    plan_key: str
-    role: str
-    days: int = 365
+# ---------------------------------------------------------------------------
+# GET /admin/plans
+# ---------------------------------------------------------------------------
+
+@router.get("/plans")
+def list_plans(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    plans = db.query(PlanConfig).all()
+    return [
+        {
+            "plan_key": p.plan_key,
+            "role": p.role,
+            "display_name": p.display_name,
+            "price_inr": p.price_inr,
+            "duration_days": p.duration_days,
+            "max_biomech_per_month": p.max_biomech_per_month,
+            "max_ocr_hours_per_month": p.max_ocr_hours_per_month,
+            "max_submissions_per_month": p.max_submissions_per_month,
+            "max_players_in_dashboard": p.max_players_in_dashboard,
+        }
+        for p in plans
+    ]
 
 
-class AuditLogEntry(BaseModel):
-    id: str
-    admin_id: Optional[str] = None
-    admin_email: str
-    action: str
-    target_type: str
-    target_id: Optional[str] = None
-    before_value: Optional[Any] = None
-    after_value: Optional[Any] = None
-    created_at: datetime
+# ---------------------------------------------------------------------------
+# PATCH /admin/plans/{plan_key}
+# ---------------------------------------------------------------------------
 
-    model_config = ConfigDict(from_attributes=True)
+@router.patch("/plans/{plan_key}")
+def update_plan(
+    plan_key: str,
+    body: PlanUpdateRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == plan_key).first()
+    if not plan:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    before: dict = {
+        "display_name": plan.display_name,
+        "price_inr": plan.price_inr,
+        "duration_days": plan.duration_days,
+        "max_biomech_per_month": plan.max_biomech_per_month,
+        "max_ocr_hours_per_month": plan.max_ocr_hours_per_month,
+        "max_submissions_per_month": plan.max_submissions_per_month,
+        "max_players_in_dashboard": plan.max_players_in_dashboard,
+    }
+
+    payload = body.model_dump(exclude_unset=True)
+    for field, value in payload.items():
+        setattr(plan, field, value)
+
+    after: dict = {
+        "display_name": plan.display_name,
+        "price_inr": plan.price_inr,
+        "duration_days": plan.duration_days,
+        "max_biomech_per_month": plan.max_biomech_per_month,
+        "max_ocr_hours_per_month": plan.max_ocr_hours_per_month,
+        "max_submissions_per_month": plan.max_submissions_per_month,
+        "max_players_in_dashboard": plan.max_players_in_dashboard,
+    }
+
+    _write_audit(db, current_user.id, "update_plan", "plan", plan_key, before, after)
+    db.commit()
+
+    logger.info("Plan %s updated by admin %s", plan_key, current_user.email)
+
+    return {
+        "plan_key": plan.plan_key,
+        "role": plan.role,
+        "display_name": plan.display_name,
+        "price_inr": plan.price_inr,
+        "duration_days": plan.duration_days,
+        "max_biomech_per_month": plan.max_biomech_per_month,
+        "max_ocr_hours_per_month": plan.max_ocr_hours_per_month,
+        "max_submissions_per_month": plan.max_submissions_per_month,
+        "max_players_in_dashboard": plan.max_players_in_dashboard,
+    }
 
 
-class AuditLogPageResponse(BaseModel):
-    entries: List[AuditLogEntry]
-    total: int
-    page: int
-    per_page: int
-    total_pages: int
+# ---------------------------------------------------------------------------
+# GET /admin/users  (extended with subscription data)
+# ---------------------------------------------------------------------------
 
-
-# ── Dependency ────────────────────────────────────────────────────────────────
-
-def require_admin(current_user: User = Depends(get_current_user)):
-    if current_user.role != 'ADMIN':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
-    return current_user
-
-
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@router.get("/users", response_model=UserListPageResponse)
+@router.get("/users")
 def list_users(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     search: Optional[str] = None,
     role: Optional[str] = None,
+    subscription_status: Optional[str] = None,
+    plan: Optional[str] = None,
     is_active: Optional[bool] = None,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
+) -> dict:
     query = db.query(User)
 
     if search:
@@ -126,224 +234,299 @@ def list_users(
             or_(User.name.ilike(f"%{search}%"), User.email.ilike(f"%{search}%"))
         )
     if role:
-        query = query.filter(User.role == role)
+        query = query.filter(User.role == role.upper())
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
 
     total = query.count()
-    users = query.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
-
-    return UserListPageResponse(
-        users=[UserSummaryResponse.model_validate(u) for u in users],
-        total=total,
-        page=page,
-        per_page=per_page,
-        total_pages=(total + per_page - 1) // per_page,
+    users = (
+        query.order_by(User.created_at.desc())
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
     )
 
+    rows = []
+    for u in users:
+        sub = _sub_for_user(u.id, db)
+        if subscription_status and (sub is None or sub.status != subscription_status):
+            continue
+        if plan and (sub is None or sub.role != plan):
+            continue
+        rows.append(
+            {
+                "id": u.id,
+                "name": u.name,
+                "email": u.email,
+                "role": u.role,
+                "is_active": u.is_active,
+                "created_at": u.created_at.isoformat() if u.created_at else None,
+                "last_login": u.last_login.isoformat() if u.last_login else None,
+                "subscription_tier": sub.role if sub else "free",
+                "subscription_status": sub.status if sub else "inactive",
+                "subscription_plan_key": sub.plan_key if sub else None,
+                "subscription_expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else None,
+            }
+        )
+
+    return {
+        "users": rows,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/users/{user_id}
+# ---------------------------------------------------------------------------
 
 @router.get("/users/{user_id}")
 def get_user_details(
     user_id: str,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
+) -> dict:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    base = UserDetailResponse.model_validate(user).model_dump()
-
-    # Player: submissions
-    if user.role == 'PLAYER':
-        from database.models.submission import VideoSubmission
-        subs = db.query(VideoSubmission).filter(VideoSubmission.player_id == user_id).order_by(VideoSubmission.created_at.desc()).all()
-        base['submissions'] = [
-            {
-                'id': s.id,
-                'analysis_type': s.analysis_type,
-                'status': s.status.value if hasattr(s.status, 'value') else s.status,
-                'coach_name': s.coach.name if s.coach else None,
-                'created_at': s.created_at.isoformat() if s.created_at else None,
-                'pdf_report_url': s.pdf_report_url,
-            }
-            for s in subs
-        ]
-
-    # Coach: submissions received + reviews
-    if user.role == 'COACH':
-        from database.models.submission import VideoSubmission
-        from database.models.coach_review import CoachReview
-        subs = db.query(VideoSubmission).filter(VideoSubmission.coach_id == user_id).order_by(VideoSubmission.created_at.desc()).all()
-        base['submissions_received'] = [
-            {
-                'id': s.id,
-                'analysis_type': s.analysis_type,
-                'status': s.status.value if hasattr(s.status, 'value') else s.status,
-                'player_name': s.player.name if s.player else None,
-                'created_at': s.created_at.isoformat() if s.created_at else None,
-            }
-            for s in subs
-        ]
-        reviews = db.query(CoachReview).filter(CoachReview.coach_id == user_id).all()
-        base['reviews'] = [
-            {
-                'player_name': db.query(User).filter(User.id == r.player_id).first().name if db.query(User).filter(User.id == r.player_id).first() else 'Unknown',
-                'rating': r.rating,
-                'comment': r.comment,
-                'created_at': r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in reviews
-        ]
-        avg = round(sum(r.rating for r in reviews) / len(reviews), 1) if reviews else 0
-        base['average_rating'] = avg
-        base['total_reviews'] = len(reviews)
-
-    return base
+        raise HTTPException(status_code=404, detail="User not found")
+    sub = _sub_for_user(user_id, db)
+    return {
+        "id": user.id,
+        "name": user.name,
+        "email": user.email,
+        "role": user.role,
+        "is_active": user.is_active,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "last_login": user.last_login.isoformat() if user.last_login else None,
+        "subscription_tier": sub.role if sub else "free",
+        "subscription_status": sub.status if sub else "inactive",
+        "subscription_plan_key": sub.plan_key if sub else None,
+        "subscription_expires_at": sub.expires_at.isoformat() if sub and sub.expires_at else None,
+    }
 
 
-@router.patch("/users/{user_id}", response_model=UserSummaryResponse)
+# ---------------------------------------------------------------------------
+# PATCH /admin/users/{user_id}  (activate / suspend)
+# ---------------------------------------------------------------------------
+
+@router.patch("/users/{user_id}")
 def update_user(
     user_id: str,
     update_data: UserUpdateRequest,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
+) -> dict:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+        raise HTTPException(status_code=404, detail="User not found")
 
     if user.id == current_user.id and update_data.is_active is False:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot deactivate your own account")
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account")
 
     if update_data.is_active is not None:
         user.is_active = update_data.is_active
         action = "activated" if update_data.is_active else "suspended"
-        logger.info(f"User {user.email} {action} by admin {current_user.email}")
+        logger.info("User %s %s by admin %s", user.email, action, current_user.email)
 
     db.commit()
     db.refresh(user)
-    return UserSummaryResponse.model_validate(user)
+    return {"id": user.id, "email": user.email, "is_active": user.is_active}
 
 
-@router.get("/password-reset-requests")
-def get_password_reset_requests(
+# ---------------------------------------------------------------------------
+# PATCH /admin/users/{user_id}/subscription
+# ---------------------------------------------------------------------------
+
+@router.patch("/users/{user_id}/subscription")
+def override_subscription(
+    user_id: str,
+    body: SubscriptionOverrideRequest,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
-    from database.models.password_reset_request import PasswordResetRequest
-    requests = db.query(PasswordResetRequest).filter(
-        PasswordResetRequest.is_resolved == False
-    ).order_by(PasswordResetRequest.created_at.desc()).all()
-    return {
-        "requests": [
-            {
-                "id": r.id,
-                "user_id": r.user_id,
-                "email": r.email,
-                "name": r.name,
-                "message": r.message,
-                "created_at": r.created_at.isoformat() if r.created_at else None,
-            }
-            for r in requests
-        ]
-    }
-
-
-@router.post("/password-reset-requests/{request_id}/resolve")
-def resolve_password_reset(
-    request_id: str,
-    data: dict,
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    from database.models.password_reset_request import PasswordResetRequest
-    from database.models.notification import Notification
-    from utils.auth import get_password_hash
-    from datetime import datetime, timezone
-
-    req = db.query(PasswordResetRequest).filter(PasswordResetRequest.id == request_id).first()
-    if not req:
-        raise HTTPException(status_code=404, detail="Request not found")
-
-    new_password = data.get("new_password", "").strip()
-    if len(new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
-
-    user = db.query(User).filter(User.id == req.user_id).first()
+) -> dict:
+    user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.password_hash = get_password_hash(new_password)
-    req.is_resolved = True
-    req.resolved_at = datetime.now(timezone.utc)
+    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == body.plan_key).first()
+    if not plan:
+        raise HTTPException(status_code=422, detail=f"Unknown plan_key: {body.plan_key!r}")
 
-    # Notify the user with their new password
-    notif = Notification(
-        user_id=user.id,
-        title="Password Reset by Admin",
-        message=f"Your password has been reset. Your new password is: {new_password} — Please log in and change it immediately.",
-        type="info",
+    sub = _sub_for_user(user_id, db)
+    before = (
+        {"plan_key": sub.plan_key, "status": sub.status, "expires_at": sub.expires_at.isoformat() if sub.expires_at else None}
+        if sub
+        else None
     )
-    db.add(notif)
-    db.commit()
-    return {"ok": True, "message": f"Password reset for {user.email}. User has been notified."}
 
+    expires_at: datetime
+    if body.expires_at:
+        try:
+            expires_at = datetime.fromisoformat(body.expires_at.replace("Z", "+00:00"))
+        except ValueError:
+            raise HTTPException(status_code=422, detail="expires_at must be an ISO datetime string")
+    else:
+        now = datetime.now(timezone.utc)
+        expires_at = now + timedelta(days=plan.duration_days if plan.duration_days > 0 else 36500)
+
+    if sub:
+        sub.plan_key = body.plan_key
+        sub.role = plan.role
+        sub.status = body.status
+        sub.expires_at = expires_at
+    else:
+        sub = Subscription(
+            user_id=user_id,
+            plan_key=body.plan_key,
+            role=plan.role,
+            status=body.status,
+            started_at=datetime.now(timezone.utc),
+            expires_at=expires_at,
+        )
+        db.add(sub)
+
+    after = {"plan_key": body.plan_key, "status": body.status, "expires_at": expires_at.isoformat()}
+    _write_audit(db, current_user.id, "override_subscription", "user_subscription", user_id, before, after)
+    db.commit()
+
+    logger.info(
+        "Subscription overridden for user %s to %s by admin %s",
+        user.email, body.plan_key, current_user.email,
+    )
+
+    return {
+        "user_id": user_id,
+        "plan_key": sub.plan_key,
+        "role": sub.role,
+        "status": sub.status,
+        "expires_at": sub.expires_at.isoformat(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /admin/users/{user_id}/impersonate
+# ---------------------------------------------------------------------------
+
+@router.post("/users/{user_id}/impersonate")
+def impersonate_user(
+    user_id: str,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if target.role == "ADMIN":
+        raise HTTPException(status_code=403, detail="Cannot impersonate another admin")
+
+    sub = _sub_for_user(user_id, db)
+    sub_role = sub.role if sub else "free"
+    sub_status = sub.status if sub else "inactive"
+
+    token = create_access_token(
+        data={
+            "sub": target.email,
+            "user_id": target.id,
+            "role": target.role,
+            "subscription_role": sub_role,
+            "subscription_status": sub_status,
+            "is_impersonation": True,
+            "impersonated_by": current_user.id,
+        },
+        expires_delta=timedelta(minutes=15),
+    )
+
+    _write_audit(
+        db,
+        current_user.id,
+        "impersonate",
+        "impersonation",
+        user_id,
+        None,
+        {"target_email": target.email, "target_role": target.role},
+    )
+    db.commit()
+
+    logger.warning(
+        "Admin %s is impersonating user %s (%s)",
+        current_user.email, target.email, target.id,
+    )
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "expires_in": 900,
+        "target_user": {
+            "id": target.id,
+            "name": target.name,
+            "email": target.email,
+            "role": target.role,
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/stats
+# ---------------------------------------------------------------------------
 
 @router.get("/stats")
 def get_admin_stats(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
-    total_users = db.query(func.count(User.id)).scalar()
-    total_players = db.query(func.count(User.id)).filter(User.role == 'PLAYER').scalar()
-    total_coaches = db.query(func.count(User.id)).filter(User.role == 'COACH').scalar()
-    total_admins = db.query(func.count(User.id)).filter(User.role == 'ADMIN').scalar()
-    active_users = db.query(func.count(User.id)).filter(User.is_active == True).scalar()
-    pending_coaches = db.query(func.count(User.id)).filter(
-        User.role == 'COACH', User.coach_status == 'pending'
-    ).scalar()
-
-    basic_users = db.query(func.count(User.id)).filter(User.subscription_plan == 'BASIC').scalar()
-    silver_users = db.query(func.count(User.id)).filter(User.subscription_plan == 'SILVER').scalar()
-    gold_users = db.query(func.count(User.id)).filter(User.subscription_plan == 'GOLD').scalar()
-    monthly_revenue = (silver_users * 29) + (gold_users * 99)
-
-    # Extended platform stats for dashboard health panel
+) -> dict:
     now = datetime.now(timezone.utc)
     month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    new_this_month = db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar()
 
-    active_subs = db.query(func.count(Subscription.id)).filter(
-        Subscription.status == 'active', Subscription.expires_at > now
-    ).scalar()
-    expired_subs = db.query(func.count(Subscription.id)).filter(
-        Subscription.status == 'active', Subscription.expires_at <= now
-    ).scalar()
-    past_due_subs = db.query(func.count(Subscription.id)).filter(
-        Subscription.status == 'past_due'
-    ).scalar()
+    total_users = db.query(func.count(User.id)).scalar() or 0
+    players = db.query(func.count(User.id)).filter(User.role == "PLAYER").scalar() or 0
+    coaches = db.query(func.count(User.id)).filter(User.role == "COACH").scalar() or 0
+    new_this_month = (
+        db.query(func.count(User.id)).filter(User.created_at >= month_start).scalar() or 0
+    )
 
-    by_plan_rows = db.query(Subscription.plan_key, func.count(Subscription.id)).filter(
-        Subscription.status == 'active', Subscription.expires_at > now
-    ).group_by(Subscription.plan_key).all()
-    by_plan = {row[0]: row[1] for row in by_plan_rows}
+    def _sub_count(status: str) -> int:
+        return db.query(func.count(Subscription.id)).filter(Subscription.status == status).scalar() or 0
+
+    def _plan_count(tier: str) -> int:
+        return (
+            db.query(func.count(Subscription.id))
+            .filter(Subscription.role == tier, Subscription.status == "active")
+            .scalar()
+            or 0
+        )
+
+    active_subs = _sub_count("active")
+    expired_subs = _sub_count("expired")
+    past_due_subs = _sub_count("past_due")
+
+    by_plan = {
+        "free": _plan_count("free"),
+        "basic": _plan_count("basic"),
+        "platinum": _plan_count("platinum"),
+        "coach_starter": _plan_count("coach_starter"),
+        "coach_pro": _plan_count("coach_pro"),
+        "academy": _plan_count("academy"),
+    }
+
+    # Usage this month — sum across all monthly_usage rows for current month
+    usage_row = (
+        db.query(
+            func.coalesce(func.sum(MonthlyUsage.biomech_count), 0).label("biomech"),
+            func.coalesce(func.sum(MonthlyUsage.ocr_hours_used), 0).label("ocr"),
+            func.coalesce(func.sum(MonthlyUsage.submission_count), 0).label("submissions"),
+        )
+        .filter(MonthlyUsage.year == now.year, MonthlyUsage.month == now.month)
+        .first()
+    )
 
     return {
-        "total_users": total_users,
-        "total_players": total_players,
-        "total_coaches": total_coaches,
-        "total_admins": total_admins,
-        "active_users": active_users,
-        "inactive_users": total_users - active_users,
-        "pending_coaches": pending_coaches,
-        "subscription_breakdown": {"basic": basic_users, "silver": silver_users, "gold": gold_users},
-        "revenue": {"monthly": monthly_revenue, "yearly": monthly_revenue * 12},
-        # Extended fields for platform health panel
         "users": {
             "total": total_users,
-            "players": total_players,
-            "coaches": total_coaches,
+            "players": players,
+            "coaches": coaches,
             "new_this_month": new_this_month,
         },
         "subscriptions": {
@@ -353,64 +536,109 @@ def get_admin_stats(
             "by_plan": by_plan,
         },
         "usage": {
-            "biomech_jobs_this_month": 0,
-            "ocr_jobs_this_month": 0,
+            "biomech_jobs_this_month": int(usage_row.biomech) if usage_row else 0,
+            "ocr_jobs_this_month": round(float(usage_row.ocr), 2) if usage_row else 0.0,
             "total_videos_stored": 0,
             "pdf_reports_generated": 0,
         },
-        "revenue": {"total_payments_captured": 0, "this_month": monthly_revenue, "last_month": 0},
+        "revenue": {
+            "total_payments_captured": 0,
+            "this_month": 0,
+            "last_month": 0,
+        },
+        # Legacy fields kept for backward compat with existing AdminDashboard
+        "total_users": total_users,
+        "total_players": players,
+        "total_coaches": coaches,
+        "total_admins": db.query(func.count(User.id)).filter(User.role == "ADMIN").scalar() or 0,
+        "active_users": db.query(func.count(User.id)).filter(User.is_active == True).scalar() or 0,
+        "pending_coaches": (
+            db.query(func.count(User.id))
+            .filter(User.role == "COACH", User.coach_status == "pending")
+            .scalar()
+            or 0
+        ),
+        "subscription_breakdown": by_plan,
     }
 
+
+# ---------------------------------------------------------------------------
+# GET /admin/audit-log
+# ---------------------------------------------------------------------------
+
+@router.get("/audit-log")
+def get_audit_log(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict:
+    query = db.query(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())
+    total = query.count()
+    entries = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    rows = []
+    for e in entries:
+        admin_email = e.admin.email if e.admin else "unknown"
+        rows.append(
+            {
+                "id": e.id,
+                "admin_id": e.admin_id,
+                "admin_email": admin_email,
+                "action": e.action,
+                "target_type": e.target_type,
+                "target_id": e.target_id,
+                "before_value": e.before_value,
+                "after_value": e.after_value,
+                "created_at": e.created_at.isoformat(),
+            }
+        )
+
+    return {
+        "entries": rows,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /admin/coaches/pending  (kept for backward compat)
+# ---------------------------------------------------------------------------
 
 @router.get("/coaches/pending")
 def get_pending_coaches(
     limit: int = Query(5, ge=1, le=20),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
-    coaches = db.query(User).filter(
-        User.role == 'COACH', User.coach_status == 'pending'
-    ).order_by(User.created_at.asc()).limit(limit).all()
-    return {"coaches": [UserDetailResponse.model_validate(c) for c in coaches]}
+) -> dict:
+    coaches = (
+        db.query(User)
+        .filter(User.role == "COACH", User.coach_status == "pending")
+        .order_by(User.created_at.asc())
+        .limit(limit)
+        .all()
+    )
+    return {
+        "coaches": [
+            {
+                "id": c.id,
+                "name": c.name,
+                "email": c.email,
+                "team": c.team,
+                "specialization": c.specialization,
+                "certifications": c.certifications,
+                "created_at": c.created_at.isoformat() if c.created_at else None,
+            }
+            for c in coaches
+        ]
+    }
 
 
-@router.get("/activity")
-def get_activity_feed(
-    limit: int = Query(20, ge=1, le=50),
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    activities = []
-
-    recent_users = db.query(User).order_by(User.created_at.desc()).limit(10).all()
-    for user in recent_users:
-        activities.append({
-            "id": f"user_{user.id}",
-            "type": "registration",
-            "title": f"New {user.role.lower()} registered",
-            "description": f"{user.name} ({user.email})",
-            "timestamp": user.created_at.isoformat() if user.created_at else None,
-            "icon": "user-plus",
-            "color": "blue",
-        })
-
-    pending_coaches = db.query(User).filter(
-        User.role == 'COACH', User.coach_status == 'pending'
-    ).order_by(User.created_at.desc()).limit(5).all()
-    for coach in pending_coaches:
-        activities.append({
-            "id": f"coach_{coach.id}",
-            "type": "coach_application",
-            "title": "New coach application",
-            "description": f"{coach.name} applied for verification",
-            "timestamp": coach.created_at.isoformat() if coach.created_at else None,
-            "icon": "user-check",
-            "color": "green",
-        })
-
-    activities.sort(key=lambda x: x['timestamp'] or '', reverse=True)
-    return {"activities": activities[:limit], "total": len(activities[:limit])}
-
+# ---------------------------------------------------------------------------
+# PATCH /admin/coaches/{coach_id}/verify  (kept for backward compat)
+# ---------------------------------------------------------------------------
 
 @router.patch("/coaches/{coach_id}/verify")
 def verify_coach(
@@ -418,125 +646,63 @@ def verify_coach(
     action: str = Query(..., pattern="^(verified|rejected)$"),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
-    coach = db.query(User).filter(User.id == coach_id, User.role == 'COACH').first()
+) -> dict:
+    coach = db.query(User).filter(User.id == coach_id, User.role == "COACH").first()
     if not coach:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Coach not found")
+        raise HTTPException(status_code=404, detail="Coach not found")
 
     coach.coach_status = action
     db.commit()
     db.refresh(coach)
-    logger.info(f"Coach {coach.email} {action} by admin {current_user.email}")
-    return UserDetailResponse.model_validate(coach)
+    logger.info("Coach %s %s by admin %s", coach.email, action, current_user.email)
+    return {"id": coach.id, "email": coach.email, "coach_status": coach.coach_status}
 
 
-@router.patch("/users/{user_id}/subscription")
-def override_subscription(
-    user_id: str,
-    data: SubscriptionOverrideRequest,
+# ---------------------------------------------------------------------------
+# GET /admin/activity  (kept for backward compat)
+# ---------------------------------------------------------------------------
+
+@router.get("/activity")
+def get_activity_feed(
+    limit: int = Query(20, ge=1, le=50),
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
-):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+) -> dict:
+    activities = []
 
-    now = datetime.now(timezone.utc)
-    before = {"plan_key": user.subscription_plan, "role": user.role}
+    recent_users = db.query(User).order_by(User.created_at.desc()).limit(10).all()
+    for user in recent_users:
+        activities.append(
+            {
+                "id": f"user_{user.id}",
+                "type": "registration",
+                "title": f"New {user.role.lower()} registered",
+                "description": f"{user.name} ({user.email})",
+                "timestamp": user.created_at.isoformat() if user.created_at else None,
+                "icon": "user-plus",
+                "color": "blue",
+            }
+        )
 
-    # Expire any existing active subscription
-    db.query(Subscription).filter(
-        Subscription.user_id == user_id, Subscription.status == 'active'
-    ).update({"status": "inactive"})
-
-    new_sub = Subscription(
-        user_id=user_id,
-        plan_key=data.plan_key,
-        role=data.role,
-        status="active",
-        started_at=now,
-        expires_at=now.replace(year=now.year + 1) if data.days >= 365 else now,
+    pending_coaches = (
+        db.query(User)
+        .filter(User.role == "COACH", User.coach_status == "pending")
+        .order_by(User.created_at.desc())
+        .limit(5)
+        .all()
     )
-    # Use timedelta for days
-    from datetime import timedelta
-    new_sub.expires_at = now + timedelta(days=data.days)
-    db.add(new_sub)
+    for coach in pending_coaches:
+        activities.append(
+            {
+                "id": f"coach_{coach.id}",
+                "type": "coach_application",
+                "title": "New coach application",
+                "description": f"{coach.name} applied for verification",
+                "timestamp": coach.created_at.isoformat() if coach.created_at else None,
+                "icon": "user-check",
+                "color": "green",
+            }
+        )
 
-    user.subscription_plan = data.plan_key
-
-    audit = AdminAuditLog(
-        admin_id=current_user.id,
-        action="override_subscription",
-        target_type="user_subscription",
-        target_id=user_id,
-        before_value=before,
-        after_value={"plan_key": data.plan_key, "role": data.role, "days": data.days},
-    )
-    db.add(audit)
-    db.commit()
-    logger.info(f"Subscription overridden for {user.email} to {data.plan_key} by {current_user.email}")
-    return {"ok": True, "plan_key": data.plan_key, "expires_at": new_sub.expires_at.isoformat()}
-
-
-@router.post("/users/{user_id}/impersonate")
-def impersonate_user(
-    user_id: str,
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    if user_id == current_user.id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot impersonate yourself")
-
-    target = db.query(User).filter(User.id == user_id).first()
-    if not target:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    token = create_access_token({"sub": target.email, "role": target.role, "impersonated_by": current_user.id})
-
-    audit = AdminAuditLog(
-        admin_id=current_user.id,
-        action="impersonate",
-        target_type="impersonation",
-        target_id=user_id,
-        before_value=None,
-        after_value={"target_email": target.email, "target_role": target.role},
-    )
-    db.add(audit)
-    db.commit()
-    logger.info(f"Admin {current_user.email} impersonating {target.email}")
-    return {"access_token": token, "token_type": "bearer", "user": UserDetailResponse.model_validate(target)}
-
-
-@router.get("/audit-log", response_model=AuditLogPageResponse)
-def get_audit_log(
-    page: int = Query(1, ge=1),
-    per_page: int = Query(50, ge=1, le=100),
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    query = db.query(AdminAuditLog).order_by(AdminAuditLog.created_at.desc())
-    total = query.count()
-    entries = query.offset((page - 1) * per_page).limit(per_page).all()
-
-    result = []
-    for e in entries:
-        admin_email = e.admin.email if e.admin else "unknown"
-        result.append(AuditLogEntry(
-            id=e.id,
-            admin_id=e.admin_id,
-            admin_email=admin_email,
-            action=e.action,
-            target_type=e.target_type,
-            target_id=e.target_id,
-            before_value=e.before_value,
-            after_value=e.after_value,
-            created_at=e.created_at,
-        ))
-
-    return AuditLogPageResponse(
-        entries=result,
-        total=total,
-        page=page,
-        per_page=per_page,
-        total_pages=(total + per_page - 1) // per_page,
-    )
+    activities.sort(key=lambda x: x["timestamp"] or "", reverse=True)
+    return {"activities": activities[:limit], "total": len(activities[:limit])}

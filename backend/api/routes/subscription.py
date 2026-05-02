@@ -1,101 +1,142 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timedelta, timezone
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Optional
-from datetime import datetime, timedelta
-from pydantic import BaseModel, ConfigDict
 
 from database.config import get_db
+from database.models.plan_config import PlanConfig
 from database.models.subscription import Subscription
-from database.models.plan import Plan
 from database.models.user import User
 from utils.auth import get_current_user
 
-router = APIRouter(prefix="/subscriptions")
+router = APIRouter(prefix="/subscriptions", tags=["subscriptions"])
+
+_PLAYER_TIERS = frozenset({"free", "basic", "platinum"})
+_COACH_TIERS = frozenset({"coach_free", "coach_starter", "coach_pro", "academy"})
 
 
-# ── Pydantic Schemas ──────────────────────────────────────────────────────────
-
-class SubscriptionResponse(BaseModel):
-    id: int
-    user_id: str
-    plan_id: int
-    plan_name: str
-    plan_features: str
-    monthly_price: int
-    yearly_price: int
-    start_date: Optional[datetime] = None
-    end_date: Optional[datetime] = None
-
-    model_config = ConfigDict(from_attributes=True)
+class SubscribeRequest(BaseModel):
+    plan_key: str
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+def _eligible_tiers_for_account(account_type: str) -> frozenset[str]:
+    if account_type == "PLAYER":
+        return _PLAYER_TIERS
+    if account_type == "COACH":
+        return _COACH_TIERS
+    return frozenset(set(_PLAYER_TIERS) | set(_COACH_TIERS))
 
-def _build_response(sub: Subscription, plan: Plan) -> SubscriptionResponse:
-    return SubscriptionResponse(
-        id=sub.id,
-        user_id=sub.user_id,
-        plan_id=sub.plan_id,
-        plan_name=plan.name,
-        plan_features=plan.features,
-        monthly_price=plan.monthly_price,
-        yearly_price=plan.yearly_price,
-        start_date=sub.start_date,
-        end_date=sub.end_date,
+
+def _active_subscription(user_id: str, db: Session) -> Subscription | None:
+    return (
+        db.query(Subscription)
+        .filter(Subscription.user_id == user_id, Subscription.status == "active")
+        .order_by(Subscription.started_at.desc())
+        .first()
     )
 
 
-# ── Endpoints ─────────────────────────────────────────────────────────────────
-
-@router.post("/subscribe", response_model=SubscriptionResponse)
-def subscribe(
-    user_id: str,
-    plan_id: int,
-    billing_cycle: str = "monthly",
-    db: Session = Depends(get_db),
+@router.get("/plans")
+def list_available_plans(
     current_user: User = Depends(get_current_user),
-):
-    if current_user.role != "ADMIN" and current_user.id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot subscribe on behalf of another user")
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    account_type = current_user.role
+    eligible_tiers = _eligible_tiers_for_account(account_type)
 
-    plan = db.query(Plan).filter(Plan.id == plan_id).first()
-    if not plan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+    query = db.query(PlanConfig)
+    if account_type != "ADMIN":
+        query = query.filter(PlanConfig.role.in_(eligible_tiers))
 
-    start = datetime.utcnow()
-    end = start + (timedelta(days=365) if billing_cycle == "yearly" else timedelta(days=30))
+    plans = query.order_by(PlanConfig.price_inr.asc()).all()
+    active_sub = _active_subscription(current_user.id, db)
+    active_plan_key = active_sub.plan_key if active_sub else None
 
-    existing = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-    if existing:
-        existing.plan_id = plan_id
-        existing.start_date = start
-        existing.end_date = end
-        db.commit()
-        db.refresh(existing)
-        return _build_response(existing, plan)
+    return [
+        {
+            "plan_key": p.plan_key,
+            "role": p.role,
+            "display_name": p.display_name,
+            "price_inr": p.price_inr,
+            "duration_days": p.duration_days,
+            "max_biomech_per_month": p.max_biomech_per_month,
+            "max_ocr_hours_per_month": p.max_ocr_hours_per_month,
+            "max_submissions_per_month": p.max_submissions_per_month,
+            "max_players_in_dashboard": p.max_players_in_dashboard,
+            "is_current": p.plan_key == active_plan_key,
+        }
+        for p in plans
+    ]
 
-    sub = Subscription(user_id=user_id, plan_id=plan_id, start_date=start, end_date=end)
+
+@router.get("/me")
+def get_my_subscription(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    sub = _active_subscription(current_user.id, db)
+    if sub is None:
+        default_role = "coach_free" if current_user.role == "COACH" else "free"
+        return {
+            "plan_key": default_role,
+            "role": default_role,
+            "status": "inactive",
+            "started_at": None,
+            "expires_at": None,
+        }
+
+    return {
+        "plan_key": sub.plan_key,
+        "role": sub.role,
+        "status": sub.status,
+        "started_at": sub.started_at.isoformat() if sub.started_at else None,
+        "expires_at": sub.expires_at.isoformat() if sub.expires_at else None,
+    }
+
+
+@router.post("/subscribe")
+def subscribe(
+    body: SubscribeRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == body.plan_key).first()
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
+
+    if current_user.role != "ADMIN":
+        eligible_tiers = _eligible_tiers_for_account(current_user.role)
+        if plan.role not in eligible_tiers:
+            raise HTTPException(status_code=403, detail="This plan is not available for your account type")
+
+    # Close any existing active subscription rows for this user.
+    existing_active = (
+        db.query(Subscription)
+        .filter(Subscription.user_id == current_user.id, Subscription.status == "active")
+        .all()
+    )
+    for row in existing_active:
+        row.status = "expired"
+
+    now = datetime.now(timezone.utc)
+    duration_days = plan.duration_days if plan.duration_days > 0 else 36500
+    sub = Subscription(
+        user_id=current_user.id,
+        plan_key=plan.plan_key,
+        role=plan.role,
+        status="active",
+        started_at=now,
+        expires_at=now + timedelta(days=duration_days),
+    )
     db.add(sub)
     db.commit()
     db.refresh(sub)
-    return _build_response(sub, plan)
 
-
-@router.get("/user/{user_id}", response_model=Optional[SubscriptionResponse])
-def get_user_subscription(
-    user_id: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    if current_user.role != "ADMIN" and current_user.id != user_id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Access denied")
-
-    sub = db.query(Subscription).filter(Subscription.user_id == user_id).first()
-    if not sub:
-        return None
-
-    plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
-    if not plan:
-        return None
-
-    return _build_response(sub, plan)
+    return {
+        "plan_key": sub.plan_key,
+        "role": sub.role,
+        "status": sub.status,
+        "started_at": sub.started_at.isoformat(),
+        "expires_at": sub.expires_at.isoformat(),
+    }
