@@ -35,6 +35,10 @@ export interface User {
   intro_video_url?: string;
   profile_image_url?: string;
   coach_category?: string;
+  coach_status?: 'incomplete' | 'pending' | 'verified' | 'rejected';
+  date_of_birth?: string;
+  years_of_experience?: number;
+  availability?: Record<string, string[]>;
 }
 
 const DEFAULT_QUOTA: QuotaUsage = {
