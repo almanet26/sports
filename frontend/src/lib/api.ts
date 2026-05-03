@@ -534,9 +534,9 @@ export const submissionsApi = {
   analyze: (submissionId: string) =>
     api.post<SubmissionDetail>(`/submissions/${submissionId}/analyze`, null, { timeout: 1800000 }), // 30 min for large videos
 
-  /** Coach: Publish with edited text */
-  publish: (submissionId: string, editedText: string) =>
-    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { edited_text: editedText }),
+  /** Coach: Publish with edited text and optional sketch annotations */
+  publish: (submissionId: string, editedText: string, sketches?: unknown) =>
+    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { edited_text: editedText, sketches }),
 
   /** Get single submission detail */
   getById: (submissionId: string) =>
@@ -940,21 +940,22 @@ export const billingApi = {
   getPlans: () => api.get('/billing/plans'),
   subscribe: () => api.post('/billing/subscribe'),
   getStatus: () => api.get('/billing/status'),
-  createOrder: () => api.post('/billing/order'),
+  createOrder: (planKey?: string) => api.post('/billing/order', planKey ? { plan_key: planKey } : undefined),
 };
 export const scoutingApi = {
   getPlayers: () => api.get('/scouting/players'),
   getPlayer: (id: string) => api.get(`/scouting/players/${id}`),
   listPlayers: (filters?: unknown) => api.get('/scouting/players', { params: filters }),
   getShortlist: () => api.get('/scouting/shortlist'),
-  addToShortlist: (id: string) => api.post(`/scouting/shortlist/${id}`),
+  addToShortlist: (id: string, note?: string) => api.post(`/scouting/shortlist/${id}`, note ? { note } : undefined),
   removeFromShortlist: (id: string) => api.delete(`/scouting/shortlist/${id}`),
   updateNote: (id: string, note: string) => api.put(`/scouting/shortlist/${id}/note`, { note }),
 };
 export const annotationsApi = {
-  list: (id: string) => api.get(`/videos/${id}/annotations`),
-  create: (id: string, data: unknown) => api.post(`/videos/${id}/annotations`, data),
-  delete: (id: string, aId: string) => api.delete(`/videos/${id}/annotations/${aId}`),
+  list: (videoId: string) => api.get(`/videos/${videoId}/annotations`),
+  create: (data: { video_id: string; timestamp_ms: number; annotation_type: string; coordinates: unknown; label?: string; color?: string }) =>
+    api.post(`/videos/${data.video_id}/annotations`, data),
+  delete: (annotationId: string) => api.delete(`/annotations/${annotationId}`),
 };
 export const profileApi = {
   get: () => api.get('/auth/me'),
@@ -963,21 +964,41 @@ export const profileApi = {
   setup: (data: unknown) => api.post('/profile/setup', data),
   toggleScouting: (visible: boolean) => api.patch('/profile/scouting', { visible }),
 };
+export type ScoutingPlayerStats = {
+  avg_bat_speed?: number | null;
+  peak_bat_speed?: number | null;
+  avg_wrist_speed?: number | null;
+  best_shoulder_rotation?: number | null;
+  best_front_knee_angle?: number | null;
+  avg_release_height?: number | null;
+  best_elbow_angle?: number | null;
+  best_release_consistency?: number | null;
+};
 export type ScoutingPlayerSummary = {
-  id: string; name: string; email: string; user_id?: string;
+  id: string; name: string; email: string; user_id: string;
   display_name?: string; city?: string; state?: string; cricket_role?: string;
-  scouting_visible?: boolean; stats?: Record<string, unknown>;
-  total_analyses?: number; preferred_format?: string; experience_level?: string;
+  scouting_visible?: boolean; stats: ScoutingPlayerStats;
+  total_analyses: number; preferred_format?: string; experience_level?: string;
   bat_style?: string;
 };
-export type ScoutingPlayerDetail = ScoutingPlayerSummary & {
-  age?: number; recent_batting?: unknown[]; recent_bowling?: unknown[];
-  total_analyses?: number; analyses_last_updated?: string;
+export type ScoutingRecentAnalysis = {
+  id: string; date: string; metrics: Record<string, number | null>;
+};
+export type ScoutingPlayerDetail = Omit<ScoutingPlayerSummary, 'stats'> & {
+  stats: ScoutingPlayerStats;
+  age?: number;
+  recent_batting: ScoutingRecentAnalysis[];
+  recent_bowling: ScoutingRecentAnalysis[];
+  total_analyses: number;
+  analyses_last_updated?: string;
+  shortlisted: boolean;
+  coach_note?: string | null;
 };
 export type ScoutingFilters = {
   search?: string; cricket_role?: string; city?: string; state?: string;
   experience_level?: string; preferred_format?: string;
   min_analyses?: number; sort_by?: string; sort_order?: string;
+  page?: number; page_size?: number;
 };
 export type VideoAnnotation = {
   id: string; timestamp: number; timestamp_ms?: number; text: string;
