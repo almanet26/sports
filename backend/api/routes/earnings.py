@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from database.config import get_db
 from database.models.submission import VideoSubmission
 from database.models.subscription import Subscription
-from database.models.plan import Plan
+from database.models.plan_config import PlanConfig
 from database.models.user import User
 from utils.auth import get_current_user
 
@@ -42,12 +42,12 @@ def get_coach_earnings(
         if not sub:
             continue
 
-        plan = db.query(Plan).filter(Plan.id == sub.plan_id).first()
+        plan = db.query(PlanConfig).filter(PlanConfig.plan_key == sub.plan_key).first()
         if not plan:
             continue
 
-        amount = round(plan.monthly_price * COACH_REVENUE_SHARE, 2)
-        end_dt = sub.end_date
+        amount = round((plan.price_inr / 100) * COACH_REVENUE_SHARE, 2)
+        end_dt = sub.expires_at
         if end_dt and end_dt.tzinfo is None:
             end_dt = end_dt.replace(tzinfo=timezone.utc)
 
@@ -62,9 +62,9 @@ def get_coach_earnings(
         transactions.append({
             "id": str(sub.id),
             "player": player.name,
-            "type": plan.name,
+            "type": plan.display_name,
             "amount": amount,
-            "date": sub.start_date.isoformat() if sub.start_date else None,
+            "date": sub.started_at.isoformat() if sub.started_at else None,
             "status": tx_status,
         })
 

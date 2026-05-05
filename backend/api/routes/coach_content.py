@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, s
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database.config import get_db
-from database.models import CoachContent, ContentType, User
+from database.models import CoachContent, User
+from database.models.coach_content import ContentType
 from utils.auth import get_current_user
 from pydantic import BaseModel, Field, validator
 from datetime import datetime

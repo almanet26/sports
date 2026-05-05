@@ -340,8 +340,8 @@ else:
     logger.warning("Batting analysis feature disabled (MediaPipe not available)")
 
 # Submissions routes
-app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
 if SUBMISSIONS_AVAILABLE and submissions is not None:
+    app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
     app.include_router(submissions.router, prefix="/api/v1/submissions", tags=["submissions"])
     logger.info("B2B2C Submissions pipeline enabled")
 else:
