@@ -90,15 +90,13 @@ async def register(
         if ext not in ALLOWED:
             raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED))}")
         try:
+            import base64
             content = await coach_document.read()
             if len(content) > 10 * 1024 * 1024:
                 raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
-            storage_dir = Path("storage/coach_documents")
-            storage_dir.mkdir(parents=True, exist_ok=True)
-            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-            with open(storage_dir / unique_filename, "wb") as buf:
-                buf.write(content)
-            coach_document_url = f"coach_documents/{unique_filename}"
+            mime_type = coach_document.content_type or "application/octet-stream"
+            b64 = base64.b64encode(content).decode("utf-8")
+            coach_document_url = f"data:{mime_type};base64,{b64}"
         except HTTPException:
             raise
         except Exception as exc:

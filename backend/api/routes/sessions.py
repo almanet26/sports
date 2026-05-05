@@ -307,48 +307,34 @@ async def upload_content(
     db: Session = Depends(get_db),
     coach=Depends(get_current_coach),
 ):
-    MAX_SIZE = 500 * 1024 * 1024  # 500MB
+    import base64
+    MAX_SIZE = 20 * 1024 * 1024  # 20MB — base64 stored in DB
     gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
     ext = os.path.splitext(file.filename)[1].lower()
     unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
 
     if gcs_bucket:
         import google.cloud.storage as gcs_lib
+        content = await file.read()
+        if len(content) > 500 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Max 500MB.")
         gcs_client = gcs_lib.Client()
         bucket = gcs_client.bucket(gcs_bucket)
         blob = bucket.blob(f"coach_content/{unique_filename}")
-        # Stream directly to GCS — never loads full file into RAM
-        CHUNK = 256 * 1024
-        written = 0
-        with blob.open("wb", content_type=file.content_type or "application/octet-stream") as gcs_stream:
-            while True:
-                chunk = await file.read(CHUNK)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > MAX_SIZE:
-                    raise HTTPException(status_code=413, detail="File too large. Max 500MB.")
-                gcs_stream.write(chunk)
+        blob.upload_from_string(content, content_type=file.content_type or "application/octet-stream")
         file_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_content/{unique_filename}"
-        file_size = f"{round(written / (1024 * 1024), 1)} MB"
+        written = len(content)
     else:
-        storage_dir = Path("storage/coach_content")
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        CHUNK = 256 * 1024
-        written = 0
-        file_path = storage_dir / unique_filename
-        with open(file_path, "wb") as f_out:
-            while True:
-                chunk = await file.read(CHUNK)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > MAX_SIZE:
-                    file_path.unlink(missing_ok=True)
-                    raise HTTPException(status_code=413, detail="File too large. Max 500MB.")
-                f_out.write(chunk)
-        file_url = f"/static/coach_content/{unique_filename}"
-        file_size = f"{round(written / (1024 * 1024), 1)} MB"
+        # Store as base64 data URL in DB — no file system needed
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(status_code=413, detail="File too large. Max 20MB when not using cloud storage.")
+        written = len(content)
+        mime_type = file.content_type or "application/octet-stream"
+        b64 = base64.b64encode(content).decode("utf-8")
+        file_url = f"data:{mime_type};base64,{b64}"
+
+    file_size = f"{round(written / (1024 * 1024), 1)} MB"
 
     item = CoachContent(
         coach_id=coach.id,
