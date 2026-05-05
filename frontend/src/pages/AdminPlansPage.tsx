@@ -1,283 +1,285 @@
-import { useEffect, useState } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { plansApi } from '../lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { adminApi } from '../lib/api';
 
-interface Plan {
-  id: number;
-  name: string;
-  monthly_price: number;
-  yearly_price: number;
-  features: string;
+interface PlanRow {
+  plan_key: string;
+  role: string;
+  display_name: string;
+  price_inr: number;
+  duration_days: number;
+  max_biomech_per_month: number;
+  max_ocr_hours_per_month: number;
+  max_submissions_per_month: number;
+  max_players_in_dashboard: number;
 }
 
-const EMPTY_FORM = { name: '', monthly_price: '', yearly_price: '', features: '' };
+interface EditState {
+  display_name: string;
+  price_rupees: string;
+  duration_days: string;
+  max_biomech_per_month: string;
+  max_ocr_hours_per_month: string;
+  max_submissions_per_month: string;
+  max_players_in_dashboard: string;
+}
 
-function getPlanStyle(index: number) {
-  const styles = [
-    { gradient: 'from-blue-500 to-cyan-500', icon: 'fa-bolt' },
-    { gradient: 'from-purple-500 to-pink-500', icon: 'fa-crown' },
-    { gradient: 'from-yellow-500 to-orange-500', icon: 'fa-gem' },
-    { gradient: 'from-green-500 to-emerald-500', icon: 'fa-shield-alt' },
-  ];
-  return styles[index % styles.length];
+function toEditState(p: PlanRow): EditState {
+  return {
+    display_name: p.display_name,
+    price_rupees: (p.price_inr / 100).toFixed(0),
+    duration_days: String(p.duration_days),
+    max_biomech_per_month: String(p.max_biomech_per_month),
+    max_ocr_hours_per_month: String(p.max_ocr_hours_per_month),
+    max_submissions_per_month: String(p.max_submissions_per_month),
+    max_players_in_dashboard: String(p.max_players_in_dashboard),
+  };
+}
+
+function validateEdit(e: EditState): string | null {
+  if (Number(e.price_rupees) < 0) return 'Price cannot be negative';
+  if (Number(e.duration_days) < 0) return 'Duration cannot be negative';
+  return null;
+}
+
+function limitLabel(v: number): string {
+  return v === -1 ? '∞' : String(v);
 }
 
 export default function AdminPlansPage() {
-  const [plans, setPlans] = useState<Plan[]>([]);
-  const [form, setForm] = useState(EMPTY_FORM);
-  const [editingId, setEditingId] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState(EMPTY_FORM);
+  const [plans, setPlans] = useState<PlanRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [editState, setEditState] = useState<EditState | null>(null);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
 
-  const fetchPlans = () => plansApi.list().then((res: any) => setPlans(res.data || []));
-
-  useEffect(() => { fetchPlans(); }, []);
-
-  const handleCreate = async () => {
-    if (!form.name.trim() || !form.monthly_price || !form.yearly_price || !form.features.trim()) {
-      setError('All fields are required.');
-      return;
+  const fetchPlans = useCallback(async () => {
+    try {
+      const { data } = await adminApi.listPlans();
+      setPlans(data);
+    } catch {
+      showToast('Failed to load plans', false);
+    } finally {
+      setLoading(false);
     }
-    setError('');
+  }, []);
+
+  useEffect(() => { fetchPlans(); }, [fetchPlans]);
+
+  function showToast(msg: string, ok: boolean) {
+    setToast({ msg, ok });
+    setTimeout(() => setToast(null), 3500);
+  }
+
+  function startEdit(plan: PlanRow) {
+    setEditingKey(plan.plan_key);
+    setEditState(toEditState(plan));
+    setValidationError(null);
+  }
+
+  function cancelEdit() {
+    setEditingKey(null);
+    setEditState(null);
+    setValidationError(null);
+  }
+
+  async function saveEdit(planKey: string) {
+    if (!editState) return;
+    const err = validateEdit(editState);
+    if (err) { setValidationError(err); return; }
+
     setSaving(true);
     try {
-      await plansApi.create({
-        name: form.name,
-        monthly_price: Number(form.monthly_price),
-        yearly_price: Number(form.yearly_price),
-        features: form.features,
+      await adminApi.updatePlan(planKey, {
+        display_name: editState.display_name,
+        price_inr: Math.round(Number(editState.price_rupees) * 100),
+        duration_days: Number(editState.duration_days),
+        max_biomech_per_month: Number(editState.max_biomech_per_month),
+        max_ocr_hours_per_month: Number(editState.max_ocr_hours_per_month),
+        max_submissions_per_month: Number(editState.max_submissions_per_month),
+        max_players_in_dashboard: Number(editState.max_players_in_dashboard),
       });
-      setForm(EMPTY_FORM);
-      fetchPlans();
-    } catch { setError('Failed to create plan.'); }
-    finally { setSaving(false); }
-  };
+      await fetchPlans();
+      cancelEdit();
+      showToast('Plan updated successfully', true);
+    } catch (err: unknown) {
+      const detail =
+        typeof err === 'object' && err !== null &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : undefined;
+      showToast(typeof detail === 'string' ? detail : 'Save failed', false);
+    } finally {
+      setSaving(false);
+    }
+  }
 
-  const startEdit = (plan: Plan) => {
-    setEditingId(plan.id);
-    setEditForm({
-      name: plan.name,
-      monthly_price: String(plan.monthly_price),
-      yearly_price: String(plan.yearly_price),
-      features: plan.features,
-    });
-  };
-
-  const handleUpdate = async (id: number) => {
-    setSaving(true);
-    try {
-      await plansApi.update(id, {
-        name: editForm.name,
-        monthly_price: Number(editForm.monthly_price),
-        yearly_price: Number(editForm.yearly_price),
-        features: editForm.features,
-      });
-      setEditingId(null);
-      fetchPlans();
-    } catch { setError('Failed to update plan.'); }
-    finally { setSaving(false); }
-  };
-
-  const handleDelete = async (id: number) => {
-    if (!confirm('Delete this plan?')) return;
-    await plansApi.delete(id);
-    fetchPlans();
-  };
-
-  const parseFeatures = (f: string) => f.split(',').map(s => s.trim()).filter(Boolean);
+  function field(label: string, key: keyof EditState, hint?: string) {
+    if (!editState) return null;
+    return (
+      <div>
+        <label className="block text-xs text-white/50 mb-1">{label}{hint && <span className="text-white/30 ml-1">{hint}</span>}</label>
+        <input
+          type="number"
+          value={editState[key]}
+          onChange={(e) => setEditState({ ...editState, [key]: e.target.value })}
+          className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none text-sm text-white"
+        />
+      </div>
+    );
+  }
 
   return (
-    <div className="text-white max-w-6xl mx-auto">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-        className="glass rounded-3xl p-6 mb-8 border border-white/20">
-        <h1 className="text-3xl font-bold gradient-text flex items-center gap-3">
-          <i className="fas fa-crown text-yellow-400"></i>
-          Subscription Plans
-        </h1>
-        <p className="text-white/60 mt-1 text-sm">Create and manage subscription tiers shown to players</p>
-      </motion.div>
-
-      {/* Create form */}
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}
-        className="glass rounded-3xl p-6 mb-8 border border-white/20">
-        <h2 className="text-lg font-semibold mb-4 flex items-center gap-2">
-          <i className="fas fa-plus-circle text-green-400"></i>
-          Create New Plan
-        </h2>
-
-        {error && (
-          <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm">
-            {error}
-          </div>
-        )}
-
-        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-          <div>
-            <label className="block text-xs text-white/50 mb-1">Plan Name</label>
-            <input
-              placeholder="e.g. Gold"
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-white/50 mb-1">Monthly Price (₹)</label>
-            <input
-              type="number" min="0"
-              placeholder="e.g. 299"
-              value={form.monthly_price}
-              onChange={e => setForm({ ...form, monthly_price: e.target.value })}
-              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-white/50 mb-1">Yearly Price (₹)</label>
-            <input
-              type="number" min="0"
-              placeholder="e.g. 2999"
-              value={form.yearly_price}
-              onChange={e => setForm({ ...form, yearly_price: e.target.value })}
-              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-white/50 mb-1">Features (comma-separated)</label>
-            <input
-              placeholder="e.g. HD Videos, Analytics, ..."
-              value={form.features}
-              onChange={e => setForm({ ...form, features: e.target.value })}
-              className="w-full px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none transition-colors"
-            />
-          </div>
-        </div>
-
-        {/* Feature preview */}
-        {form.features && (
-          <div className="mb-4 flex flex-wrap gap-2">
-            {parseFeatures(form.features).map((f, i) => (
-              <span key={i} className="text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/20">
-                <i className="fas fa-check mr-1"></i>{f}
-              </span>
-            ))}
-          </div>
-        )}
-
-        <button
-          onClick={handleCreate}
-          disabled={saving}
-          className="px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all font-semibold flex items-center gap-2 disabled:opacity-50"
+    <div className="text-white">
+      {/* Toast */}
+      {toast && (
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0 }}
+          className={`fixed top-6 right-6 z-50 px-5 py-3 rounded-xl shadow-lg text-sm font-medium ${
+            toast.ok ? 'bg-green-600' : 'bg-red-600'
+          }`}
         >
-          {saving ? <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span> : <i className="fas fa-plus"></i>}
-          Create Plan
-        </button>
+          {toast.ok ? '✓' : '✗'} {toast.msg}
+        </motion.div>
+      )}
+
+      {/* Warning banner */}
+      <div className="mb-6 px-5 py-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-sm flex items-start gap-3">
+        <i className="fas fa-exclamation-triangle mt-0.5 flex-shrink-0"></i>
+        <span>
+          <strong>Changes to plan limits take effect immediately</strong> for all users on that plan.
+          Existing subscribers are not grandfathered.
+        </span>
+      </div>
+
+      {/* Header */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass rounded-3xl p-6 mb-8 border border-white/20"
+      >
+        <h1 className="text-3xl font-bold gradient-text flex items-center gap-3">
+          <i className="fas fa-tags text-yellow-400"></i>
+          Plan Management
+        </h1>
+        <p className="text-white/60 mt-1 text-sm">
+          Edit plan limits and pricing directly from the platform.
+        </p>
       </motion.div>
 
-      {/* Plans list */}
-      {plans.length === 0 ? (
-        <div className="glass rounded-3xl p-16 border border-white/20 text-center">
-          <i className="fas fa-inbox text-5xl text-white/20 mb-4"></i>
-          <p className="text-white/60">No plans yet — create your first one above</p>
+      {loading ? (
+        <div className="flex items-center justify-center py-16">
+          <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
         </div>
       ) : (
-        <div className={`grid gap-6 ${plans.length === 1 ? 'max-w-sm' : plans.length === 2 ? 'md:grid-cols-2' : 'md:grid-cols-3'}`}>
-          {plans.map((plan, index) => {
-            const style = getPlanStyle(index);
-            const isEditing = editingId === plan.id;
+        <div className="space-y-4">
+          {plans.map((plan, i) => (
+            <motion.div
+              key={plan.plan_key}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.05 }}
+              className="glass rounded-2xl border border-white/10 overflow-hidden"
+            >
+              {/* Plan header row */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+                <div className="flex items-center gap-4">
+                  <div>
+                    <span className="font-semibold text-white">{plan.display_name}</span>
+                    <span className="ml-2 text-xs text-white/40 font-mono">{plan.plan_key}</span>
+                  </div>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-white/60 font-mono">
+                    {plan.role}
+                  </span>
+                </div>
+                {editingKey !== plan.plan_key ? (
+                  <button
+                    onClick={() => startEdit(plan)}
+                    className="px-4 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-sm font-medium border border-blue-500/30 transition-all"
+                  >
+                    <i className="fas fa-pencil mr-2"></i>Edit
+                  </button>
+                ) : (
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => saveEdit(plan.plan_key)}
+                      disabled={saving}
+                      className="px-4 py-2 rounded-xl bg-green-500/20 hover:bg-green-500/30 text-green-400 text-sm font-medium border border-green-500/30 transition-all disabled:opacity-50"
+                    >
+                      {saving ? <i className="fas fa-spinner fa-spin mr-1"></i> : <i className="fas fa-check mr-1"></i>}
+                      Save
+                    </button>
+                    <button
+                      onClick={cancelEdit}
+                      className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/60 text-sm font-medium border border-white/10 transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
 
-            return (
-              <motion.div key={plan.id}
-                initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                className="glass rounded-3xl p-6 border border-white/20 hover:border-white/30 transition-all flex flex-col"
-              >
-                <AnimatePresence mode="wait">
-                  {isEditing ? (
-                    <motion.div key="edit" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                      className="space-y-3 flex-1">
-                      <p className="text-sm font-semibold text-white/60 mb-2">Editing Plan</p>
-                      {[
-                        { label: 'Name', key: 'name', type: 'text' },
-                        { label: 'Monthly Price (₹)', key: 'monthly_price', type: 'number' },
-                        { label: 'Yearly Price (₹)', key: 'yearly_price', type: 'number' },
-                        { label: 'Features (comma-separated)', key: 'features', type: 'text' },
-                      ].map(({ label, key, type }) => (
-                        <div key={key}>
-                          <label className="block text-xs text-white/40 mb-1">{label}</label>
-                          <input
-                            type={type}
-                            value={editForm[key as keyof typeof editForm]}
-                            onChange={e => setEditForm({ ...editForm, [key]: e.target.value })}
-                            className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none text-sm transition-colors"
-                          />
-                        </div>
-                      ))}
-                      <div className="flex gap-2 pt-2">
-                        <button onClick={() => handleUpdate(plan.id)} disabled={saving}
-                          className="flex-1 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-sm font-semibold disabled:opacity-50">
-                          {saving ? 'Saving...' : 'Save'}
-                        </button>
-                        <button onClick={() => setEditingId(null)}
-                          className="flex-1 py-2 rounded-xl glass border border-white/20 text-sm">
-                          Cancel
-                        </button>
-                      </div>
-                    </motion.div>
-                  ) : (
-                    <motion.div key="view" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                      className="flex flex-col flex-1">
-                      {/* Plan header */}
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-bold gradient-text">{plan.name}</h3>
-                        <div className={`w-12 h-12 rounded-xl bg-gradient-to-r ${style.gradient} flex items-center justify-center`}>
-                          <i className={`fas ${style.icon} text-white`}></i>
-                        </div>
-                      </div>
-
-                      {/* Pricing */}
-                      <div className="space-y-2 mb-4">
-                        <div className="flex items-center justify-between glass rounded-xl px-4 py-2 border border-white/10">
-                          <span className="text-sm text-white/60">Monthly</span>
-                          <span className="font-bold text-green-400">₹{plan.monthly_price}</span>
-                        </div>
-                        <div className="flex items-center justify-between glass rounded-xl px-4 py-2 border border-white/10">
-                          <span className="text-sm text-white/60">Yearly</span>
-                          <span className="font-bold text-blue-400">₹{plan.yearly_price}</span>
-                        </div>
-                      </div>
-
-                      {/* Features */}
-                      <div className="flex-1 mb-6">
-                        <p className="text-xs text-white/40 mb-2">Features</p>
-                        <ul className="space-y-1">
-                          {parseFeatures(plan.features).map((f, i) => (
-                            <li key={i} className="flex items-center gap-2 text-sm text-white/70">
-                              <i className="fas fa-check-circle text-green-400 text-xs flex-shrink-0"></i>
-                              {f}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-
-                      {/* Actions */}
-                      <div className="flex gap-3">
-                        <button onClick={() => startEdit(plan)}
-                          className="flex-1 py-2 rounded-xl bg-gradient-to-r from-blue-500 to-cyan-600 text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-                          <i className="fas fa-edit"></i>Edit
-                        </button>
-                        <button onClick={() => handleDelete(plan.id)}
-                          className="flex-1 py-2 rounded-xl bg-gradient-to-r from-red-500 to-red-600 text-sm font-semibold flex items-center justify-center gap-2 hover:opacity-90 transition-opacity">
-                          <i className="fas fa-trash"></i>Delete
-                        </button>
-                      </div>
-                    </motion.div>
+              {/* Read-only summary or edit form */}
+              {editingKey !== plan.plan_key ? (
+                <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-4 px-6 py-4 text-sm">
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Price</p>
+                    <p className="font-medium">₹{(plan.price_inr / 100).toLocaleString('en-IN')}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Duration</p>
+                    <p className="font-medium">{plan.duration_days === 0 ? 'Forever' : `${plan.duration_days}d`}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Biomech/mo</p>
+                    <p className="font-medium">{limitLabel(plan.max_biomech_per_month)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">OCR hrs/mo</p>
+                    <p className="font-medium">{limitLabel(plan.max_ocr_hours_per_month)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Submissions/mo</p>
+                    <p className="font-medium">{limitLabel(plan.max_submissions_per_month)}</p>
+                  </div>
+                  <div>
+                    <p className="text-white/40 text-xs mb-1">Max players</p>
+                    <p className="font-medium">{limitLabel(plan.max_players_in_dashboard)}</p>
+                  </div>
+                </div>
+              ) : (
+                <div className="px-6 py-5 space-y-4">
+                  {validationError && (
+                    <p className="text-red-400 text-sm flex items-center gap-2">
+                      <i className="fas fa-exclamation-circle"></i> {validationError}
+                    </p>
                   )}
-                </AnimatePresence>
-              </motion.div>
-            );
-          })}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs text-white/50 mb-1">Display Name</label>
+                      <input
+                        type="text"
+                        value={editState!.display_name}
+                        onChange={(e) => setEditState({ ...editState!, display_name: e.target.value })}
+                        className="w-full px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none text-sm text-white"
+                      />
+                    </div>
+                    {field('Price (₹)', 'price_rupees', '— shown in rupees, stored as paise')}
+                    {field('Duration (days)', 'duration_days', '— 0 = forever')}
+                    {field('Biomech / month', 'max_biomech_per_month', '— −1 = unlimited')}
+                    {field('OCR hours / month', 'max_ocr_hours_per_month', '— −1 = unlimited')}
+                    {field('Submissions / month', 'max_submissions_per_month', '— −1 = unlimited')}
+                    {field('Max players in dashboard', 'max_players_in_dashboard', '— −1 = unlimited')}
+                  </div>
+                </div>
+              )}
+            </motion.div>
+          ))}
         </div>
       )}
     </div>
