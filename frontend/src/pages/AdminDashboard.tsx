@@ -160,7 +160,12 @@ export default function AdminDashboard() {
         totalCoaches: statsResponse.data.total_coaches || 0,
         pendingCoaches: statsResponse.data.pending_coaches || 0,
         subscription_breakdown: statsResponse.data.subscription_breakdown,
-        revenue: statsResponse.data.revenue,
+        revenue: statsResponse.data.revenue
+          ? {
+              monthly: statsResponse.data.revenue.this_month ?? statsResponse.data.revenue.monthly ?? 0,
+              yearly: statsResponse.data.revenue.last_month ?? statsResponse.data.revenue.yearly ?? 0,
+            }
+          : undefined,
       });
 
       // Store the extended platform stats if the new fields are present
@@ -347,7 +352,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold text-green-400">${stats.revenue?.monthly.toLocaleString() || 0}</p>
+              <p className="text-2xl font-bold text-green-400">${(stats.revenue?.monthly ?? 0).toLocaleString()}</p>
               <p className="text-xs text-white/60">MRR</p>
             </div>
           </div>
@@ -431,11 +436,11 @@ export default function AdminDashboard() {
           <div className="mt-6 pt-4 border-t border-white/10">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-white/60">Monthly Revenue</span>
-              <span className="font-semibold text-green-400">${stats.revenue?.monthly.toLocaleString() || 0}</span>
+              <span className="font-semibold text-green-400">${(stats.revenue?.monthly ?? 0).toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-white/60">Yearly Projection</span>
-              <span className="font-semibold text-blue-400">${stats.revenue?.yearly.toLocaleString() || 0}</span>
+              <span className="font-semibold text-blue-400">${(stats.revenue?.yearly ?? 0).toLocaleString()}</span>
             </div>
           </div>
         </motion.div>

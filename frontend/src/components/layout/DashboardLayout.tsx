@@ -203,8 +203,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               <div className="flex items-center gap-3">
                 <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                   {sidebarAvatar
-                    ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }}/>
-                    : sidebarName.charAt(0).toUpperCase() || 'U'
+                    ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; (e.currentTarget.parentElement as HTMLElement).innerText = sidebarName.charAt(0).toUpperCase() || 'U'; }}/>
+                    : <span>{sidebarName.charAt(0).toUpperCase() || 'U'}</span>
                   }
                 </div>
                 <div className="flex-1 min-w-0">
@@ -359,8 +359,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                         {sidebarAvatar
-                          ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { e.currentTarget.style.display = 'none'; }}/>
-                          : sidebarName.charAt(0).toUpperCase() || 'U'
+                          ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; (e.currentTarget.parentElement as HTMLElement).innerText = sidebarName.charAt(0).toUpperCase() || 'U'; }}/>
+                          : <span>{sidebarName.charAt(0).toUpperCase() || 'U'}</span>
                         }
                       </div>
                       <div className="flex-1 min-w-0">

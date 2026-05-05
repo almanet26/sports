@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { authService } from '../utils/auth';
-import { authApi } from '../lib/api';
+import { authApi, api } from '../lib/api';
+import { useAuthStore } from '../store/authStore';
 
 const SPECIALIZATIONS = ['Batting', 'Bowling', 'Fielding', 'Fitness', 'Mental', 'Wicketkeeping'];
 
@@ -13,6 +14,7 @@ interface Certification {
 
 export default function CoachProfilePage() {
   const userProfile = authService.getUserProfile();
+  const user = useAuthStore((state) => state.user);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [profileComplete, setProfileComplete] = useState(0);
@@ -27,6 +29,36 @@ export default function CoachProfilePage() {
 
   const [certifications, setCertifications] = useState<Certification[]>(userProfile?.certifications || []);
   const [specialization, setSpecialization] = useState<string[]>(userProfile?.specialization || []);
+  const [profileImageUrl, setProfileImageUrl] = useState(userProfile?.profile_image_url || '');
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const photoInputRef = useRef<HTMLInputElement>(null);
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhotoUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await api.post('/auth/profile-image', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const url = res.data.profile_image_url;
+      setProfileImageUrl(url);
+      const updated = { ...userProfile, profile_image_url: url };
+      localStorage.setItem('user_profile', JSON.stringify(updated));
+      if (user) useAuthStore.setState({ user: { ...user, profile_image_url: url } });
+    } catch {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const url = ev.target?.result as string;
+        setProfileImageUrl(url);
+      };
+      reader.readAsDataURL(file);
+    } finally {
+      setPhotoUploading(false);
+    }
+  };
 
   useEffect(() => {
     let complete = 0;
@@ -129,14 +161,22 @@ export default function CoachProfilePage() {
           <div className="lg:col-span-2 space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="rounded-xl p-4 glass border border-white/10 flex flex-col items-center justify-center">
-                {userProfile?.profile_image_url ? (
-                  <img src={userProfile?.profile_image_url} alt="Profile" className="w-24 h-24 rounded-2xl object-cover mb-2" />
+                <div className="relative cursor-pointer" onClick={() => photoInputRef.current?.click()}>
+                {profileImageUrl ? (
+                  <img src={profileImageUrl} alt="Profile" className="w-24 h-24 rounded-2xl object-cover mb-2" />
                 ) : (
                   <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-4xl font-bold mb-2">
                     {formData.name?.charAt(0)?.toUpperCase() || 'C'}
                   </div>
                 )}
-                <p className="text-xs text-white/50 text-center">Profile Photo</p>
+                <div className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity mb-2">
+                  {photoUploading
+                    ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    : <i className="fas fa-camera text-white text-lg"></i>}
+                </div>
+              </div>
+              <p className="text-xs text-white/50 text-center">Click to change photo</p>
+              <input ref={photoInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoUpload} />
               </div>
 
               <div className="rounded-xl p-4 glass border border-white/10 md:col-span-2">
@@ -257,14 +297,19 @@ export default function CoachProfilePage() {
 
         {/* Avatar */}
         <div className="flex items-center gap-6 mb-8">
-          <div className="relative">
-            {userProfile?.profile_image_url ? (
-              <img src={userProfile?.profile_image_url} alt="Profile" className="w-20 h-20 rounded-2xl object-cover" />
+          <div className="relative cursor-pointer" onClick={() => photoInputRef.current?.click()}>
+            {profileImageUrl ? (
+              <img src={profileImageUrl} alt="Profile" className="w-20 h-20 rounded-2xl object-cover" />
             ) : (
               <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-3xl font-bold">
                 {formData.name?.charAt(0)?.toUpperCase() || 'C'}
               </div>
             )}
+            <div className="absolute inset-0 rounded-2xl bg-black/50 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity">
+              {photoUploading
+                ? <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                : <i className="fas fa-camera text-white"></i>}
+            </div>
           </div>
           <div>
             <p className="text-xl font-semibold">{formData.name}</p>
