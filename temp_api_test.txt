@@ -825,7 +825,7 @@ export const scoutingApi = {
 
 export default api;
 
-// ============ Coach + Player Feature APIs ============
+// ============ Coach Dashboard APIs (test branch additions) ============
 
 export interface TrainingSession {
   id: string; topic: string; description?: string; prerequisites?: string;

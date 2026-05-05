@@ -268,3 +268,35 @@ def update_current_user(
     logger.info("User profile updated: %s", current_user.email)
     sub = _get_active_sub(current_user.id, db)
     return _build_profile_response(current_user, sub)
+
+
+@router.post("/profile-image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload profile image — stores as base64 data URL in DB."""
+    ALLOWED = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED:
+        raise HTTPException(status_code=400, detail="Invalid image format. Allowed: jpg, jpeg, png, webp, gif")
+
+    try:
+        content = await file.read()
+        if len(content) > 5 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="File too large. Max 5MB.")
+        import base64
+        mime_type = file.content_type or "image/jpeg"
+        data_url = f"data:{mime_type};base64,{base64.b64encode(content).decode('utf-8')}"
+        current_user.profile_image_url = data_url
+        db.commit()
+        db.refresh(current_user)
+        return {"profile_image_url": data_url}
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Profile image upload failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()

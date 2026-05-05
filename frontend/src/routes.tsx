@@ -46,6 +46,22 @@ import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
 import ScoutingPage from './pages/ScoutingPage';
+import CoachSessionsPage from './pages/CoachSessionsPage';
+import CoachAvailabilityPage from './pages/CoachAvailabilityPage';
+import CoachTrainingPlansPage from './pages/CoachTrainingPlansPage';
+import CoachAnalyticsPage from './pages/CoachAnalyticsPage';
+import CoachReviewsPage from './pages/CoachReviewsPage';
+import CoachEarningsPage from './pages/CoachEarningsPage';
+import CoachContentPage from './pages/CoachContentPage';
+import CoachSettingsPage from './pages/CoachSettingsPage';
+import CoachMessagesPage from './pages/CoachMessagesPage';
+import CoachMyPlayersPage from './pages/CoachMyPlayersPage';
+import BrowseContentPage from './pages/BrowseContentPage';
+import ContentDetailPage from './pages/ContentDetailPage';
+import PlayerMyCoachesPage from './pages/PlayerMyCoachesPage';
+import PlayerGamification from './pages/PlayerGamification';
+import PlayerVideosPage from './pages/PlayerVideosPage';
+import PlayerProfile from './pages/PlayerProfile';
 
 // Auth Initializer (runs once on module load)
 let authInitialized = false;
@@ -203,6 +219,11 @@ export default function AppRouter() {
               <Route path="/player/subscription" element={<SubscriptionPage />} />
               <Route path="/player/chat" element={<ChatPage />} />
               <Route path="/player/profile" element={<PlayerProfilePage />} />
+              <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
+              <Route path="/player/gamification" element={<PlayerGamification />} />
+              <Route path="/player/videos" element={<PlayerVideosPage />} />
+              <Route path="/player/performance" element={<PlayerProfile />} />
+              <Route path="/player/settings" element={<PlayerProfilePage />} />
             </Route>
           </Route>
         </Route>
@@ -219,6 +240,18 @@ export default function AppRouter() {
               <Route path="/coach/submissions" element={<CoachInboxPage />} />
               <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
               <Route path="/coach/scouting" element={<ScoutingPage />} />
+              <Route path="/coach/sessions" element={<CoachSessionsPage />} />
+              <Route path="/coach/availability" element={<CoachAvailabilityPage />} />
+              <Route path="/coach/training-plans" element={<CoachTrainingPlansPage />} />
+              <Route path="/coach/analytics" element={<CoachAnalyticsPage />} />
+              <Route path="/coach/reviews" element={<CoachReviewsPage />} />
+              <Route path="/coach/earnings" element={<CoachEarningsPage />} />
+              <Route path="/coach/content" element={<CoachContentPage />} />
+              <Route path="/coach/settings" element={<CoachSettingsPage />} />
+              <Route path="/coach/messages" element={<CoachMessagesPage />} />
+              <Route path="/coach/players" element={<CoachMyPlayersPage />} />
+              <Route path="/browse-content" element={<BrowseContentPage />} />
+              <Route path="/content/:id" element={<ContentDetailPage />} />
             </Route>
           </Route>
         </Route>

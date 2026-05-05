@@ -28,6 +28,44 @@ from database.models.player_submission import PlayerSubmission
 from database.models.academy_branding import AcademyBranding
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
+
+# New coach + player feature models
+try:
+    from database.models.coach_review import CoachReview
+except Exception:
+    pass
+try:
+    from database.models.coach_session import CoachTrainingSession
+except Exception:
+    pass
+try:
+    from database.models.coach_availability import CoachAvailability
+except Exception:
+    pass
+try:
+    from database.models.coach_training_plan import CoachTrainingPlan
+except Exception:
+    pass
+try:
+    from database.models.coach_content import CoachContent
+except Exception:
+    pass
+try:
+    from database.models.message import Message
+except Exception:
+    pass
+try:
+    from database.models.gamification import PlayerBadge, PlayerStreak
+except Exception:
+    pass
+try:
+    from database.models.player_performance import PlayerPerformanceRecord
+except Exception:
+    pass
+try:
+    from database.models.review import Review
+except Exception:
+    pass
 __all__ = [
     # User models
     "User",
