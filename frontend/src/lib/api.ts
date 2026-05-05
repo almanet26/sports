@@ -529,6 +529,10 @@ export const submissionsApi = {
   /** Get single submission detail */
   getById: (submissionId: string) =>
     api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+
+  /** Player: My progress (for profile page) */
+  myProgress: () =>
+    api.get<PlayerProgress>('/submissions/player/progress'),
 };
 
 // Cloud Storage — Direct-to-GCS Upload
