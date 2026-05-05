@@ -51,6 +51,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: '/coach/reviews', icon: 'fas fa-star', label: 'Reviews' },
     { to: '/coach/earnings', icon: 'fas fa-wallet', label: 'Earnings' },
     { to: '/coach/content', icon: 'fas fa-photo-video', label: 'My Content' },
+    { to: '/billing', icon: 'fas fa-crown', label: 'Subscription' },
     { to: '/coach/settings', icon: 'fas fa-cog', label: 'Settings' },
   ],
   ADMIN: [
