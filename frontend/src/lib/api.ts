@@ -825,20 +825,13 @@ export const scoutingApi = {
 
 export default api;
 
-// ============ Coach Dashboard APIs ============
+// ============ Coach Dashboard APIs (test branch additions) ============
 
 export interface TrainingSession {
-  id: string;
-  topic: string;
-  description?: string;
-  prerequisites?: string;
-  session_date: string;
-  session_time: string;
-  duration_minutes: string;
-  session_type: string;
-  created_at?: string;
+  id: string; topic: string; description?: string; prerequisites?: string;
+  session_date: string; session_time: string; duration_minutes: string;
+  session_type: string; created_at?: string;
 }
-
 export const sessionsApi = {
   list: () => api.get<{ sessions: TrainingSession[] }>('/sessions'),
   create: (data: Omit<TrainingSession, 'id' | 'created_at'>) => api.post<TrainingSession>('/sessions', data),
@@ -847,38 +840,21 @@ export const sessionsApi = {
 };
 
 export interface AvailabilitySlot {
-  id: string;
-  day_of_week: string;
-  start_time: string;
-  end_time: string;
-  is_available: boolean;
+  id: string; day_of_week: string; start_time: string; end_time: string; is_available: boolean;
 }
-
 export const availabilityApi = {
   list: () => api.get<{ slots: AvailabilitySlot[] }>('/sessions/availability'),
   save: (slots: Omit<AvailabilitySlot, 'id'>[]) => api.post('/sessions/availability', { slots }),
 };
 
 export interface TrainingPlanData {
-  id: string;
-  title: string;
-  description?: string;
-  analysis_type: string;
-  plan_type: string;
-  is_public: boolean;
-  drills?: string[];
-  created_at?: string;
+  id: string; title: string; description?: string; analysis_type: string;
+  plan_type: string; is_public: boolean; drills?: string[]; created_at?: string;
 }
-
 export interface TrainingPlanCreate {
-  title: string;
-  description?: string;
-  analysis_type: string;
-  plan_type: 'group_all' | 'individual' | 'age_group';
-  is_public: boolean;
-  drills?: string[];
+  title: string; description?: string; analysis_type: string;
+  plan_type: 'group_all' | 'individual' | 'age_group'; is_public: boolean; drills?: string[];
 }
-
 export const trainingPlansApi = {
   list: () => api.get<{ plans: TrainingPlanData[] }>('/sessions/training-plans'),
   create: (data: TrainingPlanCreate) => api.post<TrainingPlanData>('/sessions/training-plans', data),
@@ -887,61 +863,32 @@ export const trainingPlansApi = {
 };
 
 export interface ReviewItem {
-  id: string;
-  player_id: string;
-  player_name: string;
-  rating: number;
-  comment?: string;
-  created_at: string;
+  id: string; player_id: string; player_name: string; rating: number; comment?: string; created_at: string;
 }
-
 export interface MyCoach {
-  id: string;
-  name: string;
-  email: string;
-  specialization?: string[];
+  id: string; name: string; email: string; specialization?: string[];
   existing_review?: { rating: number; comment?: string } | null;
 }
-
 export const reviewsApi = {
-  getCoachReviews: (coachId: string) =>
-    api.get<{ reviews: ReviewItem[]; total: number; average_rating: number }>(`/reviews/coach/${coachId}`),
-  submitReview: (data: { coach_id: string; rating: number; comment?: string }) =>
-    api.post('/reviews', data),
-  getMyCoaches: () =>
-    api.get<{ coaches: MyCoach[] }>('/reviews/player/my-coaches'),
+  getCoachReviews: (coachId: string) => api.get<{ reviews: ReviewItem[]; total: number; average_rating: number }>(`/reviews/coach/${coachId}`),
+  submitReview: (data: { coach_id: string; rating: number; comment?: string }) => api.post('/reviews', data),
+  getMyCoaches: () => api.get<{ coaches: MyCoach[] }>('/reviews/player/my-coaches'),
 };
 
 export interface EarningTransaction {
-  id: string;
-  player: string;
-  type: string;
-  amount: number;
-  date: string;
-  status: 'paid' | 'pending';
+  id: string; player: string; type: string; amount: number; date: string; status: 'paid' | 'pending';
 }
-
 export interface EarningsData {
-  total_earned: number;
-  pending: number;
-  this_month: number;
-  transactions: EarningTransaction[];
-  chart_data: { month: string; earnings: number }[];
+  total_earned: number; pending: number; this_month: number;
+  transactions: EarningTransaction[]; chart_data: { month: string; earnings: number }[];
 }
-
 export const earningsApi = {
   getMyEarnings: () => api.get<EarningsData>('/earnings'),
 };
 
 export interface NotificationItem {
-  id: string;
-  title: string;
-  message: string;
-  type: string;
-  is_read: boolean;
-  created_at: string;
+  id: string; title: string; message: string; type: string; is_read: boolean; created_at: string;
 }
-
 export const notificationsApi = {
   getAll: () => api.get<{ notifications: NotificationItem[]; unread_count: number }>('/notifications'),
   markRead: (id: string) => api.patch(`/notifications/${id}/read`),
@@ -950,55 +897,30 @@ export const notificationsApi = {
 };
 
 export interface GamificationBadge {
-  key: string;
-  label: string;
-  icon: string;
-  color: string;
-  rarity: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
-  description: string;
-  earned: boolean;
-  progress_current: number;
-  progress_target: number;
-  progress_pct: number;
-  earned_at: string | null;
+  key: string; label: string; icon: string; color: string; rarity: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
+  description: string; earned: boolean; progress_current: number; progress_target: number;
+  progress_pct: number; earned_at: string | null;
 }
-
 export interface GamificationData {
   level: { name: string; icon: string; color: string; xp_pct: number; next_level: string | null; badges_to_next: number };
   streak: { current: number; longest: number; last_activity: string | null; week_activity: { date: string; active: boolean }[] };
   badges: { earned: GamificationBadge[]; locked: GamificationBadge[]; total_earned: number; total: number; next_badge: GamificationBadge | null };
 }
-
 export const gamificationApi = {
   getMyData: () => api.get<GamificationData>('/gamification/me'),
 };
 
 export interface PerformanceEntry {
-  id: number;
-  player_id: string;
-  opponent: string;
-  match_date: string;
-  match_type: string;
-  runs: number;
-  fours: number;
-  sixes: number;
-  balls_faced: number;
-  wickets: number;
-  overs_bowled: number;
-  runs_conceded: number;
-  catches: number;
-  run_outs: number;
-  result: string;
-  created_at: string;
+  id: number; player_id: string; opponent: string; match_date: string; match_type: string;
+  runs: number; fours: number; sixes: number; balls_faced: number; wickets: number;
+  overs_bowled: number; runs_conceded: number; catches: number; run_outs: number; result: string; created_at: string;
 }
-
 export interface PerformanceStats {
   total_matches: number; total_runs: number; total_fours: number; total_sixes: number;
   total_wickets: number; total_catches: number; total_run_outs: number; highest_score: number;
   batting_average: number; total_balls_faced: number; total_overs_bowled: number;
   total_runs_conceded: number; bowling_average: number; wins: number; losses: number; draws: number;
 }
-
 export const performanceApi = {
   log: (data: Omit<PerformanceEntry, 'id' | 'player_id' | 'created_at'>) => api.post<PerformanceEntry>('/performance/', data),
   getStats: () => api.get<PerformanceStats>('/performance/stats'),
@@ -1007,10 +929,8 @@ export const performanceApi = {
 };
 
 export interface CoachAthlete {
-  id: string; name: string; email: string; team?: string;
-  total_submissions: number; published_reports: number; joined_at?: string;
+  id: string; name: string; email: string; team?: string; total_submissions: number; published_reports: number; joined_at?: string;
 }
-
 export interface PlayerProgress {
   player: { id: string; name: string; email: string; team?: string };
   summary: { total_submissions: number; published_reports: number; batting_submissions: number; bowling_submissions: number; completion_rate: number; days_since_last_submission: number | null; improvement_trend: string };
