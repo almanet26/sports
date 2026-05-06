@@ -28,6 +28,7 @@ from database.models.player_submission import PlayerSubmission
 from database.models.academy_branding import AcademyBranding
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
+from database.models.coach_content import CoachContent, ContentType
 __all__ = [
     # User models
     "User",
@@ -63,6 +64,9 @@ __all__ = [
     "AdminAuditLog",
     # Scouting
     "CoachShortlist",
+    # Coach Content
+    "CoachContent",
+    "ContentType",
     # Enums
     "VideoVisibility",
     "VideoStatus",

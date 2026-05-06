@@ -386,11 +386,13 @@ from api.routes.annotations import router as annotations_router
 from api.routes.dashboard import router as dashboard_router
 from api.routes.coach_inbox import router as coach_inbox_router
 from api.routes.academy import router as academy_router
+from api.routes.coach_content import router as coach_content_router
 
 app.include_router(annotations_router, prefix="/api/v1", tags=["annotations"])
 app.include_router(dashboard_router,   prefix="/api/v1", tags=["dashboard"])
 app.include_router(coach_inbox_router, prefix="/api/v1", tags=["coach-inbox"])
 app.include_router(academy_router,     prefix="/api/v1", tags=["academy"])
+app.include_router(coach_content_router, prefix="/api/v1/coach", tags=["coach-content"])
     
 # Subscription expiry cron — POST /internal/cron/expire-subscriptions
 from services.subscription_expiry import register_expiry_endpoint
