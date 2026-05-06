@@ -116,7 +116,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   React.useEffect(() => {
     if (!user) return;
     const fetchUnread = () =>
-      notificationsApi.getAll().then(res => setUnreadCount(res.data.unread_count)).catch(() => {});
+      notificationsApi.getAll()
+        .then(res => setUnreadCount(res.data.unread_count ?? 0))
+        .catch(() => setUnreadCount(0));
     fetchUnread();
     const interval = setInterval(fetchUnread, 60000);
     return () => clearInterval(interval);
