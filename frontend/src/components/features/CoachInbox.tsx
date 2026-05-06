@@ -288,7 +288,7 @@ export default function CoachInbox() {
                               )}
                             </motion.button>
                           )}
-                          {(sub.status === 'PENDING' || sub.status === 'ACCEPTED') && (
+                          {(sub.status === 'PENDING' || (sub.status as string) === 'ACCEPTED') && (
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}

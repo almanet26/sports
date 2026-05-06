@@ -37,7 +37,7 @@ export default function CoachPlayerPerformance() {
     if (!id) return;
     submissionsApi.playerProgress(id)
       .then(({ data }) => setProgress(data))
-      .catch((err) => setError(err?.response?.data?.detail || 'Failed to load performance data.'))
+      .catch((err: unknown) => setError((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Failed to load performance data.'))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -58,7 +58,7 @@ export default function CoachPlayerPerformance() {
   );
 
   const { player, summary, flaw_frequency, flaw_trend, submission_timeline } = progress;
-  const trend = TREND_CONFIG[summary.improvement_trend] ?? TREND_CONFIG.insufficient_data;
+  const trend = TREND_CONFIG[summary.improvement_trend as keyof typeof TREND_CONFIG] ?? TREND_CONFIG.insufficient_data;
 
   const publishedTimeline = submission_timeline.filter(s => s.status === 'PUBLISHED');
   const maxFlaws = Math.max(...publishedTimeline.map(s => s.flaw_count), 1);

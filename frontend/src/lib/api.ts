@@ -529,6 +529,26 @@ export const submissionsApi = {
   /** Get single submission detail */
   getById: (submissionId: string) =>
     api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+
+  /** Player: My progress summary */
+  myProgress: () =>
+    api.get<PlayerProgress>('/submissions/player/progress'),
+
+  /** Coach: Get a specific player's progress */
+  playerProgress: (playerId: string) =>
+    api.get<PlayerProgress>(`/submissions/player/${playerId}/progress`),
+
+  /** Coach: Get list of athletes (players with accepted submissions) */
+  coachAthletes: () =>
+    api.get<{ athletes: CoachAthlete[] }>('/submissions/coach/athletes'),
+
+  /** Player: Submit an already-uploaded video to a coach */
+  submitExistingVideo: (videoId: string, coachId: string, analysisType: string) =>
+    api.post<SubmissionDetail>('/submissions/submit-existing', {
+      video_id: videoId,
+      coach_id: coachId,
+      analysis_type: analysisType,
+    }),
 };
 
 // Cloud Storage — Direct-to-GCS Upload
