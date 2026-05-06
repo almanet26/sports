@@ -4,6 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore, useSubscriptionStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { TIER_HIERARCHY, type Tier } from "../../types/plans";
+import { getStoredPlayerProfileSummary } from "../../services/playerProfile";
+import { resolveMediaUrl, notificationsApi } from "../../lib/api";
 import logoImage from '/logo.webp';
 
 interface NavItem {
@@ -16,14 +18,20 @@ interface NavItem {
 const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
+    { to: "/player/profile", icon: "fas fa-user-edit", label: "My Profile" },
+    { to: "/player/performance", icon: "fas fa-chart-bar", label: "My Performance" },
+    { to: "/player/videos", icon: "fas fa-video", label: "My Videos" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'basic' },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
-    { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
+    { to: "/player/my-coaches", icon: "fas fa-user-tie", label: "My Coaches" },
+    { to: "/player/gamification", icon: "fas fa-medal", label: "Achievements" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
+    { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/player/profile", icon: "fas fa-user-circle", label: "My Profile" },
+    { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
+    { to: "/player/settings", icon: "fas fa-cog", label: "Settings" },
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
@@ -91,6 +99,28 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [playerProfile, setPlayerProfile] = React.useState(() => getStoredPlayerProfileSummary());
+  const [unreadCount, setUnreadCount] = React.useState(0);
+
+  React.useEffect(() => {
+    const refresh = () => setPlayerProfile(getStoredPlayerProfileSummary());
+    refresh();
+    window.addEventListener('pitchvision:playerProfileUpdated', refresh);
+    window.addEventListener('storage', refresh);
+    return () => {
+      window.removeEventListener('pitchvision:playerProfileUpdated', refresh);
+      window.removeEventListener('storage', refresh);
+    };
+  }, [user]);
+
+  React.useEffect(() => {
+    if (!user) return;
+    const fetchUnread = () =>
+      notificationsApi.getAll().then(res => setUnreadCount(res.data.unread_count)).catch(() => {});
+    fetchUnread();
+    const interval = setInterval(fetchUnread, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   React.useEffect(() => {
     document.body.className = theme === 'light' ? 'light-theme' : '';
@@ -100,6 +130,9 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     void logout();
     navigate('/login');
   };
+
+  const sidebarName = playerProfile.fullName || user?.name || user?.email || 'User';
+  const sidebarAvatar = resolveMediaUrl(user?.profile_image_url || playerProfile.avatar || '');
 
   const navItems = dashboardItems[accountType || 'PLAYER'] || dashboardItems.PLAYER;
   const currentTier = (subscriptionTier || 'free') as Tier;
@@ -163,7 +196,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 }`}></i>
               </div>
               <span className="font-medium">{item.label}</span>
-              {!mobile && isActive && (
+              {item.label === 'Notifications' && unreadCount > 0 && (
+                <span className="ml-auto min-w-[20px] h-5 px-1 rounded-full bg-red-500 text-white text-xs font-bold flex items-center justify-center">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
+              {!mobile && isActive && item.label !== 'Notifications' && (
                 <motion.div
                   layoutId="activeIndicator"
                   className="ml-auto w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500"
@@ -229,12 +267,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               className={`rounded-2xl p-4 border cursor-pointer ${theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200'}`}
             >
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                  {user?.email?.charAt(0).toUpperCase() || 'U'}
+                <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                  {sidebarAvatar
+                    ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                    : <span>{sidebarName.charAt(0).toUpperCase() || 'U'}</span>
+                  }
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                    {user?.email || 'User'}
+                    {sidebarName}
+                  </p>
+                  <p className={`text-xs truncate ${theme === 'dark' ? 'text-white/45' : 'text-gray-500'}`}>
+                    {user?.email || ''}
                   </p>
                   <div className="mt-1">
                     <RoleBadge accountType={accountType || 'PLAYER'} />
@@ -316,12 +360,18 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <div className="p-4 border-b border-white/10">
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                        {user?.email?.charAt(0).toUpperCase() || 'U'}
+                      <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                        {sidebarAvatar
+                          ? <img src={sidebarAvatar} alt={sidebarName} className="w-full h-full object-cover" onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+                          : <span>{sidebarName.charAt(0).toUpperCase() || 'U'}</span>
+                        }
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-white truncate">
-                          {user?.email || 'User'}
+                          {sidebarName}
+                        </p>
+                        <p className="text-xs text-white/45 truncate">
+                          {user?.email || ''}
                         </p>
                         <div className="mt-1">
                           <RoleBadge accountType={accountType || 'PLAYER'} />
