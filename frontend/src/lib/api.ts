@@ -854,7 +854,7 @@ export const scoutingApi = {
 
 export default api;
 
-
+export interface PerformanceEntry {
   id: number; player_id: string; opponent: string; match_date: string; match_type: string;
   runs: number; fours: number; sixes: number; balls_faced: number; wickets: number;
   overs_bowled: number; runs_conceded: number; catches: number; run_outs: number;
