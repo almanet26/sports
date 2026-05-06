@@ -97,7 +97,7 @@ export default function PlayerGamification() {
     gamificationApi
       .getMyData()
       .then(r => setData(r.data))
-      .catch(() => setError('Failed to load achievements.'))
+      .catch(() => setError('coming_soon'))
       .finally(() => setLoading(false));
   }, []);
 
@@ -113,9 +113,17 @@ export default function PlayerGamification() {
 
   if (error)
     return (
-      <div className="text-center py-40 text-white/50">
-        <i className="fas fa-exclamation-circle text-4xl text-red-400 mb-4 block"></i>
-        {error}
+      <div className="text-white space-y-8">
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+          className="glass rounded-3xl p-12 border border-white/20 text-center">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center mx-auto mb-6">
+            <i className="fas fa-medal text-white text-3xl"></i>
+          </div>
+          <h2 className="text-2xl font-bold gradient-text mb-3">Achievements Coming Soon</h2>
+          <p className="text-white/50 text-sm max-w-md mx-auto">
+            Your badges, streaks, and XP will appear here once you start submitting videos and logging matches.
+          </p>
+        </motion.div>
       </div>
     );
 
