@@ -108,6 +108,28 @@ function normalizeProfile(source: Record<string, unknown>): PlayerProfileEnvelop
   return { profile: { ...base, ...calcCompletion(base) } };
 }
 
+export interface PlayerProfileSummary {
+  fullName: string;
+  username: string;
+  avatar: string;
+  bio: string;
+  completionPercentage: number;
+  profileCompleted: boolean;
+}
+
+export function getStoredPlayerProfileSummary(): PlayerProfileSummary {
+  const user = getStoredUser();
+  const persisted = readPersisted();
+  return {
+    fullName: clean(persisted.fullName as string) || clean((user?.name as string) ?? ''),
+    username: clean(persisted.username as string),
+    avatar: clean((persisted.profilePhoto as string) ?? (persisted.avatar as string) ?? (user?.profile_image_url as string) ?? ''),
+    bio: clean((persisted.bio as string) ?? (user?.profile_bio as string) ?? ''),
+    completionPercentage: typeof persisted.completionPercentage === 'number' ? persisted.completionPercentage : 0,
+    profileCompleted: Boolean(persisted.profileCompleted),
+  };
+}
+
 export async function getPlayerProfile(): Promise<PlayerProfileEnvelope | null> {
   const response = await authApi.getProfile();
   return normalizeProfile(response.data as Record<string, unknown>);
