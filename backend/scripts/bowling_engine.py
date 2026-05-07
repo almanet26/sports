@@ -85,7 +85,7 @@ if mp_pose_module is None or mp_drawing_module is None:
     mp_drawing_module = None
     POSE_CONNECTIONS = None
 else:
-    print(f"✓ MediaPipe loaded successfully using: {import_strategy_used}")
+    print(f"[OK] MediaPipe loaded successfully using: {import_strategy_used}")
     MEDIAPIPE_AVAILABLE = True
 
 # ==========================================
