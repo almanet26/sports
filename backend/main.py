@@ -15,6 +15,13 @@ from database.config import SessionLocal, engine, Base
 # Load environment variables from .env file
 load_dotenv()
 
+# Initialize GCS configuration
+try:
+    from config.gcs_config import gcs_config
+    logger.info(f"GCS Storage initialized: gs://{gcs_config.bucket_name}")
+except Exception as e:
+    logger.warning(f"GCS initialization failed: {e}")
+
 # Import all models to ensure they're registered with SQLAlchemy
 from database.models import (
     User, UserSession,
