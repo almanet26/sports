@@ -163,6 +163,7 @@ if not _CLOUD_RUN:
         "storage/submission_videos",
         "storage/temp_frames",
         "storage/coach_documents",
+        "storage/coach_intro_videos",
     ]
     for dir_path in STORAGE_DIRS:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
@@ -260,6 +261,7 @@ if not _CLOUD_RUN:
     app.mount("/static/submission_videos", StaticFiles(directory="storage/submission_videos"), name="submission_videos")
     app.mount("/static/temp_frames", StaticFiles(directory="storage/temp_frames"), name="temp_frames")
     app.mount("/static/coach_documents", StaticFiles(directory="storage/coach_documents"), name="coach_documents")
+    app.mount("/static/coach_intro_videos", StaticFiles(directory="storage/coach_intro_videos"), name="coach_intro_videos")
 
 
 # Health Check Endpoints 

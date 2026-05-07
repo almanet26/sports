@@ -35,6 +35,7 @@ export interface User {
   intro_video_url?: string;
   profile_image_url?: string;
   coach_category?: string;
+  coach_status?: 'incomplete' | 'pending' | 'verified' | 'rejected';
 }
 
 const DEFAULT_QUOTA: QuotaUsage = {
@@ -84,7 +85,7 @@ interface AuthState {
     team?: string;
   }) => Promise<boolean>;
   logout: () => Promise<void>;
-  fetchProfile: () => Promise<void>;
+  fetchProfile: () => Promise<User | null>;
   clearError: () => void;
 
   // ── Subscription actions ──
@@ -142,6 +143,7 @@ export const useAuthStore = create<AuthState>()(
             role: (user.account_type ?? user.role ?? roleFromToken) as UserRole,
             is_verified: true,
             created_at: new Date().toISOString(),
+            coach_status: user.coach_status,
           } : {
             id: userIdFromToken,
             email,
@@ -230,15 +232,20 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         set({ isLoading: true });
         try {
-          const [{ data: profile }, { data: usage }] = await Promise.all([
-            api.get('/auth/me'),
-            api.get('/billing/usage'),
-          ]);
+          const profileRes = await api.get('/auth/me');
+          const profile = profileRes.data;
+
+          let usage: Record<string, unknown> = {};
+          try {
+            const usageRes = await api.get('/billing/usage');
+            usage = usageRes.data;
+          } catch { /* billing failure is non-fatal */ }
 
           const mappedUser: User = {
             ...profile,
             role: (profile.account_type ?? profile.role ?? 'PLAYER') as UserRole,
             name: profile.full_name ?? profile.name,
+            coach_status: profile.coach_status,
           };
 
           localStorage.setItem('user_profile', JSON.stringify(mappedUser));
@@ -248,12 +255,12 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             accountType: mappedUser.role,
             subscriptionTier: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
-            subscriptionStatus: (usage.status ?? 'inactive') as SubscriptionStatus,
-            expiresAt: usage.expires_at ?? null,
+            subscriptionStatus: ((usage.status ?? 'inactive') as SubscriptionStatus),
+            expiresAt: (usage.expires_at as string) ?? null,
             quotaUsage: normalizeQuotaUsage(usage.current_month),
           });
         } catch {
-          // Auth interceptor in api.ts handles 401 redirect; quota failures are non-fatal
+          // Auth interceptor in api.ts handles 401 redirect
         } finally {
           set({ isLoading: false });
         }

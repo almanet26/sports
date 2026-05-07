@@ -84,6 +84,7 @@ class UserProfileResponse(BaseModel):
     intro_video_url: Optional[str] = None
     profile_image_url: Optional[str] = None
     coach_category: Optional[str] = None
+    coach_status: Optional[str] = None
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime] = None
