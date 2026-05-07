@@ -219,7 +219,8 @@ export const useAuthStore = create<AuthState>()(
        * fetchProfile — kept for backward compatibility, delegates to fetchMe.
        */
       fetchProfile: async () => {
-        return get().fetchMe();
+        await get().fetchMe();
+        return get().user;
       },
 
       // ── Subscription actions ──────────────────────────────────────────────
