@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { adminApi } from '../lib/api';
+import { adminApi, api } from '../lib/api';
 import { useThemeStore } from '../store/themeStore';
 
 interface UserRow {
@@ -47,7 +47,14 @@ function fmt(d: string | null) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
-interface UserProfile extends User {
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+  last_login: string | null;
   phone?: string;
   team?: string;
   profile_bio?: string;
@@ -67,10 +74,10 @@ function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () 
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem('access_token');
-    axios.get(`${API_URL}/api/v1/admin/users/${userId}`, {
-      headers: { Authorization: `Bearer ${token}` }
-    }).then(r => setProfile(r.data)).catch(console.error).finally(() => setLoading(false));
+    api.get(`/admin/users/${userId}`)
+      .then(r => setProfile(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
   }, [userId]);
 
   const field = (label: string, value: any) =>
