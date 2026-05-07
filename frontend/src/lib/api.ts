@@ -211,4 +211,156 @@ export const trainingPlansApi = {
   delete: (id: string) => api.delete(`/sessions/training-plans/${id}`),
 };
 
+// Video endpoints
+export const videosApi = {
+  // Admin only: list ALL videos
+  listAll: (params?: { 
+    page?: number; 
+    per_page?: number; 
+    visibility?: 'PUBLIC' | 'PRIVATE';
+  }) => api.get('/videos/all', { params }),
+  
+  // Public library with search
+  listPublic: (params?: { 
+    page?: number; 
+    per_page?: number; 
+    search?: string;
+    event_type?: 'FOUR' | 'SIX' | 'WICKET';
+  }) => api.get('/videos/public', { params }),
+  
+  // Private dashboard (Premium)
+  listPrivate: (page = 1, perPage = 20) => 
+    api.get('/videos/private', { params: { page, per_page: perPage } }),
+
+  // Current user's uploads (all visibilities)
+  listMine: (page = 1, perPage = 20) =>
+    api.get('/videos/mine', { params: { page, per_page: perPage } }),
+  
+  // Get video details by ID
+  getById: (videoId: string) => 
+    api.get(`/videos/${videoId}`),
+  
+  // Get video events with optional filter
+  getEvents: (videoId: string, eventType?: 'FOUR' | 'SIX' | 'WICKET') => 
+    api.get(`/videos/${videoId}/events`, { params: { event_type: eventType } }),
+  
+  // Upload video (multipart form data)
+  upload: (formData: FormData, onProgress?: (progress: number) => void) => {
+    const token = localStorage.getItem('access_token');
+    return api.post('/videos/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      timeout: 0,
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
+      },
+    });
+  },
+  
+  // Upload video from YouTube URL
+  uploadYouTube: (data: {
+    url: string;
+    title?: string;
+    description?: string;
+    teams?: string;
+    venue?: string;
+    match_date?: string;
+    visibility?: 'public' | 'private';
+    transient?: boolean;
+  }, onProgress?: (progress: number) => void) => {
+    const formData = new FormData();
+    formData.append('url', data.url);
+    if (data.title) formData.append('title', data.title);
+    if (data.description) formData.append('description', data.description);
+    if (data.teams) formData.append('teams', data.teams);
+    if (data.venue) formData.append('venue', data.venue);
+    if (data.match_date) formData.append('match_date', data.match_date);
+    formData.append('visibility', data.visibility || 'private');
+    if (typeof data.transient === 'boolean') {
+      formData.append('transient', String(data.transient));
+    }
+    
+    const token = localStorage.getItem('access_token');
+
+    return api.post('/videos/upload/youtube', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          onProgress(progress);
+        }
+      },
+      timeout: 0,
+    });
+  },
+  
+  // Publish private video to public
+  publish: (videoId: string) => 
+    api.post(`/videos/${videoId}/publish`),
+  
+  // Delete video
+  delete: (videoId: string) => 
+    api.delete(`/videos/${videoId}`),
+  
+  // Get video stream URL (for original video)
+  getStreamUrl: (videoId: string) => 
+    `${API_BASE_URL}/api/v1/videos/${videoId}/stream`,
+  
+  // Get supercut stream URL (for highlight reel)
+  getSupercutUrl: (videoId: string) => 
+    `${API_BASE_URL}/api/v1/videos/${videoId}/supercut`,
+};
+
+// Match requests endpoints (voting system)
+export const requestsApi = {
+  // Create new request
+  create: (data: {
+    youtube_url: string;
+    match_title?: string;
+    match_description?: string;
+  }) => api.post('/requests/', data),
+  
+  // List all requests
+  list: (page = 1, perPage = 20, status?: string) => 
+    api.get('/requests/', { params: { page, per_page: perPage, status_filter: status } }),
+  
+  // Vote up/down for request
+  vote: (requestId: string, voteType: 'up' | 'down') => 
+    api.post(`/requests/${requestId}/vote`, { vote_type: voteType }),
+  
+  // Remove vote
+  removeVote: (requestId: string) => 
+    api.delete(`/requests/${requestId}/vote`),
+  
+  // Admin: get dashboard
+  adminDashboard: (page = 1, perPage = 50) => 
+    api.get('/requests/admin/dashboard', { params: { page, per_page: perPage } }),
+  
+  // Admin: approve request
+  approve: (requestId: string) => 
+    api.patch(`/requests/${requestId}/status`, null, { 
+      params: { new_status: 'approved' } 
+    }),
+  
+  // Admin: reject request
+  reject: (requestId: string) => 
+    api.patch(`/requests/${requestId}/status`, null, { 
+      params: { new_status: 'rejected' } 
+    }),
+  
+  // Admin: update status (general)
+  updateStatus: (requestId: string, status: string, videoId?: string) => 
+    api.patch(`/requests/${requestId}/status`, null, { 
+      params: { new_status: status, fulfilled_video_id: videoId } 
+    }),
+};
+
 export default api;
