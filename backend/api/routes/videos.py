@@ -184,9 +184,7 @@ async def upload_video(
     
     # Check file size 
     CHUNK_SIZE = 8192  # 8KB chunks for streaming
-    MAX_FILE_SIZE = int(os.getenv("MAX_UPLOAD_SIZE_MB", "10000")) * 1024 * 1024  # Default: 10GB
-    
-    logger.info(f"Max upload size: {MAX_FILE_SIZE / (1024*1024*1024):.2f}GB")
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB hard limit for video uploads
     
     # Enforce visibility rules
     if visibility == "public" and current_user.role != "ADMIN":

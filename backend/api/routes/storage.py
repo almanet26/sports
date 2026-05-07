@@ -405,6 +405,11 @@ def generate_upload_url(
             f"Allowed: {', '.join(sorted(_ALLOWED_CONTENT_TYPES))}",
         )
 
+    # Enforce 10 MB video size limit via Content-Length header
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Maximum video size is 10MB.")
+
     analysis_type = analysis_type.upper()
     if analysis_type not in ("FULL_MATCH", "BATTING", "BOWLING"):
         raise HTTPException(status_code=400, detail="analysis_type must be FULL_MATCH, BATTING or BOWLING")
@@ -491,6 +496,9 @@ async def local_upload(blob_path: str, request: Request):
     if not payload:
         raise HTTPException(status_code=400, detail="Empty upload body.")
 
+    if len(payload) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Maximum video size is 10MB.")
+
     try:
         destination.write_bytes(payload)
     except Exception as exc:
@@ -515,6 +523,9 @@ def create_resumable_session(
             detail=f"Unsupported content type '{payload.content_type}'. "
             f"Allowed: {', '.join(sorted(_ALLOWED_CONTENT_TYPES))}",
         )
+
+    if payload.size_bytes and payload.size_bytes > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Maximum video size is 10MB.")
 
     analysis_type = (payload.analysis_type or "FULL_MATCH").upper()
     if analysis_type not in ("FULL_MATCH", "BATTING", "BOWLING"):

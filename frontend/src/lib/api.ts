@@ -575,6 +575,14 @@ export const submissionsApi = {
   playerMy: () =>
     api.get<{ submissions: PlayerSubmissionItem[]; total: number }>('/submissions/my'),
 
+  /** Player: Create a coach request submission */
+  createPlayerSubmission: (data: PlayerSubmissionRequest) =>
+    api.post<PlayerSubmissionItem>('/submissions', {
+      coach_id: data.coachId,
+      note: data.note,
+      job_id: data.jobId,
+    }),
+
   /** Coach: Publish with edited text and sketches */
   publish: (submissionId: string, editedText: string, sketches?: any[]) =>
     api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, {
@@ -857,6 +865,42 @@ export const profileApi = {
 };
 
 // Scouting API
+export interface ScoutingPlayerStats {
+  avg_bat_speed: number | null;
+  peak_bat_speed: number | null;
+  avg_wrist_speed: number | null;
+  avg_release_height: number | null;
+  best_front_knee_angle: number | null;
+  best_shoulder_rotation: number | null;
+  best_elbow_angle: number | null;
+  best_release_consistency: number | null;
+}
+
+export interface ScoutingPlayerSummary {
+  user_id: string;
+  display_name: string | null;
+  city: string | null;
+  state: string | null;
+  cricket_role: string | null;
+  experience_level: string | null;
+  preferred_format: string | null;
+  bat_style: string | null;
+  bowl_style: string | null;
+  age: number | null;
+  profile_image_url: string | null;
+  total_analyses: number;
+  analyses_last_updated: string | null;
+  scouting_visible: boolean;
+  stats: ScoutingPlayerStats;
+}
+
+export interface ScoutingPlayerDetail extends ScoutingPlayerSummary {
+  recent_batting: Array<{ id: string; date: string; metrics: Record<string, number | null> }>;
+  recent_bowling: Array<{ id: string; date: string; metrics: Record<string, number | null> }>;
+  shortlisted: boolean;
+  coach_note: string | null;
+}
+
 export interface ScoutingFilters {
   page?: number; page_size?: number; city?: string; state?: string;
   cricket_role?: string; experience_level?: string; preferred_format?: string;

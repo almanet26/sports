@@ -576,6 +576,11 @@ async def player_upload(
     if not file.filename or not file.filename.lower().endswith(('.mp4', '.mov', '.avi')):
         raise HTTPException(status_code=400, detail="Invalid file type. Upload MP4, MOV, or AVI.")
 
+    # Enforce 10 MB video size limit
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large. Maximum video size is 10MB.")
+
     # Validate analysis type
     if analysis_type not in ("BATTING", "BOWLING"):
         raise HTTPException(status_code=400, detail="analysis_type must be BATTING or BOWLING.")
@@ -595,7 +600,6 @@ async def player_upload(
     if _gcs_bucket_upload is not None:
         blob_name = f"raw_videos/{file_id}_{safe_name}"
         try:
-            content = await file.read()
             blob = _gcs_bucket_upload.blob(blob_name)
             blob.upload_from_string(content, content_type=file.content_type or "video/mp4")
             video_url = blob_name  # GCS object path — used by the worker
@@ -606,7 +610,6 @@ async def player_upload(
         safe_filename = f"{file_id}_{safe_name}"
         save_path = SUBMISSIONS_DIR / safe_filename
         try:
-            content = await file.read()
             with open(save_path, "wb") as buffer:
                 buffer.write(content)
         except Exception as e:

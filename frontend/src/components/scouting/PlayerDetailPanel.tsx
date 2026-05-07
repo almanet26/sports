@@ -240,7 +240,7 @@ export default function PlayerDetailPanel({ player, onClose, onShortlistChange }
                 {detail.recent_batting.length > 0 && (
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <h3 className="text-sm font-semibold text-white/70 mb-2">Recent Batting Analyses</h3>
-                    {detail.recent_batting.map((a) => (
+                    {detail.recent_batting.map((a: { id: string; date: string; metrics: Record<string, number | null> }) => (
                       <TimelineItem key={a.id} date={a.date} metrics={a.metrics} type="batting" />
                     ))}
                   </div>
@@ -250,7 +250,7 @@ export default function PlayerDetailPanel({ player, onClose, onShortlistChange }
                 {detail.recent_bowling.length > 0 && (
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <h3 className="text-sm font-semibold text-white/70 mb-2">Recent Bowling Analyses</h3>
-                    {detail.recent_bowling.map((a) => (
+                    {detail.recent_bowling.map((a: { id: string; date: string; metrics: Record<string, number | null> }) => (
                       <TimelineItem key={a.id} date={a.date} metrics={a.metrics} type="bowling" />
                     ))}
                   </div>

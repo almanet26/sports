@@ -91,8 +91,8 @@ async def register(
             raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED))}")
         try:
             content = await coach_document.read()
-            if len(content) > 10 * 1024 * 1024:
-                raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+            if len(content) > 1 * 1024 * 1024:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 1MB.")
             storage_dir = Path("storage/coach_documents")
             storage_dir.mkdir(parents=True, exist_ok=True)
             unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
