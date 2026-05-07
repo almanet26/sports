@@ -7,7 +7,6 @@ import {
 } from 'recharts';
 import { useThemeStore } from '../store/themeStore';
 import { submissionsApi, resolveMediaUrl, type PlayerProgress } from '../lib/api';
-import { useAuthStore } from '../store/authStore';
 
 const TREND_CONFIG = {
   improving:         { label: 'Improving',         color: 'text-green-400',  bg: 'bg-green-500/20',  border: 'border-green-500/30',  icon: 'fas fa-arrow-up' },
@@ -29,7 +28,6 @@ export default function PlayerPerformance() {
   const navigate = useNavigate();
   const { theme } = useThemeStore();
   const dark = theme === 'dark';
-  const { user } = useAuthStore();
   const isSelfView = !id; // no id param = player viewing own performance
 
   const [progress, setProgress] = useState<PlayerProgress | null>(null);
