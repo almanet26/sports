@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore, useSubscriptionStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { TIER_HIERARCHY, type Tier } from "../../types/plans";
+import { getStoredPlayerProfileSummary } from "../../services/playerProfile";
 import logoImage from '/logo.webp';
 
 interface NavItem {
@@ -16,6 +17,9 @@ interface NavItem {
 const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
+    { to: "/player/profile", icon: "fas fa-user-edit", label: "Profile" },
+    { to: "/stats", icon: "fas fa-chart-bar", label: "My Performance" },
+    { to: "/player/videos", icon: "fas fa-video", label: "My Videos" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'basic' },
@@ -23,7 +27,6 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
-    { to: "/player/profile", icon: "fas fa-user-circle", label: "My Profile" },
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
@@ -91,6 +94,21 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const { theme, toggleTheme } = useThemeStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
+  const [playerProfile, setPlayerProfile] = React.useState(() => getStoredPlayerProfileSummary());
+
+  React.useEffect(() => {
+    const refresh = () => setPlayerProfile(getStoredPlayerProfileSummary());
+    refresh();
+
+    window.addEventListener("pitchvision:playerProfileUpdated", refresh);
+    window.addEventListener("storage", refresh);
+    return () => {
+      window.removeEventListener("pitchvision:playerProfileUpdated", refresh);
+      window.removeEventListener("storage", refresh);
+    };
+  }, [user]);
+  const sidebarName = playerProfile.fullName || user?.name || user?.email || "User";
+  const sidebarAvatar = playerProfile.avatar || user?.profile_image_url || "";
 
   React.useEffect(() => {
     document.body.className = theme === 'light' ? 'light-theme' : '';
@@ -316,13 +334,24 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 <div className="p-4 border-b border-white/10">
                   <div className="glass rounded-2xl p-4 border border-white/10">
                     <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
-                        {user?.email?.charAt(0).toUpperCase() || 'U'}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
-                          {user?.email || 'User'}
-                        </p>
+                  {sidebarAvatar ? (
+                    <img
+                      src={sidebarAvatar}
+                      alt={sidebarName}
+                      className="w-12 h-12 rounded-xl object-cover"
+                    />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
+                      {sidebarName.charAt(0).toUpperCase() || "U"}
+                    </div>
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-white truncate">
+                      {sidebarName}
+                    </p>
+                    <p className="text-xs text-white/45 truncate">
+                      {user?.email || "No email available"}
+                    </p>
                         <div className="mt-1">
                           <RoleBadge accountType={accountType || 'PLAYER'} />
                         </div>

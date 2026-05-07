@@ -31,6 +31,8 @@ function ProfileDispatcher() {
   return <Navigate to="/dashboard" replace />;
 }
 import PlayerPerformance from './pages/PlayerPerformance';
+import PlayerProfile from './pages/PlayerProfile';
+import PlayerVideosPage from './pages/PlayerVideosPage';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
@@ -196,13 +198,14 @@ export default function AppRouter() {
           <Route element={<RoleGuard allowedRoles={['PLAYER']} />}>
             <Route element={<DashboardLayout />}>
               <Route path="/player" element={<PlayerDashboard />} />
+              <Route path="/player/profile" element={<PlayerProfile />} />
+              <Route path="/player/videos" element={<PlayerVideosPage />} />
               <Route path="/player/:id" element={<PlayerPerformance />} />
               <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
               <Route path="/player/batting" element={<BattingAnalysisPage />} />
               <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
               <Route path="/player/subscription" element={<SubscriptionPage />} />
               <Route path="/player/chat" element={<ChatPage />} />
-              <Route path="/player/profile" element={<PlayerProfilePage />} />
             </Route>
           </Route>
         </Route>
@@ -239,7 +242,7 @@ export default function AppRouter() {
 
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
-        <Route path="/profile" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/profile" element={<Navigate to="/player/profile" replace />} />
         <Route path="/settings" element={<ProfileDispatcher />} />
 
         {/* Fallback */}
