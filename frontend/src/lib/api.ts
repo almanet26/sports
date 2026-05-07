@@ -319,6 +319,33 @@ export const videosApi = {
     `${API_BASE_URL}/api/v1/videos/${videoId}/supercut`,
 };
 
+// Jobs endpoints (OCR processing)
+export const jobsApi = {
+  // Trigger OCR processing
+  trigger: (videoId: string, config?: Record<string, unknown>) => 
+    api.post('/jobs/trigger', { video_id: videoId, config }),
+  
+  // Get job status (lightweight polling - no auth required)
+  getStatus: (videoId: string) => 
+    api.get(`/jobs/${videoId}/status/poll`),
+  
+  // Get full job status (requires auth)
+  getFullStatus: (videoId: string) => 
+    api.get(`/jobs/${videoId}/status`),
+  
+  // Get job results
+  getResult: (videoId: string) => 
+    api.get(`/jobs/${videoId}/result`),
+  
+  // Retry failed job
+  retry: (videoId: string) => 
+    api.post(`/jobs/${videoId}/retry`),
+  
+  // Admin: list pending jobs
+  listPending: () => 
+    api.get('/jobs/pending'),
+};
+
 // Match requests endpoints (voting system)
 export const requestsApi = {
   // Create new request
@@ -361,6 +388,500 @@ export const requestsApi = {
     api.patch(`/requests/${requestId}/status`, null, { 
       params: { new_status: status, fulfilled_video_id: videoId } 
     }),
+};
+
+// Admin API
+export const adminApi = {
+  // Stats
+  getStats: () => api.get('/admin/stats'),
+
+  // Coach verification
+  getPendingCoaches: (limit = 20) =>
+    api.get('/admin/coaches/pending', { params: { limit } }),
+  approveCoach: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/approve`),
+  rejectCoach: (coachId: string) =>
+    api.post(`/admin/coaches/${coachId}/reject`),
+  getCoachDocument: (coachId: string) =>
+    api.get(`/admin/coaches/${coachId}/document`, { responseType: 'blob' }),
+  verifyCoach: (coachId: string, action: 'verified' | 'rejected') =>
+    api.post(`/admin/coaches/${coachId}/${action === 'verified' ? 'approve' : 'reject'}`),
+
+  // Activity feed
+  getActivityFeed: (limit = 20) =>
+    api.get('/admin/activity', { params: { limit } }),
+
+  // Plan management
+  listPlans: () => api.get<PlanConfig[]>('/admin/plans'),
+  updatePlan: (planKey: string, data: {
+    display_name?: string;
+    price_inr?: number;
+    duration_days?: number;
+    max_biomech_per_month?: number;
+    max_ocr_hours_per_month?: number;
+    max_submissions_per_month?: number;
+    max_players_in_dashboard?: number;
+  }) => api.patch<PlanConfig>(`/admin/plans/${planKey}`, data),
+
+  // User management
+  listUsers: (params: {
+    page?: number;
+    per_page?: number;
+    search?: string;
+    role?: string;
+    subscription_status?: string;
+    plan?: string;
+    is_active?: boolean;
+  }) => api.get('/admin/users', { params }),
+  overrideSubscription: (userId: string, data: {
+    plan_key: string;
+    status: string;
+    expires_at?: string;
+  }) => api.patch(`/admin/users/${userId}/subscription`, data),
+  impersonateUser: (userId: string) =>
+    api.post(`/admin/users/${userId}/impersonate`),
+
+  // Audit log
+  getAuditLog: (page = 1, perPage = 50) =>
+    api.get('/admin/audit-log', { params: { page, per_page: perPage } }),
+};
+
+// Bowling Analysis endpoints
+export const bowlingApi = {
+  /** Upload video and run biomechanics analysis */
+  analyze: (file: File, onProgress?: (progress: number) => void) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/bowling/analyze', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 1800000, // 30 min — large videos (900MB+) need time for frame-by-frame MediaPipe processing
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          onProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
+        }
+      },
+    });
+  },
+
+  /** List current user's past analyses */
+  history: (limit = 20, offset = 0) =>
+    api.get('/bowling/history', { params: { limit, offset } }),
+
+  /** Fetch single analysis by ID */
+  getById: (analysisId: string) =>
+    api.get(`/bowling/${analysisId}`),
+};
+
+// Batting Analysis endpoints
+export const battingApi = {
+  /** Upload video and run batting biomechanics analysis */
+  analyze: (file: File, onProgress?: (progress: number) => void) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/batting/analyze', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 1800000, // 30 min — large videos (900MB+) need time for frame-by-frame MediaPipe processing
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total && onProgress) {
+          onProgress(Math.round((progressEvent.loaded * 100) / progressEvent.total));
+        }
+      },
+    });
+  },
+
+  /** List current user's past batting analyses */
+  history: (limit = 20, offset = 0) =>
+    api.get('/batting/history', { params: { limit, offset } }),
+
+  /** Fetch single batting analysis by ID */
+  getById: (analysisId: string) =>
+    api.get(`/batting/${analysisId}`),
+};
+
+// Subscription API
+export const subscriptionApi = {
+  getMySubscription: () => api.get('/subscriptions/me'),
+
+  // Subscribe current user to a plan
+  subscribe: (planKey: string) =>
+    api.post('/subscriptions/subscribe', {
+      plan_key: planKey,
+    }),
+};
+
+// Billing API
+export const billingApi = {
+  /** Create a Razorpay order for the given plan_key */
+  createOrder: (planKey: string) =>
+    api.post('/billing/create-order', { plan_key: planKey }),
+
+  /** Monthly quota usage for the current user */
+  getUsage: () =>
+    api.get('/billing/usage'),
+};
+
+// Submissions Pipeline
+export interface SubmissionSummary {
+  id: string;
+  player_id: string;
+  coach_id: string;
+  player_name?: string;
+  coach_name?: string;
+  original_filename: string;
+  analysis_type: string;
+  status: 'PENDING' | 'PROCESSING' | 'DRAFT_REVIEW' | 'PUBLISHED';
+  created_at: string;
+  analyzed_at?: string;
+  published_at?: string;
+  pdf_report_url?: string;
+}
+
+export interface SubmissionDetail extends SubmissionSummary {
+  video_url: string;
+  raw_biometrics?: {
+    records: Record<string, number>[];
+    summary: Record<string, Record<string, number>>;
+  };
+  phase_info?: Record<string, number | null>;
+  annotated_video_url?: string;
+  key_frame_url?: string;
+  ai_draft_text?: string;
+  coach_final_text?: string;
+  detected_flaws?: Array<{
+    flaw_name: string;
+    description: string;
+    rating?: number;
+    timestamp?: string;
+  }>;
+  drill_recommendations?: Array<{
+    query: string;
+    title: string;
+    link: string;
+    reason: string;
+  }>;
+}
+
+export interface VideoAnnotation {
+  id: string;
+  video_id: string;
+  coach_id: string;
+  timestamp_ms: number;
+  annotation_type: 'line' | 'circle' | 'arrow' | 'text';
+  coordinates: unknown;
+  label?: string | null;
+  color: string;
+}
+
+export interface CoachListItem {
+  id: string;
+  name: string;
+  email: string;
+  team?: string;
+}
+
+export interface PlayerSubmissionRequest {
+  coachId: string;
+  note?: string;
+  jobId?: string;
+}
+
+export interface PlayerSubmissionItem {
+  id: string;
+  coach_name?: string | null;
+  job_id?: string | null;
+  status: string;
+  note?: string | null;
+  created_at: string;
+  reviewed_at?: string | null;
+}
+
+export const submissionsApi = {
+  /** List available coaches for the player's dropdown */
+  listCoaches: () =>
+    api.get<{ coaches: CoachListItem[] }>('/coaches'),
+
+  /** Player: Create a submission for a coach */
+  createPlayerSubmission: (data: PlayerSubmissionRequest) =>
+    api.post<PlayerSubmissionItem>('/submissions', {
+      coach_id: data.coachId,
+      note: data.note,
+      job_id: data.jobId,
+    }),
+
+  /** Player: Upload video to a coach */
+  upload: (file: File, coachId: string, analysisType: string = 'BATTING', onProgress?: (p: number) => void) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('coach_id', coachId);
+    formData.append('analysis_type', analysisType);
+    return api.post<SubmissionDetail>('/submissions/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+      onUploadProgress: (e) => {
+        if (e.total && onProgress) onProgress(Math.round((e.loaded * 100) / e.total));
+      },
+    });
+  },
+
+  /** Player: My published reports */
+  playerReports: (limit = 50, offset = 0) =>
+    api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/player/me', { params: { limit, offset } }),
+
+  /** Player: All my submissions (all statuses) */
+  playerAll: (limit = 50, offset = 0) =>
+    api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/player/all', { params: { limit, offset } }),
+
+  /** Player: My coach submissions */
+  playerMy: () =>
+    api.get<{ submissions: PlayerSubmissionItem[]; total: number }>('/submissions/my'),
+
+  /** Coach: Inbox (PENDING + DRAFT_REVIEW) */
+  coachInbox: (status?: string, limit = 50, offset = 0) =>
+    api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/coach/me', { params: { status, limit, offset } }),
+
+  /** Coach: Run AI analysis on a submission */
+  analyze: (submissionId: string) =>
+    api.post<SubmissionDetail>(`/submissions/${submissionId}/analyze`, null, { timeout: 1800000 }), // 30 min for large videos
+
+  /** Coach: Publish with edited text and sketches */
+  publish: (submissionId: string, editedText: string, sketches?: any[]) =>
+    api.put<SubmissionDetail>(`/submissions/${submissionId}/publish`, { 
+      edited_text: editedText,
+      sketches: sketches || [],
+    }),
+
+  /** Get single submission detail */
+  getById: (submissionId: string) =>
+    api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+};
+
+export const annotationsApi = {
+  list: (videoId: string) => api.get<VideoAnnotation[]>(`/annotations/${videoId}`),
+  create: (payload: {
+    video_id: string;
+    timestamp_ms: number;
+    annotation_type: VideoAnnotation['annotation_type'];
+    coordinates: unknown;
+    label?: string;
+    color?: string;
+  }) => api.post<VideoAnnotation>('/annotations', payload),
+  update: (annotationId: string, payload: Partial<Pick<VideoAnnotation, 'coordinates' | 'label' | 'color'>>) =>
+    api.put<VideoAnnotation>(`/annotations/${annotationId}`, payload),
+  delete: (annotationId: string) => api.delete(`/annotations/${annotationId}`),
+};
+
+// Cloud Storage — Direct-to-GCS Upload
+export interface SignedUrlResponse {
+  signed_url: string;
+  blob_name: string;
+  submission_id: string;
+}
+
+export interface ConfirmUploadResponse {
+  submission_id: string;
+  status: string;
+  blob_name: string;
+}
+
+export const storageApi = {
+  /** Get a V4 Signed URL for direct PUT to GCS */
+  getUploadUrl: (filename: string, contentType: string, analysisType: string = 'BATTING') =>
+    api.get<SignedUrlResponse>('/storage/upload-url', {
+      params: { filename, content_type: contentType, analysis_type: analysisType },
+    }),
+
+  /** Confirm the upload after the direct GCS PUT succeeds */
+  confirmUpload: (submissionId: string) =>
+    api.post<ConfirmUploadResponse>('/storage/confirm-upload', null, {
+      params: { submission_id: submissionId },
+    }),
+
+  /** Trigger background ML processing via Cloud Tasks */
+  startProcessing: (submissionId: string) =>
+    api.post<{ submission_id: string; status: string; task_name: string | null }>(
+      '/storage/start-processing',
+      null,
+      { params: { submission_id: submissionId }, timeout: 30000 },
+    ),
+
+  /** Fetch submission detail (used for polling) */
+  getSubmission: (submissionId: string) =>
+    api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+};
+
+// Cloud Analysis — GCS upload + Cloud Tasks + polling
+/**
+ * Upload a video file to GCS and queue it for ML processing.
+ * Returns the submission ID once the task is queued.
+ */
+export async function cloudUploadAndProcess(
+  file: File,
+  analysisType: 'BATTING' | 'BOWLING',
+  onProgress?: (progress: number) => void,
+): Promise<string> {
+  // 1. Get signed URL
+  const { data: urlData } = await storageApi.getUploadUrl(file.name, file.type, analysisType);
+  const { signed_url, submission_id } = urlData;
+
+  // 2. Upload file directly to GCS
+  await axios.put(signed_url, file, {
+    headers: { 'Content-Type': file.type },
+    onUploadProgress: (evt) => {
+      if (evt.total && onProgress) {
+        onProgress(Math.round((evt.loaded * 100) / evt.total));
+      }
+    },
+  });
+
+  // 3. Confirm the upload landed
+  await storageApi.confirmUpload(submission_id);
+
+  // 4. Queue ML processing
+  await storageApi.startProcessing(submission_id);
+
+  return submission_id;
+}
+
+/**
+ * Poll a submission until processing completes (DRAFT_REVIEW / PUBLISHED).
+ * Resolves with the full SubmissionDetail once results are available.
+ */
+export async function pollSubmissionResult(
+  submissionId: string,
+  intervalMs = 8000,
+  maxWaitMs = 1200000, // 20 min
+): Promise<SubmissionDetail> {
+  const maxAttempts = Math.ceil(maxWaitMs / intervalMs);
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+    const { data } = await storageApi.getSubmission(submissionId);
+
+    if (data.status === 'DRAFT_REVIEW' || data.status === 'PUBLISHED') {
+      return data;
+    }
+    // If status rolled back to PENDING after being PROCESSING → processing failed
+    if (data.status === 'PENDING' && i > 2) {
+      throw new Error('Processing failed on the server. Please try again.');
+    }
+  }
+  throw new Error('Processing timed out. Your results will appear in History when ready.');
+}
+
+// ── Profile API ───────────────────────────────────────────────────────────────
+export const profileApi = {
+  /** Create / update the player's own profile (identity fields only) */
+  setup: (data: {
+    display_name?: string;
+    city?: string;
+    state?: string;
+    bat_style?: string;
+    bowl_style?: string;
+    age?: number;
+    cricket_role?: 'batsman' | 'bowler' | 'all_rounder' | 'wicket_keeper';
+    experience_level?: 'beginner' | 'intermediate' | 'advanced' | 'professional';
+    preferred_format?: 'T20' | 'ODI' | 'Test' | 'All';
+    profile_image_url?: string;
+  }) => api.post('/profile/setup', data),
+
+  /** Toggle scouting visibility (Platinum players only) */
+  toggleScouting: (visible: boolean) =>
+    api.patch('/profile/scouting', { scouting_visible: visible }),
+
+  /** Fetch the player's own profile (use user_id from auth store) */
+  getPublic: (userId: string) => api.get(`/profile/${userId}/public`),
+};
+
+// ── Scouting API (Academy coaches only) ──────────────────────────────────────
+export interface ScoutingPlayerStats {
+  avg_bat_speed: number | null;
+  peak_bat_speed: number | null;
+  avg_wrist_speed: number | null;
+  avg_release_height: number | null;
+  best_front_knee_angle: number | null;
+  best_shoulder_rotation: number | null;
+  best_elbow_angle: number | null;
+  best_release_consistency: number | null;
+}
+
+export interface ScoutingPlayerSummary {
+  user_id: string;
+  display_name: string | null;
+  city: string | null;
+  state: string | null;
+  cricket_role: string | null;
+  experience_level: string | null;
+  preferred_format: string | null;
+  bat_style: string | null;
+  bowl_style: string | null;
+  age: number | null;
+  profile_image_url: string | null;
+  total_analyses: number;
+  analyses_last_updated: string | null;
+  scouting_visible: boolean;
+  stats: ScoutingPlayerStats;
+}
+
+export interface ScoutingPlayersResponse {
+  players: ScoutingPlayerSummary[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+}
+
+export interface ScoutingPlayerDetail extends ScoutingPlayerSummary {
+  recent_batting: Array<{
+    id: string;
+    date: string;
+    metrics: Record<string, number | null>;
+  }>;
+  recent_bowling: Array<{
+    id: string;
+    date: string;
+    metrics: Record<string, number | null>;
+  }>;
+  shortlisted: boolean;
+  coach_note: string | null;
+}
+
+export interface ScoutingFilters {
+  page?: number;
+  page_size?: number;
+  city?: string;
+  state?: string;
+  cricket_role?: string;
+  experience_level?: string;
+  preferred_format?: string;
+  min_analyses?: number;
+  bat_style?: string;
+  bowl_style?: string;
+  sort_by?: string;
+  sort_order?: 'asc' | 'desc';
+}
+
+export const scoutingApi = {
+  /** List all players (academy coaches see everyone) */
+  listPlayers: (filters?: ScoutingFilters) =>
+    api.get<ScoutingPlayersResponse>('/scouting/players', { params: filters }),
+
+  /** Get a single player's full scouting profile */
+  getPlayer: (userId: string) =>
+    api.get<ScoutingPlayerDetail>(`/scouting/players/${userId}`),
+
+  /** Add player to coach's shortlist */
+  addToShortlist: (playerId: string, note?: string) =>
+    api.post('/scouting/shortlist', { player_id: playerId, note }),
+
+  /** Get the coach's full shortlist */
+  getShortlist: () => api.get('/scouting/shortlist'),
+
+  /** Update the note on a shortlisted player */
+  updateNote: (playerId: string, note: string | null) =>
+    api.patch(`/scouting/shortlist/${playerId}`, { note }),
+
+  /** Remove a player from the shortlist */
+  removeFromShortlist: (playerId: string) =>
+    api.delete(`/scouting/shortlist/${playerId}`),
 };
 
 export default api;
