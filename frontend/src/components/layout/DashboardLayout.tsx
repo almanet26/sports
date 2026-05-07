@@ -27,6 +27,8 @@ const dashboardItems: Record<string, NavItem[]> = {
   ],
   COACH: [
     { to: "/coach", icon: "fas fa-home", label: "Dashboard" },
+    { to: "/coach/profile", icon: "fas fa-user-circle", label: "My Profile" },
+    { to: "/coach/players", icon: "fas fa-users", label: "My Players" },
     { to: "/coach/chat", icon: "fas fa-robot", label: "AI Chat", minTier: 'coach_starter' },
     { to: "/coach/upload", icon: "fas fa-cloud-upload-alt", label: "Upload", minTier: 'coach_starter' },
     { to: "/coach/submissions", icon: "fas fa-inbox", label: "Video Reviews", minTier: 'coach_starter' },
@@ -42,7 +44,6 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/billing", icon: "fas fa-star", label: "Subscription" },
-    { to: "/coach/profile", icon: "fas fa-user-circle", label: "My Profile" },
     { to: "/coach/settings", icon: "fas fa-cog", label: "Settings" },
   ],
   ADMIN: [
