@@ -47,6 +47,161 @@ function fmt(d: string | null) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+interface UserProfile extends User {
+  phone?: string;
+  team?: string;
+  profile_bio?: string;
+  gender?: string;
+  jersey_number?: number;
+  coach_status?: string;
+  coach_category?: string;
+  specialization?: string[];
+  certifications?: Array<{ name: string; issuer: string; year: string }>;
+  subscription_plan?: string;
+  intro_video_url?: string;
+  profile_image_url?: string;
+}
+
+function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () => void; theme: string }) {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const token = localStorage.getItem('access_token');
+    axios.get(`${API_URL}/api/v1/admin/users/${userId}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    }).then(r => setProfile(r.data)).catch(console.error).finally(() => setLoading(false));
+  }, [userId]);
+
+  const field = (label: string, value: any) =>
+    value ? (
+      <div>
+        <p className={`text-xs mb-0.5 ${theme === 'dark' ? 'text-white/40' : 'text-gray-500'}`}>{label}</p>
+        <p className={`text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{value}</p>
+      </div>
+    ) : null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        onClick={e => e.stopPropagation()}
+        className={`relative w-full max-w-lg max-h-[85vh] overflow-y-auto rounded-3xl border shadow-2xl ${
+          theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-gray-200 text-gray-900'
+        }`}
+      >
+        {/* Header */}
+        <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-white/10 backdrop-blur-md">
+          <h2 className="text-xl font-bold gradient-text">User Profile</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full glass border border-white/20 flex items-center justify-center hover:bg-white/10 transition-all">
+            <i className="fas fa-times text-sm"></i>
+          </button>
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+          ) : profile ? (
+            <div className="space-y-6">
+              {/* Avatar + basic */}
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold flex-shrink-0">
+                  {profile.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <p className="text-lg font-bold">{profile.name}</p>
+                  <p className={`text-sm ${theme === 'dark' ? 'text-white/60' : 'text-gray-500'}`}>{profile.email}</p>
+                  <div className="flex gap-2 mt-1 flex-wrap">
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                      profile.role === 'COACH' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                      profile.role === 'ADMIN' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                      'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                    }`}>{profile.role}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                      profile.is_active ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'
+                    }`}>{profile.is_active ? 'Active' : 'Suspended'}</span>
+                    {profile.coach_status && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                        profile.coach_status === 'verified' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                        profile.coach_status === 'pending' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+                        profile.coach_status === 'rejected' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                        'bg-white/10 text-white/50 border-white/20'
+                      }`}>{profile.coach_status}</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Personal Info */}
+              <div className={`rounded-2xl p-4 border ${ theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+                <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                  <i className="fas fa-user text-blue-400"></i> Personal Info
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  {field('Phone', profile.phone)}
+                  {field('Gender', profile.gender)}
+                  {field('Team', profile.team)}
+                  {field('Jersey #', profile.jersey_number)}
+                  {field('Subscription', profile.subscription_plan)}
+                  {field('Joined', new Date(profile.created_at).toLocaleDateString())}
+                  {field('Last Login', profile.last_login ? new Date(profile.last_login).toLocaleDateString() : 'Never')}
+                </div>
+                {profile.profile_bio && (
+                  <div className="mt-3">
+                    <p className={`text-xs mb-0.5 ${theme === 'dark' ? 'text-white/40' : 'text-gray-500'}`}>Bio</p>
+                    <p className={`text-sm ${theme === 'dark' ? 'text-white/80' : 'text-gray-700'}`}>{profile.profile_bio}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Coach-specific */}
+              {profile.role === 'COACH' && (
+                <div className={`rounded-2xl p-4 border ${ theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200'}`}>
+                  <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <i className="fas fa-chalkboard-teacher text-green-400"></i> Coach Details
+                  </p>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    {field('Category', profile.coach_category)}
+                  </div>
+                  {profile.specialization && profile.specialization.length > 0 && (
+                    <div className="mb-3">
+                      <p className={`text-xs mb-1 ${theme === 'dark' ? 'text-white/40' : 'text-gray-500'}`}>Specialization</p>
+                      <div className="flex flex-wrap gap-1">
+                        {profile.specialization.map(s => (
+                          <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/20">{s}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {profile.certifications && profile.certifications.length > 0 && (
+                    <div>
+                      <p className={`text-xs mb-1 ${theme === 'dark' ? 'text-white/40' : 'text-gray-500'}`}>Certifications</p>
+                      <div className="space-y-1">
+                        {profile.certifications.map((c, i) => (
+                          <p key={i} className={`text-xs ${theme === 'dark' ? 'text-white/70' : 'text-gray-600'}`}>
+                            {c.name} — {c.issuer} ({c.year})
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-center py-8 text-white/50">Failed to load profile</p>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function AdminUsersPage() {
   const { theme } = useThemeStore();
   const navigate = useNavigate();
@@ -60,6 +215,7 @@ export default function AdminUsersPage() {
   const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]       = useState(0);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   // Subscription edit modal
   const [editTarget, setEditTarget]   = useState<UserRow | null>(null);
@@ -170,6 +326,16 @@ export default function AdminUsersPage() {
 
   return (
     <div className={th ? 'text-white' : 'text-gray-900'}>
+      <AnimatePresence>
+        {selectedUserId && (
+          <ProfileModal
+            userId={selectedUserId}
+            onClose={() => setSelectedUserId(null)}
+            theme={theme}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Toast */}
       {toast && (
         <motion.div
