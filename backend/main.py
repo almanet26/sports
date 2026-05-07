@@ -48,6 +48,18 @@ def _ensure_users_schema(db_session) -> None:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_status VARCHAR(20) DEFAULT 'pending'"))
             if "coach_document_url" not in existing:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_document_url TEXT"))
+            if "gender" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN gender VARCHAR(20)"))
+            if "certifications" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN certifications JSON"))
+            if "specialization" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN specialization JSON"))
+            if "intro_video_url" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN intro_video_url TEXT"))
+            if "profile_image_url" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN profile_image_url TEXT"))
+            if "coach_category" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN coach_category VARCHAR(50)"))
         else:
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_status VARCHAR(20) DEFAULT 'pending'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_document_url TEXT"))
