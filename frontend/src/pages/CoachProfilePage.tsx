@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { authService } from '../utils/auth';
-import { authApi } from '../lib/api';
+import { authApi, api } from '../lib/api';
 
 const SPECIALIZATIONS = ['Batting', 'Bowling', 'Fielding', 'Fitness', 'Mental', 'Wicketkeeping'];
 
@@ -27,6 +27,30 @@ export default function CoachProfilePage() {
 
   const [certifications, setCertifications] = useState<Certification[]>(userProfile?.certifications || []);
   const [specialization, setSpecialization] = useState<string[]>(userProfile?.specialization || []);
+  const [videoUploading, setVideoUploading] = useState(false);
+  const [introVideoUrl, setIntroVideoUrl] = useState(userProfile?.intro_video_url || '');
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  const handleIntroVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setVideoUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await api.post('/auth/coach-intro-video', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const url = res.data.intro_video_url;
+      setIntroVideoUrl(url);
+      const updatedProfile = { ...userProfile, intro_video_url: url };
+      localStorage.setItem('user_profile', JSON.stringify(updatedProfile));
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Video upload failed');
+    } finally {
+      setVideoUploading(false);
+    }
+  };
 
   useEffect(() => {
     let complete = 0;
@@ -39,7 +63,7 @@ export default function CoachProfilePage() {
     // Coach branding (60%)
     if (certifications.length > 0) complete += 20;
     if (specialization.length > 0) complete += 20;
-    if (userProfile?.intro_video_url) complete += 20;
+    if (userProfile?.intro_video_url || introVideoUrl) complete += 20;
     
     setProfileComplete(complete);
   }, [formData, certifications, specialization, userProfile]);
@@ -405,9 +429,26 @@ export default function CoachProfilePage() {
 
           <div className="md:col-span-2">
             <label className="block text-sm font-medium text-white/60 mb-3">
-              <i className="fas fa-video mr-1"></i> Intro Video URL
+              <i className="fas fa-video mr-1"></i> Intro Video
             </label>
-            <p className="text-sm text-white/60 glass rounded-xl px-4 py-3 border border-white/10">{userProfile?.intro_video_url || 'No intro video added yet'}</p>
+            <input ref={videoInputRef} type="file" accept="video/*" onChange={handleIntroVideoUpload} className="hidden" />
+            {introVideoUrl ? (
+              <div className="glass rounded-xl p-4 border border-white/10 space-y-3">
+                <video src={introVideoUrl} controls className="w-full rounded-lg max-h-48 object-cover" />
+                <button onClick={() => videoInputRef.current?.click()} disabled={videoUploading} className="text-sm text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-2">
+                  <i className="fas fa-redo"></i>
+                  {videoUploading ? 'Uploading...' : 'Replace Video'}
+                </button>
+              </div>
+            ) : (
+              <button onClick={() => videoInputRef.current?.click()} disabled={videoUploading} className="w-full px-4 py-6 glass border border-dashed border-white/20 rounded-xl text-white/50 hover:bg-white/5 hover:border-white/30 transition-all flex flex-col items-center gap-2 disabled:opacity-50">
+                {videoUploading ? (
+                  <><span className="w-6 h-6 border-2 border-white/30 border-t-white rounded-full animate-spin"></span><span className="text-sm">Uploading...</span></>
+                ) : (
+                  <><i className="fas fa-cloud-upload-alt text-2xl"></i><span className="text-sm">Click to upload intro video</span><span className="text-xs text-white/30">MP4, MOV, AVI — max 100MB</span></>
+                )}
+              </button>
+            )}
           </div>
         </div>
       </motion.div>
