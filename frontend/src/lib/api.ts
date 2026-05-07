@@ -499,6 +499,18 @@ export const submissionsApi = {
     });
   },
 
+  /** Player: Submit an already-uploaded gallery video (no re-upload) */
+  submitExistingVideo: (videoId: string, coachId: string, analysisType: string = 'BATTING') => {
+    const formData = new FormData();
+    formData.append('video_id', videoId);
+    formData.append('coach_id', coachId);
+    formData.append('analysis_type', analysisType);
+    return api.post('/submissions/from-video', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 0,
+    });
+  },
+
   /** Player: My published reports */
   playerReports: (limit = 50, offset = 0) =>
     api.get<{ submissions: SubmissionSummary[]; total: number }>('/submissions/player/me', { params: { limit, offset } }),
