@@ -15,6 +15,8 @@ from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 import pandas as pd
 
+from utils.gcs import upload_to_gcs, upload_bytes_to_gcs
+
 from database.config import get_db
 from database.crud.bowling import create_bowling_analysis, get_analysis_by_id, list_analyses_for_player
 from database.models.user import User
@@ -105,11 +107,12 @@ async def analyze_bowling(
                 content={"error": "No bowler detected. Ensure full body is visible."},
             )
 
-        # Move annotated video to permanent storage
+        # Move annotated video to permanent storage, upload to GCS if available
         video_filename = f"bowling_{file_id}_annotated.mp4"
         final_video_path = VIDEOS_DIR / video_filename
         shutil.move(annotated_video_path, final_video_path)
-        annotated_video_url = f"/static/bowling_videos/{video_filename}"
+        gcs_video_url = upload_to_gcs(final_video_path, f"bowling_videos/{video_filename}", "video/mp4")
+        annotated_video_url = gcs_video_url or f"/static/bowling_videos/{video_filename}"
 
         # AI Feedback — use upgraded prompt with YouTube drill extraction
         prompt = BOWLING_ANALYSIS_PROMPT.format(
@@ -125,11 +128,10 @@ async def analyze_bowling(
         pdf_bytes = create_pdf(feedback_text, display_df, images)
         report_filename = f"bowling_report_{file_id}.pdf"
         report_path = REPORTS_DIR / report_filename
-
         with open(report_path, "wb") as f:
             f.write(pdf_bytes)
-
-        report_url = f"/static/reports/{report_filename}"
+        gcs_report_url = upload_bytes_to_gcs(pdf_bytes, f"reports/{report_filename}", "application/pdf")
+        report_url = gcs_report_url or f"/static/reports/{report_filename}"
 
         # Extract summary biometrics from raw DataFrame (before column renaming)
         if not raw_df.empty and 'r_elbow_angle' in raw_df.columns:

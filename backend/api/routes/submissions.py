@@ -36,6 +36,8 @@ from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Q
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
+from utils.gcs import upload_bytes_to_gcs
+
 from database.config import get_db
 from database.models.player_submission import PlayerSubmission
 from database.models.user import User
@@ -1180,8 +1182,8 @@ def coach_publish(
         report_path = REPORTS_DIR / report_filename
         with open(report_path, "wb") as f:
             f.write(pdf_bytes)
-
-        pdf_report_url = f"/static/reports/{report_filename}"
+        gcs_report_url = upload_bytes_to_gcs(pdf_bytes, f"reports/{report_filename}", "application/pdf")
+        pdf_report_url = gcs_report_url or f"/static/reports/{report_filename}"
 
         publish_submission(
             db,

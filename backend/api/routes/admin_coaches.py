@@ -3,7 +3,7 @@ Admin API routes for coach approval.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 import logging
 import os
@@ -183,8 +183,13 @@ def download_coach_document(
             detail="No document uploaded"
         )
     
-    # Handle both old format (/static/...) and new format (storage/...)
     file_path = coach.coach_document_url
+
+    # GCS URL — redirect directly
+    if file_path and (file_path.startswith("https://") or file_path.startswith("http://")):
+        return RedirectResponse(url=file_path, status_code=307)
+
+    # Legacy local path
     if file_path.startswith('/static/'):
         file_path = file_path.replace('/static/', 'storage/')
     

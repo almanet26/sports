@@ -8,6 +8,7 @@ import logging
 import secrets
 import os
 from pathlib import Path
+from utils.gcs import upload_bytes_to_gcs
 
 from database.config import get_db
 from database.models.subscription import Subscription
@@ -93,12 +94,18 @@ async def register(
             content = await coach_document.read()
             if len(content) > 1 * 1024 * 1024:
                 raise HTTPException(status_code=413, detail="File too large. Maximum size is 1MB.")
-            storage_dir = Path("storage/coach_documents")
-            storage_dir.mkdir(parents=True, exist_ok=True)
             unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-            with open(storage_dir / unique_filename, "wb") as buf:
-                buf.write(content)
-            coach_document_url = f"coach_documents/{unique_filename}"
+            # Try GCS first, fall back to local disk
+            blob_name = f"coach_documents/{unique_filename}"
+            gcs_url = upload_bytes_to_gcs(content, blob_name, coach_document.content_type or "application/octet-stream")
+            if gcs_url:
+                coach_document_url = gcs_url
+            else:
+                storage_dir = Path("storage/coach_documents")
+                storage_dir.mkdir(parents=True, exist_ok=True)
+                with open(storage_dir / unique_filename, "wb") as buf:
+                    buf.write(content)
+                coach_document_url = f"coach_documents/{unique_filename}"
         except HTTPException:
             raise
         except Exception as exc:
