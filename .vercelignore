@@ -1,7 +1,11 @@
 backend/
+docs/
 *.md
 *.py
 requirements.txt
 Dockerfile*
 .env
 storage/
+.git/
+node_modules/
+.DS_Store
