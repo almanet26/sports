@@ -95,6 +95,7 @@ interface AuthState {
   // ── Helpers ──
   hasRole: (role: UserRole | UserRole[]) => boolean;
   canUpload: () => boolean;
+  updateUser: (partial: Partial<User>) => void;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -298,6 +299,14 @@ export const useAuthStore = create<AuthState>()(
       canUpload: () => {
         const { user } = get();
         return user?.role === 'ADMIN' || user?.role === 'COACH';
+      },
+
+      updateUser: (partial) => {
+        const current = get().user;
+        if (!current) return;
+        const updated = { ...current, ...partial };
+        localStorage.setItem('user_profile', JSON.stringify(updated));
+        set({ user: updated });
       },
     }),
     {

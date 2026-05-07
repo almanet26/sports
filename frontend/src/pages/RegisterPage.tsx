@@ -71,7 +71,8 @@ export default function RegisterPage() {
       if (formData.phone) submitData.append('phone', formData.phone);
       if (formData.team) submitData.append('team', formData.team);
 
-      await authApi.registerMultipart(submitData);
+      const response = await authApi.registerMultipart(submitData);
+      console.log('Registration successful:', response.status);
 
       if (formData.role === 'COACH') {
         // Auto-login and go straight to profile setup
