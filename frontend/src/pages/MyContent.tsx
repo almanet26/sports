@@ -2,7 +2,11 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useThemeStore } from "../store/themeStore";
 import { api } from "../lib/api";
-import { toast } from "react-hot-toast";
+
+const toast = {
+  error: (msg: string) => console.error(msg),
+  success: (msg: string) => console.log(msg),
+};
 
 interface Content {
   id: number;

@@ -14,6 +14,7 @@ interface ContentItem {
   tags?: string;
   views: number;
   likes: number;
+  is_public: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -98,7 +99,7 @@ export default function CoachContentPage() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: string) => {
     if (!confirm('Delete this content?')) return;
     await api.delete(`/coach/content/${id}`);
     setItems(prev => prev.filter(i => i.id !== id));

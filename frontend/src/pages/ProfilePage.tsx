@@ -22,7 +22,7 @@ export default function ProfilePage() {
     team: user?.team || '',
     jerseyNumber: user?.jersey_number || '',
     date_of_birth: user?.date_of_birth || '',
-    years_of_experience: user?.years_of_experience || '',
+    years_of_experience: user?.years_of_experience?.toString() || ''
   });
 
   // Coach branding state
@@ -85,7 +85,7 @@ export default function ProfilePage() {
         gender: formData.gender,
         coach_category: formData.coach_category,
         date_of_birth: formData.date_of_birth,
-        years_of_experience: formData.years_of_experience ? parseInt(formData.years_of_experience) : undefined,
+        years_of_experience: formData.years_of_experience ? parseInt(formData.years_of_experience as string) : undefined,
         certifications,
         specialization,
       });
@@ -96,7 +96,7 @@ export default function ProfilePage() {
         gender: formData.gender,
         coach_category: formData.coach_category,
         date_of_birth: formData.date_of_birth,
-        years_of_experience: formData.years_of_experience ? parseInt(formData.years_of_experience) : undefined,
+        years_of_experience: formData.years_of_experience ? parseInt(formData.years_of_experience as string) : undefined,
         certifications,
         specialization,
       });
