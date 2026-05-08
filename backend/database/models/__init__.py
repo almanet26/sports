@@ -28,6 +28,18 @@ from database.models.player_submission import PlayerSubmission
 from database.models.academy_branding import AcademyBranding
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
+from database.models.coach_content import CoachContent, ContentType
+from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
+from database.models.coach_training_plan import CoachTrainingPlan
+from database.models.message import Message
+from database.models.transaction import Transaction, TransactionType, TransactionStatus
+from database.models.review import Review
+from database.models.coach_review import CoachReview
+from database.models.match import Match
+from database.models.player_performance import PlayerPerformanceEntry
+from database.models.gamification import PlayerBadge, PlayerStreak
+from database.models.notification import Notification
 __all__ = [
     # User models
     "User",

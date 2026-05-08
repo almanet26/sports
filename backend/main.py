@@ -340,19 +340,19 @@ else:
     logger.warning("Batting analysis feature disabled (MediaPipe not available)")
 
 # Submissions routes
-app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
 if SUBMISSIONS_AVAILABLE and submissions is not None:
+    app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
     app.include_router(submissions.router, prefix="/api/v1/submissions", tags=["submissions"])
     logger.info("B2B2C Submissions pipeline enabled")
 else:
     logger.warning("Submissions pipeline disabled")
 
-# Cloud Storage (Direct-to-GCS signed URL uploads)
-if GCS_AVAILABLE and storage is not None:
+# Cloud Storage (Direct-to-GCS signed URL uploads + local fallback)
+if storage is not None:
     app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
-    logger.info("Direct-to-GCS upload feature enabled")
+    logger.info("Storage routes enabled (GCS=%s)", GCS_AVAILABLE)
 else:
-    logger.warning("Direct-to-GCS upload feature disabled (GCS not configured)")
+    logger.warning("Storage routes disabled")
 
 # Internal Worker endpoint (called by Cloud Tasks, NOT public API)
 if WORKER_AVAILABLE and worker is not None:
