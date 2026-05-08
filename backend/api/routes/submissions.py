@@ -55,6 +55,7 @@ from schemas.submission import (
     CoachListResponse,
 )
 from utils.auth import get_current_user
+from utils.gcs_upload import upload_bytes_to_gcs, GCS_BUCKET_NAME, LIMIT_VIDEO
 
 # Engine imports
 try:
@@ -219,7 +220,7 @@ def _to_detail(sub: VideoSubmission) -> SubmissionDetail:
 
 
 def _save_key_frame(video_path: str, submission_id: str, frame_idx: int | None) -> str | None:
-    """Extract a single frame from the video and save as JPEG."""
+    """Extract a single frame from the video and save/upload as JPEG."""
     if frame_idx is None:
         return None
     cap = cv2.VideoCapture(video_path)
@@ -230,6 +231,15 @@ def _save_key_frame(video_path: str, submission_id: str, frame_idx: int | None) 
         return None
     out_path = TEMP_FRAMES_DIR / f"{submission_id}.jpg"
     cv2.imwrite(str(out_path), frame)
+    if GCS_BUCKET_NAME:
+        url = upload_bytes_to_gcs(
+            content=out_path.read_bytes(),
+            folder="temp_frames",
+            filename_ext=".jpg",
+            content_type="image/jpeg",
+        )
+        out_path.unlink(missing_ok=True)
+        return url
     return f"/static/temp_frames/{submission_id}.jpg"
 
 
@@ -510,13 +520,15 @@ async def player_upload(
         for c in (file.filename or "upload.mp4")
     )
 
-    if _gcs_bucket_upload is not None:
-        blob_name = f"raw_videos/{file_id}_{safe_name}"
+    if _GCS_BUCKET_NAME:
+        blob_name = f"submissions/{file_id}_{safe_name}"
         try:
             content = await file.read()
+            if len(content) > LIMIT_VIDEO:
+                raise HTTPException(status_code=413, detail="File too large. Maximum size is 10 MB.")
             blob = _gcs_bucket_upload.blob(blob_name)
             blob.upload_from_string(content, content_type=file.content_type or "video/mp4")
-            video_url = blob_name  # GCS object path — used by the worker
+            video_url = f"https://storage.googleapis.com/{_GCS_BUCKET_NAME}/{blob_name}"
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to upload to GCS: {e}")
     else:
@@ -1025,11 +1037,27 @@ def coach_run_analysis(
     # Mark PROCESSING
     mark_processing(db, sub)
 
-    # Resolve video file path on disk
-    video_file_path = sub.video_url.replace("/static/submissions/", "storage/submissions/")
+    # Resolve video file — download from GCS if needed
+    video_url = sub.video_url or ""
+    if video_url.startswith("https://storage.googleapis.com/"):
+        # Download GCS blob to a temp file for local analysis
+        import tempfile
+        try:
+            bucket = _gcs_client.bucket(_GCS_BUCKET_NAME)
+            # Extract blob path from full URL
+            blob_path = video_url.split(f"{_GCS_BUCKET_NAME}/", 1)[-1]
+            blob = bucket.blob(blob_path)
+            suffix = Path(blob_path).suffix or ".mp4"
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+            blob.download_to_filename(tmp.name)
+            video_file_path = tmp.name
+        except Exception as dl_err:
+            raise HTTPException(status_code=500, detail=f"Failed to download video from GCS: {dl_err}")
+    else:
+        video_file_path = video_url.replace("/static/submissions/", "storage/submissions/")
 
     if not os.path.isfile(video_file_path):
-        raise HTTPException(status_code=404, detail="Video file not found on disk.")
+        raise HTTPException(status_code=404, detail="Video file not found.")
 
     try:
         if sub.analysis_type == "BOWLING":
@@ -1131,13 +1159,20 @@ def coach_publish(
             # Fallback: generate simple text-only PDF
             pdf_bytes = _simple_pdf(edited_text, sub.analysis_type)
 
-        # Save PDF
+        # Save PDF and upload to GCS
         report_filename = f"submission_report_{sub.id}.pdf"
-        report_path = REPORTS_DIR / report_filename
-        with open(report_path, "wb") as f:
-            f.write(pdf_bytes)
-
-        pdf_report_url = f"/static/reports/{report_filename}"
+        if GCS_BUCKET_NAME:
+            pdf_report_url = upload_bytes_to_gcs(
+                content=pdf_bytes,
+                folder="reports",
+                filename_ext=".pdf",
+                content_type="application/pdf",
+            )
+        else:
+            report_path = REPORTS_DIR / report_filename
+            with open(report_path, "wb") as f:
+                f.write(pdf_bytes)
+            pdf_report_url = f"/static/reports/{report_filename}"
 
         publish_submission(
             db,
@@ -1225,15 +1260,24 @@ def _run_batting_analysis(
     if display_df.empty:
         raise ValueError("No batter detected. Ensure full body is visible in the video.")
 
-    # Move annotated video to permanent storage
+    # Move annotated video to permanent storage, then upload to GCS
     annotated_filename = f"sub_{submission_id}_batting_annotated.mp4"
     final_annotated = ANNOTATED_DIR / annotated_filename
     shutil.move(annotated_video_path, final_annotated)
-    annotated_url = f"/static/submission_videos/{annotated_filename}"
+    if GCS_BUCKET_NAME:
+        annotated_url = upload_bytes_to_gcs(
+            content=final_annotated.read_bytes(),
+            folder="submission_videos",
+            filename_ext=".mp4",
+            content_type="video/mp4",
+        )
+        final_annotated.unlink(missing_ok=True)
+    else:
+        annotated_url = f"/static/submission_videos/{annotated_filename}"
 
-    # Save key frame (Impact)
+    # Save key frame (Impact) and upload to GCS
     impact_frame = phase_info.get("impact")
-    key_frame_url = _save_key_frame(str(final_annotated), submission_id, impact_frame)
+    key_frame_url = _save_key_frame(str(final_annotated) if final_annotated.exists() else annotated_video_path, submission_id, impact_frame)
 
     # AI feedback (full prompt includes WEAKNESSES + RECOMMENDED TUTORIALS section)
     prompt = BATTING_ANALYSIS_PROMPT.format(
@@ -1265,11 +1309,20 @@ def _run_bowling_analysis(
     if display_df.empty:
         raise ValueError("No bowler detected. Ensure full body is visible in the video.")
 
-    # Move annotated video
+    # Move annotated video, then upload to GCS
     annotated_filename = f"sub_{submission_id}_bowling_annotated.mp4"
     final_annotated = ANNOTATED_DIR / annotated_filename
     shutil.move(annotated_video_path, final_annotated)
-    annotated_url = f"/static/submission_videos/{annotated_filename}"
+    if GCS_BUCKET_NAME:
+        annotated_url = upload_bytes_to_gcs(
+            content=final_annotated.read_bytes(),
+            folder="submission_videos",
+            filename_ext=".mp4",
+            content_type="video/mp4",
+        )
+        final_annotated.unlink(missing_ok=True)
+    else:
+        annotated_url = f"/static/submission_videos/{annotated_filename}"
 
     # Save key frame (first captured image or mid-point)
     key_frame_url = None
@@ -1279,7 +1332,16 @@ def _run_bowling_analysis(
         frame_path = TEMP_FRAMES_DIR / f"{submission_id}.jpg"
         img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
         cv2.imwrite(str(frame_path), img_bgr)
-        key_frame_url = f"/static/temp_frames/{submission_id}.jpg"
+        if GCS_BUCKET_NAME:
+            key_frame_url = upload_bytes_to_gcs(
+                content=frame_path.read_bytes(),
+                folder="temp_frames",
+                filename_ext=".jpg",
+                content_type="image/jpeg",
+            )
+            frame_path.unlink(missing_ok=True)
+        else:
+            key_frame_url = f"/static/temp_frames/{submission_id}.jpg"
 
     # AI feedback
     prompt = BOWLING_ANALYSIS_PROMPT.format(

@@ -7,9 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File,
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import logging
-import secrets
 import os
-from pathlib import Path
 
 from database.config import get_db
 from database.models.user import User
@@ -23,6 +21,7 @@ from utils.auth import (
     get_current_user,
 )
 from utils.config import settings
+from utils.gcs_upload import upload_file_to_gcs, LIMIT_PROFILE_IMAGE, LIMIT_VIDEO, LIMIT_DOCUMENT
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 logger = logging.getLogger(__name__)
@@ -86,28 +85,13 @@ async def complete_coach_profile(
     if current_user.coach_status not in ('incomplete',):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profile already submitted for review")
 
-    # Validate and save document
-    ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'}
-    file_extension = os.path.splitext(coach_document.filename)[1].lower()
-    if file_extension not in ALLOWED_EXTENSIONS:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}"
-        )
-
-    MAX_FILE_SIZE = 10 * 1024 * 1024
     try:
-        content = await coach_document.read()
-        if len(content) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Maximum size is 10MB.")
-
-        storage_dir = Path("storage/coach_documents")
-        storage_dir.mkdir(parents=True, exist_ok=True)
-        unique_filename = f"{secrets.token_urlsafe(16)}{file_extension}"
-        file_path = storage_dir / unique_filename
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        coach_document_url = f"coach_documents/{unique_filename}"
+        coach_document_url = await upload_file_to_gcs(
+            file=coach_document,
+            folder="coach_documents",
+            max_bytes=LIMIT_DOCUMENT,
+            allowed_extensions={'.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'},
+        )
     except HTTPException:
         raise
     except Exception as e:
@@ -148,36 +132,14 @@ async def upload_profile_image(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Upload or replace profile image for any user."""
-    ALLOWED_IMAGE = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_IMAGE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid image format. Allowed: jpg, jpeg, png, webp, gif")
-
-    MAX_SIZE = 5 * 1024 * 1024  # 5MB
+    """Upload or replace profile image for any user. Max 1 MB."""
     try:
-        content = await file.read()
-        if len(content) > MAX_SIZE:
-            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 5MB.")
-
-        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
-        if gcs_bucket:
-            import google.cloud.storage as gcs_lib
-            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-            gcs_client = gcs_lib.Client()
-            bucket = gcs_client.bucket(gcs_bucket)
-            blob = bucket.blob(f"profile_images/{unique_filename}")
-            blob.upload_from_string(content, content_type=file.content_type or "image/jpeg")
-            profile_image_url = f"https://storage.googleapis.com/{gcs_bucket}/profile_images/{unique_filename}"
-        else:
-            storage_dir = Path("storage/profile_images")
-            storage_dir.mkdir(parents=True, exist_ok=True)
-            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-            file_path = storage_dir / unique_filename
-            with open(file_path, "wb") as buf:
-                buf.write(content)
-            profile_image_url = f"/static/profile_images/{unique_filename}"
-
+        profile_image_url = await upload_file_to_gcs(
+            file=file,
+            folder="profile_images",
+            max_bytes=LIMIT_PROFILE_IMAGE,
+            allowed_extensions={'.jpg', '.jpeg', '.png', '.webp', '.gif'},
+        )
         current_user.profile_image_url = profile_image_url
         db.commit()
         db.refresh(current_user)
@@ -429,71 +391,22 @@ async def upload_intro_video(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    """Upload or replace coach intro video — streams directly to GCS, falls back to local disk in dev."""
+    """Upload or replace coach intro video. Max 10 MB."""
     if current_user.role != 'COACH':
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
 
-    ALLOWED_VIDEO = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
-    ext = os.path.splitext(file.filename)[1].lower()
-    if ext not in ALLOWED_VIDEO:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid video format. Allowed: mp4, mov, avi, webm, mkv"
-        )
-
-    unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
-
     try:
-        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
-
-        if gcs_bucket:
-            # Stream directly to GCS — never loads full file into RAM
-            import google.cloud.storage as gcs_lib
-            gcs_client = gcs_lib.Client()
-            bucket = gcs_client.bucket(gcs_bucket)
-            blob = bucket.blob(f"coach_intro_videos/{unique_filename}")
-
-            CHUNK = 256 * 1024  # 256 KB chunks
-            with blob.open("wb", content_type=file.content_type or "video/mp4") as gcs_stream:
-                while True:
-                    chunk = await file.read(CHUNK)
-                    if not chunk:
-                        break
-                    gcs_stream.write(chunk)
-
-            intro_video_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_intro_videos/{unique_filename}"
-        else:
-            # Local dev fallback — stream to disk in chunks (no full RAM load)
-            storage_dir = Path("storage/coach_intro_videos")
-            storage_dir.mkdir(parents=True, exist_ok=True)
-            file_path = storage_dir / unique_filename
-
-            CHUNK = 256 * 1024  # 256 KB chunks
-            MAX_SIZE = 100 * 1024 * 1024  # 100 MB
-            written = 0
-            with open(file_path, "wb") as buf:
-                while True:
-                    chunk = await file.read(CHUNK)
-                    if not chunk:
-                        break
-                    written += len(chunk)
-                    if written > MAX_SIZE:
-                        buf.close()
-                        file_path.unlink(missing_ok=True)
-                        raise HTTPException(
-                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                            detail="File too large. Max 100MB."
-                        )
-                    buf.write(chunk)
-
-            intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
-
+        intro_video_url = await upload_file_to_gcs(
+            file=file,
+            folder="coach_intro_videos",
+            max_bytes=LIMIT_VIDEO,
+            allowed_extensions={'.mp4', '.mov', '.avi', '.webm', '.mkv'},
+        )
         current_user.intro_video_url = intro_video_url
         db.commit()
         db.refresh(current_user)
         logger.info(f"Intro video uploaded for coach: {current_user.email} -> {intro_video_url}")
         return IntroVideoResponse(intro_video_url=intro_video_url)
-
     except HTTPException:
         raise
     except Exception as e:

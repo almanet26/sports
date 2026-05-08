@@ -4,9 +4,10 @@ from typing import List, Optional
 from database.config import get_db
 from database.models import CoachContent, ContentType, User
 from utils.auth import get_current_user
+from utils.gcs_upload import upload_bytes_to_gcs, LIMIT_VIDEO, LIMIT_THUMBNAIL
 from pydantic import BaseModel, Field, validator
 from datetime import datetime
-import os
+from pathlib import Path
 import uuid
 
 router = APIRouter()
@@ -100,35 +101,43 @@ async def create_content(
     mime_type = None
     
     if file and content_type in [ContentType.VIDEO, ContentType.IMAGE]:
-        storage_dir = f"storage/coach_content/{current_user.id}"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        file_extension = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(storage_dir, unique_filename)
-        
-        content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(content)
-        
-        file_url = f"/static/coach_content/{current_user.id}/{unique_filename}"
+        allowed_video = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
+        allowed_image = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+        allowed = allowed_video if content_type == ContentType.VIDEO else allowed_image
+        ext = Path(file.filename or "").suffix.lower()
+        if ext not in allowed:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid file type '{ext}' for {content_type.value}.")
+        file_content = await file.read()
+        file_size = len(file_content)
+        if file_size > LIMIT_VIDEO:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File too large. Maximum size is 10 MB.")
         file_name = file.filename
-        file_size = len(content)
         mime_type = file.content_type
-    
+        file_url = upload_bytes_to_gcs(
+            content=file_content,
+            folder=f"coach_content/{current_user.id}",
+            filename_ext=ext,
+            content_type=mime_type or "application/octet-stream",
+        )
+
     if thumbnail:
-        storage_dir = f"storage/coach_content/{current_user.id}/thumbnails"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        thumb_extension = os.path.splitext(thumbnail.filename)[1]
-        unique_thumb = f"{uuid.uuid4()}{thumb_extension}"
-        thumb_path = os.path.join(storage_dir, unique_thumb)
-        
-        with open(thumb_path, "wb") as buffer:
-            content = await thumbnail.read()
-            buffer.write(content)
-        
-        thumbnail_url = f"/static/coach_content/{current_user.id}/thumbnails/{unique_thumb}"
+        thumb_ext = Path(thumbnail.filename or "").suffix.lower()
+        allowed_thumb = {'.jpg', '.jpeg', '.png', '.webp'}
+        if thumb_ext not in allowed_thumb:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid thumbnail type '{thumb_ext}'.")
+        thumb_content = await thumbnail.read()
+        if len(thumb_content) > LIMIT_THUMBNAIL:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Thumbnail too large. Maximum size is 2 MB.")
+        thumbnail_url = upload_bytes_to_gcs(
+            content=thumb_content,
+            folder=f"coach_content/{current_user.id}/thumbnails",
+            filename_ext=thumb_ext,
+            content_type=thumbnail.content_type or "image/jpeg",
+        )
     
     # Create content record
     content_record = CoachContent(
@@ -276,35 +285,33 @@ async def update_content(
     
     # Handle file updates
     if file:
-        storage_dir = f"storage/coach_content/{current_user.id}"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        file_extension = os.path.splitext(file.filename)[1]
-        unique_filename = f"{uuid.uuid4()}{file_extension}"
-        file_path = os.path.join(storage_dir, unique_filename)
-        
+        ext = Path(file.filename or "").suffix.lower()
         file_content = await file.read()
-        with open(file_path, "wb") as buffer:
-            buffer.write(file_content)
-        
-        content.file_url = f"/static/coach_content/{current_user.id}/{unique_filename}"
+        if len(file_content) > LIMIT_VIDEO:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="File too large. Maximum size is 10 MB.")
+        content.file_url = upload_bytes_to_gcs(
+            content=file_content,
+            folder=f"coach_content/{current_user.id}",
+            filename_ext=ext,
+            content_type=file.content_type or "application/octet-stream",
+        )
         content.file_name = file.filename
         content.file_size = len(file_content)
         content.mime_type = file.content_type
-    
+
     if thumbnail:
-        storage_dir = f"storage/coach_content/{current_user.id}/thumbnails"
-        os.makedirs(storage_dir, exist_ok=True)
-        
-        thumb_extension = os.path.splitext(thumbnail.filename)[1]
-        unique_thumb = f"{uuid.uuid4()}{thumb_extension}"
-        thumb_path = os.path.join(storage_dir, unique_thumb)
-        
-        with open(thumb_path, "wb") as buffer:
-            thumb_content = await thumbnail.read()
-            buffer.write(thumb_content)
-        
-        content.thumbnail_url = f"/static/coach_content/{current_user.id}/thumbnails/{unique_thumb}"
+        thumb_ext = Path(thumbnail.filename or "").suffix.lower()
+        thumb_content = await thumbnail.read()
+        if len(thumb_content) > LIMIT_THUMBNAIL:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail="Thumbnail too large. Maximum size is 2 MB.")
+        content.thumbnail_url = upload_bytes_to_gcs(
+            content=thumb_content,
+            folder=f"coach_content/{current_user.id}/thumbnails",
+            filename_ext=thumb_ext,
+            content_type=thumbnail.content_type or "image/jpeg",
+        )
     
     content.updated_at = datetime.utcnow()
     db.commit()
