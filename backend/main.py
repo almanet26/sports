@@ -279,14 +279,13 @@ def db_health_check():
 
 # Include API Routers 
 from api.routes import (
-    auth, videos, player_videos, jobs, requests, player_stats, 
+    auth, videos, jobs, requests, player_stats, 
     bowling, BOWLING_AVAILABLE, 
     batting, BATTING_AVAILABLE, 
     submissions, SUBMISSIONS_AVAILABLE, 
     storage, GCS_AVAILABLE, 
     worker, WORKER_AVAILABLE, 
     admin_coaches,
-    coach_content, COACH_CONTENT_AVAILABLE,
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE
 )
@@ -309,10 +308,11 @@ app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"]
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 
 # Coach Content routes
-if coach_content is not None and COACH_CONTENT_AVAILABLE:
-    app.include_router(coach_content.router, prefix="/api/v1/coach", tags=["coach-content"])
+try:
+    from api.routes import coach_inbox
+    app.include_router(coach_inbox.router, prefix="/api/v1/coach", tags=["coach-content"])
     logger.info("Coach content feature enabled")
-else:
+except ImportError:
     logger.warning("Coach content feature disabled")
 
 # Messages routes
@@ -349,7 +349,6 @@ app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
 
 # Video management routes
 app.include_router(videos.router, prefix="/api/v1", tags=["videos"])
-app.include_router(player_videos.router, prefix="/api/v1", tags=["player-videos"])
 
 # OCR processing job routes
 app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])

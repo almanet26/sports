@@ -28,14 +28,6 @@ except Exception as e:
     messages = None
     MESSAGES_AVAILABLE = False
 
-try:
-    from . import coach_content
-    COACH_CONTENT_AVAILABLE = True
-except Exception as e:
-    print(f"Warning: Coach content feature disabled due to import error: {e}")
-    coach_content = None
-    COACH_CONTENT_AVAILABLE = False
-
 
 try:
     from . import bowling
@@ -81,7 +73,6 @@ __all__ = [
     "auth", "videos", "jobs", "requests", "admin_coaches",
     "analytics", "ANALYTICS_AVAILABLE",
     "messages", "MESSAGES_AVAILABLE",
-    "coach_content", "COACH_CONTENT_AVAILABLE",
     "bowling", "BOWLING_AVAILABLE",
     "batting", "BATTING_AVAILABLE",
     "submissions", "SUBMISSIONS_AVAILABLE",
