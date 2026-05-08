@@ -289,7 +289,7 @@ from api.routes import (
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE
 )
-from api.routes import plan, subscription, sessions
+from api.routes import subscription, sessions
 try:
     from api.routes import earnings, reviews
     EARNINGS_AVAILABLE = True
@@ -303,7 +303,6 @@ app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
-app.include_router(plan.router, prefix="/api/v1", tags=["admin"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"])
 app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 
