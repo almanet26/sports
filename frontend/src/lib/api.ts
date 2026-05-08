@@ -597,6 +597,15 @@ export interface PlayerSubmissionItem {
   reviewed_at?: string | null;
 }
 
+export interface CoachAthlete {
+  id: string;
+  name: string;
+  email: string;
+  team?: string;
+  published_reports: number;
+  total_submissions: number;
+}
+
 export const submissionsApi = {
   /** List available coaches for the player's dropdown */
   listCoaches: () =>
@@ -636,6 +645,14 @@ export const submissionsApi = {
   /** Player: My coach submissions */
   playerMy: () =>
     api.get<{ submissions: PlayerSubmissionItem[]; total: number }>('/submissions/my'),
+
+  /** Player: My submissions (all statuses) */
+  mySubmissions: () =>
+    api.get<{ submissions: PlayerSubmissionItem[]; total: number }>('/submissions/my'),
+
+  /** Coach: Get list of athletes */
+  coachAthletes: () =>
+    api.get<{ athletes: CoachAthlete[]; total: number }>('/submissions/coach/athletes'),
 
   /** Coach: Inbox (PENDING + DRAFT_REVIEW) */
   coachInbox: (status?: string, limit = 50, offset = 0) =>

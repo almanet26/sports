@@ -31,7 +31,7 @@ export default function CoachDashboard() {
 
   useEffect(() => {
     submissionsApi.coachAthletes()
-      .then(({ data }) => setAthletes(data.athletes))
+      .then((response) => setAthletes(response.data.athletes))
       .catch(() => {})
       .finally(() => setAthletesLoading(false));
     
