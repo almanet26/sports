@@ -76,6 +76,10 @@ class User(Base):
     # player_connections = relationship("Connection", foreign_keys="Connection.player_id", back_populates="player")
     # coach_connections = relationship("Connection", foreign_keys="Connection.coach_id", back_populates="coach")
     coach_contents = relationship("CoachContent", back_populates="coach")
+    subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
+    monthly_usages = relationship("MonthlyUsage", back_populates="user", cascade="all, delete-orphan")
+    chat_messages = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
+    player_profile = relationship("PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
 
     # Password management methods
     def set_password(self, password: str):

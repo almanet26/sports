@@ -21,6 +21,14 @@ from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
 from database.models.coach_content import CoachContent
+from database.models.chat_history import ChatHistory
+from database.models.monthly_usage import MonthlyUsage
+from database.models.player_profile import PlayerProfile
+from database.models.notification import Notification
+from database.models.player_stats import PlayerStats
+from database.models.player_submission import PlayerSubmission
+from database.models.admin_audit_log import AdminAuditLog
+from database.models.coach_shortlist import CoachShortlist
 from database.models.message import Message
 from database.models.transaction import Transaction, TransactionType, TransactionStatus
 from database.models.review import Review
@@ -46,6 +54,9 @@ __all__ = [
     "SubmissionStatus",
     # Coach Content
     "CoachContent",
+    "ChatHistory",
+    "MonthlyUsage",
+    "PlayerProfile",
     # Messages
     "Message",
     # Transactions
