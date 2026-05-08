@@ -416,7 +416,8 @@ try:
     app.include_router(analytics_router, prefix="/api/v1", tags=["analytics"])
 except Exception as e:
     logger.warning("Analytics routes disabled: %s", e)
- — POST /internal/cron/expire-subscriptions
+
+# POST /internal/cron/expire-subscriptions
 from services.subscription_expiry import register_expiry_endpoint
 register_expiry_endpoint(app)
 
