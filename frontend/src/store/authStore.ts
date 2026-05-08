@@ -36,6 +36,8 @@ export interface User {
   profile_image_url?: string;
   coach_category?: string;
   coach_status?: 'incomplete' | 'pending' | 'verified' | 'rejected';
+  date_of_birth?: string;
+  years_of_experience?: number;
 }
 
 const DEFAULT_QUOTA: QuotaUsage = {

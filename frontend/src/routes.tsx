@@ -22,7 +22,6 @@ import RequestsPage from './pages/RequestsPage';
 import ProfilePage from './pages/ProfilePage';
 import PlayerPerformance from './pages/PlayerPerformance';
 import PlayerProfile from './pages/PlayerProfile';
-import PlayerVideosPage from './pages/PlayerVideosPage';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
@@ -46,8 +45,6 @@ import CoachMyPlayersPage from './pages/CoachMyPlayersPage';
 import CoachMessagesPage from './pages/CoachMessagesPage';
 import CoachContentPage from './pages/CoachContentPage';
 import CoachSettingsPage from './pages/CoachSettingsPage';
-import BrowseContentPage from './pages/BrowseContentPage';
-import ContentDetailPage from './pages/ContentDetailPage';
 
 // Auth Initializer (runs once on module load) 
 let authInitialized = false;
@@ -204,14 +201,11 @@ export default function AppRouter() {
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/player" element={<PlayerDashboard />} />
             <Route path="/player/profile" element={<PlayerProfile />} />
-            <Route path="/player/videos" element={<PlayerVideosPage />} />
             <Route path="/player/:id" element={<PlayerPerformance />} />
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
             <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
             <Route path="/player/subscription" element={<SubscriptionPage />} />
-            <Route path="/browse-content" element={<BrowseContentPage />} />
-            <Route path="/content/:id" element={<ContentDetailPage />} />
             <Route path="/coach/messages" element={<CoachMessagesPage />} />
           </Route>
         </Route>
