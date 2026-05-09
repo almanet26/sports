@@ -28,6 +28,34 @@ from database.models.player_submission import PlayerSubmission
 from database.models.academy_branding import AcademyBranding
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
+from database.models.coach_content import CoachContent, ContentType
+
+# New player & coach feature models — wrapped in try/except so missing
+# tables on older DB instances don't crash startup.
+try:
+    from database.models.notification import Notification
+except Exception:
+    pass
+try:
+    from database.models.gamification import PlayerBadge, PlayerStreak
+except Exception:
+    pass
+try:
+    from database.models.player_performance import PlayerPerformanceEntry
+except Exception:
+    pass
+try:
+    from database.models.coach_review import CoachReview
+except Exception:
+    pass
+try:
+    from database.models.match import Match
+except Exception:
+    pass
+try:
+    from database.models.message import Message
+except Exception:
+    pass
 __all__ = [
     # User models
     "User",
@@ -63,6 +91,9 @@ __all__ = [
     "AdminAuditLog",
     # Scouting
     "CoachShortlist",
+    # Coach Content
+    "CoachContent",
+    "ContentType",
     # Enums
     "VideoVisibility",
     "VideoStatus",
