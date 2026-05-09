@@ -23,7 +23,7 @@ import {
   CheckCircle,
   CalendarClock,
 } from "lucide-react";
-import { matchesAPI, Match, CreateMatchData, UpdateMatchData } from "../lib/matchesApi";
+import { matchesAPI, type Match, type CreateMatchData } from "../lib/matchesApi";
 
 type MatchType = "Practice" | "Tournament" | "Friendly";
 type MatchStatus = "Upcoming" | "Today" | "Completed" | "Cancelled" | "Rescheduled";
@@ -88,10 +88,6 @@ function formatDateInput(date: Date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
-function formatTimeInput(date: Date) {
-  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
 function convertTo12Hour(time24: string): { hour: string; minute: string; period: "AM" | "PM" } {
   if (!time24) return { hour: "12", minute: "00", period: "PM" };
   
@@ -116,13 +112,6 @@ function convertTo24Hour(hour: string, minute: string, period: "AM" | "PM"): str
   else if (period === "PM" && hour24 !== 12) hour24 += 12;
   
   return `${pad(hour24)}:${minute}`;
-}
-
-function addDays(base: Date, days: number, hour: number, minute = 0) {
-  const next = new Date(base);
-  next.setDate(base.getDate() + days);
-  next.setHours(hour, minute, 0, 0);
-  return next;
 }
 
 function startOfDay(date: Date) {
