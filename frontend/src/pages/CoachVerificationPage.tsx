@@ -16,6 +16,7 @@ interface Coach {
 export default function CoachVerificationPage() {
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState<string | null>(null);
 
   useEffect(() => {
     loadPendingCoaches();
@@ -33,31 +34,46 @@ export default function CoachVerificationPage() {
   };
 
   const handleApprove = async (coachId: string) => {
+    if (!confirm('Are you sure you want to approve this coach?')) return;
+    setProcessing(coachId);
     try {
       await adminApi.approveCoach(coachId);
-      alert('Coach approved successfully!');
-      loadPendingCoaches();
-    } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to approve coach');
+      setCoaches((prev) => prev.filter((c) => c.id !== coachId));
+    } catch (err: unknown) {
+      const detail =
+        typeof err === 'object' && err !== null &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : 'Failed to approve coach';
+      alert(detail);
+    } finally {
+      setProcessing(null);
     }
   };
 
   const handleReject = async (coachId: string) => {
-    if (!confirm('Are you sure you want to reject this coach?')) return;
-    
+    if (!confirm('Are you sure you want to reject this coach application?')) return;
+    setProcessing(coachId);
     try {
       await adminApi.rejectCoach(coachId);
-      alert('Coach rejected');
-      loadPendingCoaches();
-    } catch (error: any) {
-      alert(error.response?.data?.detail || 'Failed to reject coach');
+      setCoaches((prev) => prev.filter((c) => c.id !== coachId));
+    } catch (err: unknown) {
+      const detail =
+        typeof err === 'object' && err !== null &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : 'Failed to reject coach';
+      alert(detail);
+    } finally {
+      setProcessing(null);
     }
   };
 
   const downloadDocument = async (coachId: string, coachName: string) => {
     try {
       const response = await adminApi.getCoachDocument(coachId);
-      
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
       link.href = url;
@@ -66,89 +82,181 @@ export default function CoachVerificationPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (error: any) {
-      console.error('Download error:', error);
-      alert(error.response?.data?.detail || 'Failed to download document');
+    } catch (err: unknown) {
+      const detail =
+        typeof err === 'object' && err !== null &&
+        'response' in err &&
+        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
+          ? (err as { response: { data: { detail: string } } }).response.data.detail
+          : 'Failed to download document';
+      alert(detail);
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
-      </div>
-    );
-  }
-
   return (
-    <div className="max-w-7xl mx-auto">
+    <div className="text-white space-y-8">
+      {/* Header */}
       <motion.div
-        initial={{ opacity: 0, y: -20 }}
+        initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="mb-8"
+        className="glass rounded-3xl p-6 border border-white/20"
       >
-        <h1 className="text-4xl font-bold gradient-text mb-2">Coach Verification</h1>
-        <p className="text-white/60">Review and approve pending coach applications</p>
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-r from-green-500 to-emerald-500 flex items-center justify-center">
+            <i className="fas fa-user-check text-white text-2xl"></i>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold gradient-text">Coach Approvals</h1>
+            <p className="text-white/70 mt-1">Review and approve pending coach applications</p>
+          </div>
+        </div>
       </motion.div>
 
-      {coaches.length === 0 ? (
-        <div className="glass rounded-2xl p-12 text-center border border-white/20">
-          <i className="fas fa-check-circle text-6xl text-green-400 mb-4"></i>
-          <h2 className="text-2xl font-bold mb-2">All Caught Up!</h2>
-          <p className="text-white/60">No pending coach verifications</p>
-        </div>
-      ) : (
-        <div className="space-y-4">
-          {coaches.map((coach, index) => (
-            <motion.div
-              key={coach.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-              className="glass rounded-2xl p-6 border border-white/20"
-            >
-              <div className="flex items-start justify-between gap-4">
-                <div className="flex-1">
-                  <h3 className="text-xl font-bold mb-2">{coach.name}</h3>
-                  <div className="space-y-1 text-sm text-white/60">
-                    <p><i className="fas fa-envelope mr-2"></i>{coach.email}</p>
-                    {coach.phone && <p><i className="fas fa-phone mr-2"></i>{coach.phone}</p>}
-                    {coach.team && <p><i className="fas fa-users mr-2"></i>{coach.team}</p>}
-                    <p><i className="fas fa-calendar mr-2"></i>Applied: {new Date(coach.created_at).toLocaleDateString()}</p>
+      {/* Stats */}
+      <div className="grid sm:grid-cols-3 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="glass rounded-2xl p-6 border border-white/20"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-yellow-500/20 flex items-center justify-center">
+              <i className="fas fa-clock text-yellow-400"></i>
+            </div>
+            <p className="text-sm text-white/60">Pending</p>
+          </div>
+          <p className="text-3xl font-bold">{coaches.length}</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="glass rounded-2xl p-6 border border-white/20"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-green-500/20 flex items-center justify-center">
+              <i className="fas fa-check text-green-400"></i>
+            </div>
+            <p className="text-sm text-white/60">Approved Today</p>
+          </div>
+          <p className="text-3xl font-bold">0</p>
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+          className="glass rounded-2xl p-6 border border-white/20"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <div className="w-10 h-10 rounded-xl bg-red-500/20 flex items-center justify-center">
+              <i className="fas fa-times text-red-400"></i>
+            </div>
+            <p className="text-sm text-white/60">Rejected Today</p>
+          </div>
+          <p className="text-3xl font-bold">0</p>
+        </motion.div>
+      </div>
+
+      {/* Pending Coaches List */}
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.4 }}
+        className="glass rounded-3xl p-6 border border-white/20"
+      >
+        <h2 className="text-xl font-bold mb-6">Pending Applications</h2>
+
+        {loading ? (
+          <div className="text-center py-12">
+            <div className="w-12 h-12 border-4 border-white/20 border-t-white rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-white/60">Loading applications...</p>
+          </div>
+        ) : coaches.length === 0 ? (
+          <div className="text-center py-12">
+            <i className="fas fa-check-circle text-4xl text-green-400 mb-4"></i>
+            <p className="text-white/60">No pending applications</p>
+            <p className="text-sm text-white/40 mt-1">All coach applications have been reviewed</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {coaches.map((coach, index) => (
+              <motion.div
+                key={coach.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ delay: index * 0.1 }}
+                className="glass rounded-2xl p-6 border border-white/10 hover:border-white/20 transition-all duration-300"
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                  {/* Coach Info */}
+                  <div className="flex items-start gap-4">
+                    <div className="w-14 h-14 rounded-xl bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-xl flex-shrink-0">
+                      {coach.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-lg mb-1">{coach.name}</h3>
+                      <div className="space-y-1 text-sm text-white/60">
+                        <p className="flex items-center gap-2">
+                          <i className="fas fa-envelope w-4"></i>
+                          {coach.email}
+                        </p>
+                        {coach.phone && (
+                          <p className="flex items-center gap-2">
+                            <i className="fas fa-phone w-4"></i>
+                            {coach.phone}
+                          </p>
+                        )}
+                        {coach.team && (
+                          <p className="flex items-center gap-2">
+                            <i className="fas fa-users w-4"></i>
+                            {coach.team}
+                          </p>
+                        )}
+                        <p className="flex items-center gap-2">
+                          <i className="fas fa-calendar w-4"></i>
+                          Applied: {new Date(coach.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                    </div>
                   </div>
-                  
-                  {coach.coach_document_url && (
+
+                  {/* Actions */}
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    {coach.coach_document_url && (
+                      <button
+                        onClick={() => downloadDocument(coach.id, coach.name)}
+                        className="px-4 py-2 rounded-xl glass border border-white/20 hover:bg-white/10 transition-all duration-300 text-sm flex items-center justify-center gap-2"
+                      >
+                        <i className="fas fa-file-download"></i>
+                        View Document
+                      </button>
+                    )}
                     <button
-                      onClick={() => downloadDocument(coach.id, coach.name)}
-                      className="mt-3 text-blue-400 hover:text-blue-300 text-sm inline-flex items-center gap-2 transition-colors"
+                      onClick={() => handleApprove(coach.id)}
+                      disabled={processing === coach.id}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      <i className="fas fa-file-download"></i>
-                      View Document
+                      <i className="fas fa-check"></i>
+                      Approve
                     </button>
-                  )}
+                    <button
+                      onClick={() => handleReject(coach.id)}
+                      disabled={processing === coach.id}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 transition-all duration-300 text-sm font-semibold flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      <i className="fas fa-times"></i>
+                      Reject
+                    </button>
+                  </div>
                 </div>
-                
-                <div className="flex gap-3">
-                  <button
-                    onClick={() => handleApprove(coach.id)}
-                    className="px-6 py-2 rounded-xl bg-green-500 hover:bg-green-600 transition-colors"
-                  >
-                    <i className="fas fa-check mr-2"></i>
-                    Approve
-                  </button>
-                  <button
-                    onClick={() => handleReject(coach.id)}
-                    className="px-6 py-2 rounded-xl bg-red-500 hover:bg-red-600 transition-colors"
-                  >
-                    <i className="fas fa-times mr-2"></i>
-                    Reject
-                  </button>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      )}
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </motion.div>
     </div>
   );
 }

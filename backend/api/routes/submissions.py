@@ -15,6 +15,8 @@ Shared:
   GET    /coaches           — List available coaches (for player's dropdown)
 """
 
+from __future__ import annotations
+
 import logging
 import importlib
 import os
@@ -24,14 +26,46 @@ import tempfile
 import uuid
 import base64
 import binascii
+from collections import Counter
 from pathlib import Path
 from datetime import datetime
 from uuid import UUID
 
-import cv2
-import numpy as np
-import pandas as pd
-import google.cloud.storage as gcs
+try:
+    import cv2
+    _CV2_AVAILABLE = True
+    _CV2_IMPORT_ERROR = ""
+except Exception as _cv2_err:
+    cv2 = None
+    _CV2_AVAILABLE = False
+    _CV2_IMPORT_ERROR = str(_cv2_err)
+
+try:
+    import numpy as np
+    _NP_AVAILABLE = True
+    _NP_IMPORT_ERROR = ""
+except Exception as _np_err:
+    np = None
+    _NP_AVAILABLE = False
+    _NP_IMPORT_ERROR = str(_np_err)
+
+try:
+    import pandas as pd
+    _PD_AVAILABLE = True
+    _PD_IMPORT_ERROR = ""
+except Exception as _pd_err:
+    pd = None
+    _PD_AVAILABLE = False
+    _PD_IMPORT_ERROR = str(_pd_err)
+
+try:
+    import google.cloud.storage as gcs
+    _GCS_LIB_AVAILABLE = True
+    _GCS_IMPORT_ERROR = ""
+except Exception as _gcs_err:
+    gcs = None
+    _GCS_LIB_AVAILABLE = False
+    _GCS_IMPORT_ERROR = str(_gcs_err)
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -74,7 +108,7 @@ try:
         extract_bowling_drills,
     )
     BOWLING_ENGINE_AVAILABLE = True
-except ImportError:
+except Exception:
     BOWLING_ENGINE_AVAILABLE = False
     MEDIAPIPE_AVAILABLE = False
 
@@ -89,7 +123,7 @@ try:
         extract_drill_recommendations,
     )
     BATTING_ENGINE_AVAILABLE = True
-except ImportError:
+except Exception:
     BATTING_ENGINE_AVAILABLE = False
     BATTING_MEDIAPIPE_AVAILABLE = False
 
@@ -122,10 +156,15 @@ _GCS_BUCKET_NAME: str = os.getenv("GCS_BUCKET_NAME", "")
 _gcs_client = None
 _gcs_bucket_upload = None
 try:
-    if _GCS_BUCKET_NAME:
+    if _GCS_BUCKET_NAME and _GCS_LIB_AVAILABLE:
         _gcs_client = gcs.Client()
         _gcs_bucket_upload = _gcs_client.bucket(_GCS_BUCKET_NAME)
         logger.info("Submissions GCS client ready — bucket '%s'", _GCS_BUCKET_NAME)
+    elif _GCS_BUCKET_NAME and not _GCS_LIB_AVAILABLE:
+        logger.warning(
+            "Submissions GCS client unavailable — google-cloud-storage missing (%s)",
+            _GCS_IMPORT_ERROR,
+        )
 except Exception as _gcs_init_err:
     logger.warning("Submissions GCS client init failed: %s", _gcs_init_err)
 
@@ -266,6 +305,153 @@ def _to_detail(sub: VideoSubmission) -> SubmissionDetail:
         analyzed_at=sub.analyzed_at,
         published_at=sub.published_at,
     )
+
+
+def _require_analysis_libs() -> None:
+    missing = []
+    if not _CV2_AVAILABLE:
+        missing.append("opencv-python-headless")
+    if not _NP_AVAILABLE:
+        missing.append("numpy")
+    if not _PD_AVAILABLE:
+        missing.append("pandas")
+    if missing:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Analysis dependencies missing: {', '.join(missing)}",
+        )
+
+
+def _extract_flaws_for_progress(sub: VideoSubmission) -> list[dict]:
+    source_text = sub.coach_final_text or sub.ai_draft_text or ""
+    if not source_text:
+        return []
+    if sub.analysis_type == "BOWLING":
+        return extract_bowling_flaws(source_text) if BOWLING_ENGINE_AVAILABLE else []
+    return extract_detected_flaws(source_text) if BATTING_ENGINE_AVAILABLE else []
+
+
+def _days_since(date_value: datetime | None) -> int | None:
+    if not date_value:
+        return None
+    now = datetime.utcnow()
+    if date_value.tzinfo is not None:
+        now = datetime.now(date_value.tzinfo)
+    delta = now - date_value
+    return max(0, delta.days)
+
+
+def _to_timestamp(date_value: datetime | None) -> float:
+    if not date_value:
+        return 0.0
+    try:
+        return date_value.timestamp()
+    except Exception:
+        return 0.0
+
+
+def _build_player_progress(db: Session, player: User) -> dict:
+    submissions = (
+        db.query(VideoSubmission)
+        .filter(VideoSubmission.player_id == player.id)
+        .order_by(VideoSubmission.created_at.desc())
+        .all()
+    )
+
+    total = len(submissions)
+    published = [
+        s
+        for s in submissions
+        if (s.status.value if isinstance(s.status, SubmissionStatus) else s.status)
+        == SubmissionStatus.PUBLISHED.value
+    ]
+    batting = sum(1 for s in submissions if s.analysis_type == "BATTING")
+    bowling = sum(1 for s in submissions if s.analysis_type == "BOWLING")
+    completion_rate = round((len(published) / total) * 100, 1) if total else 0
+
+    last_created = submissions[0].created_at if submissions else None
+    days_since_last = _days_since(last_created)
+
+    flaw_counter: Counter[str] = Counter()
+    flaw_labels: dict[str, str] = {}
+    timeline = []
+    published_with_flaws = []
+
+    for sub in submissions:
+        flaws = _extract_flaws_for_progress(sub)
+        flaw_count = len(flaws)
+
+        for flaw in flaws:
+            name = str(flaw.get("flaw_name") or "Unknown").strip()
+            key = name.lower() if name else "unknown"
+            flaw_counter[key] += 1
+            flaw_labels.setdefault(key, name or "Unknown")
+
+        status_value = sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status
+
+        timeline.append(
+            {
+                "id": sub.id,
+                "analysis_type": sub.analysis_type,
+                "status": status_value,
+                "created_at": sub.created_at.isoformat() if sub.created_at else "",
+                "published_at": sub.published_at.isoformat() if sub.published_at else None,
+                "flaw_count": flaw_count,
+                "pdf_report_url": _gcs_to_signed_url(sub.pdf_report_url),
+            }
+        )
+
+        if status_value == SubmissionStatus.PUBLISHED.value:
+            published_with_flaws.append((sub, flaw_count))
+
+    flaw_frequency = [
+        {"flaw": flaw_labels[key], "count": count}
+        for key, count in flaw_counter.most_common()
+    ]
+
+    flaw_trend = None
+    improvement_trend = "steady"
+    if published_with_flaws:
+        published_with_flaws.sort(
+            key=lambda item: _to_timestamp(item[0].published_at or item[0].created_at)
+        )
+        first_count = published_with_flaws[0][1]
+        latest_count = published_with_flaws[-1][1]
+        delta = latest_count - first_count
+        if delta < 0:
+            trend = "improving"
+        elif delta > 0:
+            trend = "worsening"
+        else:
+            trend = "steady"
+        flaw_trend = {
+            "first_report_flaw_count": first_count,
+            "latest_report_flaw_count": latest_count,
+            "delta": delta,
+            "trend": trend,
+        }
+        improvement_trend = trend
+
+    return {
+        "player": {
+            "id": player.id,
+            "name": player.name,
+            "email": player.email,
+            "team": player.team,
+        },
+        "summary": {
+            "total_submissions": total,
+            "published_reports": len(published),
+            "batting_submissions": batting,
+            "bowling_submissions": bowling,
+            "completion_rate": completion_rate,
+            "days_since_last_submission": days_since_last,
+            "improvement_trend": improvement_trend,
+        },
+        "flaw_frequency": flaw_frequency,
+        "flaw_trend": flaw_trend,
+        "submission_timeline": timeline,
+    }
 
 
 def _save_key_frame(video_path: str, submission_id: str, frame_idx: int | None) -> str | None:
@@ -664,6 +850,45 @@ def player_all_submissions(
     )
 
 
+@router.get("/player/progress", response_model=PlayerProgressResponse)
+def player_progress(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in ("PLAYER", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only players can access this endpoint.")
+
+    return _build_player_progress(db, current_user)
+
+
+@router.get("/player/{player_id}/progress", response_model=PlayerProgressResponse)
+def player_progress_by_id(
+    player_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role not in ("COACH", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only coaches can access this endpoint.")
+
+    player = db.query(User).filter(User.id == player_id).first()
+    if not player:
+        raise HTTPException(status_code=404, detail="Player not found")
+
+    if current_user.role == "COACH":
+        has_access = (
+            db.query(VideoSubmission)
+            .filter(
+                VideoSubmission.player_id == player_id,
+                VideoSubmission.coach_id == current_user.id,
+            )
+            .first()
+        )
+        if not has_access:
+            raise HTTPException(status_code=404, detail="Player not found")
+
+    return _build_player_progress(db, player)
+
+
 class PlayerSubmissionCreate(BaseModel):
     coach_id: str
     note: str | None = None
@@ -683,6 +908,53 @@ class PlayerSubmissionItem(BaseModel):
 class PlayerSubmissionListResponse(BaseModel):
     submissions: list[PlayerSubmissionItem]
     total: int
+
+
+class PlayerProgressPlayer(BaseModel):
+    id: str
+    name: str
+    email: str
+    team: str | None = None
+
+
+class PlayerProgressSummary(BaseModel):
+    total_submissions: int
+    published_reports: int
+    batting_submissions: int
+    bowling_submissions: int
+    completion_rate: float
+    days_since_last_submission: int | None
+    improvement_trend: str
+
+
+class PlayerProgressFlaw(BaseModel):
+    flaw: str
+    count: int
+
+
+class PlayerProgressFlawTrend(BaseModel):
+    first_report_flaw_count: int
+    latest_report_flaw_count: int
+    delta: int
+    trend: str
+
+
+class PlayerProgressTimelineItem(BaseModel):
+    id: str
+    analysis_type: str
+    status: str
+    created_at: str
+    published_at: str | None = None
+    flaw_count: int
+    pdf_report_url: str | None = None
+
+
+class PlayerProgressResponse(BaseModel):
+    player: PlayerProgressPlayer
+    summary: PlayerProgressSummary
+    flaw_frequency: list[PlayerProgressFlaw]
+    flaw_trend: PlayerProgressFlawTrend | None
+    submission_timeline: list[PlayerProgressTimelineItem]
 
 
 @public_router.post("/submissions", status_code=201, response_model=PlayerSubmissionItem)
@@ -801,6 +1073,8 @@ def coach_run_analysis(
             detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING submissions can be analyzed.",
         )
 
+    _require_analysis_libs()
+
     # Mark PROCESSING
     mark_processing(db, sub)
 
@@ -876,6 +1150,8 @@ def coach_publish(
     edited_text = body.edited_text.strip()
     if not edited_text:
         raise HTTPException(status_code=400, detail="edited_text cannot be empty.")
+
+    _require_analysis_libs()
 
     # Store sketches if provided
     sketches = body.sketches or []

@@ -340,8 +340,8 @@ else:
     logger.warning("Batting analysis feature disabled (MediaPipe not available)")
 
 # Submissions routes
-app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
 if SUBMISSIONS_AVAILABLE and submissions is not None:
+    app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
     app.include_router(submissions.router, prefix="/api/v1/submissions", tags=["submissions"])
     logger.info("B2B2C Submissions pipeline enabled")
 else:
@@ -386,13 +386,39 @@ from api.routes.annotations import router as annotations_router
 from api.routes.dashboard import router as dashboard_router
 from api.routes.coach_inbox import router as coach_inbox_router
 from api.routes.academy import router as academy_router
+from api.routes.coach_content import router as coach_content_router
 
 app.include_router(annotations_router, prefix="/api/v1", tags=["annotations"])
 app.include_router(dashboard_router,   prefix="/api/v1", tags=["dashboard"])
 app.include_router(coach_inbox_router, prefix="/api/v1", tags=["coach-inbox"])
 app.include_router(academy_router,     prefix="/api/v1", tags=["academy"])
-    
-# Subscription expiry cron — POST /internal/cron/expire-subscriptions
+
+# New player features — wrapped in try/except so missing deps don't crash startup
+try:
+    from api.routes.reviews import router as reviews_router
+    app.include_router(reviews_router, prefix="/api/v1", tags=["reviews"])
+except Exception as e:
+    logger.warning("Reviews routes disabled: %s", e)
+
+try:
+    from api.routes.gamification import router as gamification_router
+    app.include_router(gamification_router, prefix="/api/v1", tags=["gamification"])
+except Exception as e:
+    logger.warning("Gamification routes disabled: %s", e)
+
+try:
+    from api.routes.performance import router as performance_router
+    app.include_router(performance_router, prefix="/api/v1", tags=["performance"])
+except Exception as e:
+    logger.warning("Performance routes disabled: %s", e)
+
+try:
+    from api.routes.analytics import router as analytics_router
+    app.include_router(analytics_router, prefix="/api/v1", tags=["analytics"])
+except Exception as e:
+    logger.warning("Analytics routes disabled: %s", e)
+
+# POST /internal/cron/expire-subscriptions
 from services.subscription_expiry import register_expiry_endpoint
 register_expiry_endpoint(app)
 

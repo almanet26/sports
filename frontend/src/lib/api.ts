@@ -448,6 +448,19 @@ export interface VideoAnnotation {
   color: string;
 }
 
+export interface CoachAthlete {
+  id: string; name: string; email: string; team?: string;
+  total_submissions: number; published_reports: number; joined_at?: string;
+}
+
+export interface PlayerProgress {
+  player: { id: string; name: string; email: string; team?: string };
+  summary: { total_submissions: number; published_reports: number; batting_submissions: number; bowling_submissions: number; completion_rate: number; days_since_last_submission: number | null; improvement_trend: string };
+  flaw_frequency: Array<{ flaw: string; count: number }>;
+  flaw_trend: { first_report_flaw_count: number; latest_report_flaw_count: number; delta: number; trend: string } | null;
+  submission_timeline: Array<{ id: string; analysis_type: string; status: string; created_at: string; published_at?: string; flaw_count: number; pdf_report_url?: string }>;
+}
+
 export interface CoachListItem {
   id: string;
   name: string;
@@ -529,6 +542,22 @@ export const submissionsApi = {
   /** Get single submission detail */
   getById: (submissionId: string) =>
     api.get<SubmissionDetail>(`/submissions/${submissionId}`),
+
+  /** Player: My progress summary (weekly activity, submission timeline) */
+  myProgress: () =>
+    api.get<PlayerProgress>('/submissions/player/progress'),
+
+  /** Coach: Get a specific player's progress */
+  playerProgress: (playerId: string) =>
+    api.get<PlayerProgress>(`/submissions/player/${playerId}/progress`),
+
+  /** Coach: Get list of athletes */
+  coachAthletes: () =>
+    api.get<{ athletes: CoachAthlete[] }>('/submissions/coach/athletes'),
+
+  /** Player: Submit an already-uploaded video to a coach */
+  submitExistingVideo: (videoId: string, coachId: string, analysisType: string) =>
+    api.post('/submissions/submit-existing', { video_id: videoId, coach_id: coachId, analysis_type: analysisType }),
 };
 
 // Cloud Storage — Direct-to-GCS Upload
@@ -823,4 +852,75 @@ export const scoutingApi = {
     api.delete(`/scouting/shortlist/${playerId}`),
 };
 
-export default api;
+export default api;
+
+export interface PerformanceEntry {
+  id: number; player_id: string; opponent: string; match_date: string; match_type: string;
+  runs: number; fours: number; sixes: number; balls_faced: number; wickets: number;
+  overs_bowled: number; runs_conceded: number; catches: number; run_outs: number;
+  result: string; created_at: string;
+}
+
+export interface PerformanceStats {
+  total_matches: number; total_runs: number; total_fours: number; total_sixes: number;
+  total_wickets: number; total_catches: number; total_run_outs: number; highest_score: number;
+  batting_average: number; total_balls_faced: number; total_overs_bowled: number;
+  total_runs_conceded: number; bowling_average: number; wins: number; losses: number; draws: number;
+}
+
+export const performanceApi = {
+  log: (data: Omit<PerformanceEntry, 'id' | 'player_id' | 'created_at'>) =>
+    api.post<PerformanceEntry>('/performance/', data),
+  getStats: () => api.get<PerformanceStats>('/performance/stats'),
+  getHistory: () => api.get<PerformanceEntry[]>('/performance/history'),
+  deleteEntry: (id: number) => api.delete(`/performance/${id}`),
+};
+
+// ── Notifications ─────────────────────────────────────────────────────────────
+
+export interface NotificationItem {
+  id: string; title: string; message: string; type: string;
+  is_read: boolean; created_at: string;
+}
+
+export const notificationsApi = {
+  getAll: () =>
+    api.get<{ notifications: NotificationItem[]; unread_count: number }>('/notifications'),
+  markRead: (id: string) => api.patch(`/notifications/${id}/read`),
+  markAllRead: () => api.patch('/notifications/read-all'),
+  delete: (id: string) => api.delete(`/notifications/${id}`),
+};
+
+// ── Gamification ──────────────────────────────────────────────────────────────
+
+export interface GamificationBadge {
+  key: string; label: string; icon: string; color: string;
+  rarity: 'BRONZE' | 'SILVER' | 'GOLD' | 'PLATINUM';
+  description: string; earned: boolean; progress_current: number;
+  progress_target: number; progress_pct: number; earned_at: string | null;
+}
+
+export interface GamificationData {
+  level: { name: string; icon: string; color: string; xp_pct: number; next_level: string | null; badges_to_next: number };
+  streak: { current: number; longest: number; last_activity: string | null; week_activity: { date: string; active: boolean }[] };
+  badges: { earned: GamificationBadge[]; locked: GamificationBadge[]; total_earned: number; total: number; next_badge: GamificationBadge | null };
+}
+
+export const gamificationApi = {
+  getMyData: () => api.get<GamificationData>('/gamification/me'),
+};
+
+// ── Reviews ───────────────────────────────────────────────────────────────────
+
+export interface MyCoach {
+  id: string; name: string; email: string; specialization?: string[];
+  existing_review?: { rating: number; comment?: string } | null;
+}
+
+export const reviewsApi = {
+  getMyCoaches: () => api.get<{ coaches: MyCoach[] }>('/reviews/player/my-coaches'),
+  submitReview: (data: { coach_id: string; rating: number; comment?: string }) =>
+    api.post('/reviews', data),
+};
+
+

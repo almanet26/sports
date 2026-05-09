@@ -75,6 +75,7 @@ class User(Base):
     monthly_usages = relationship("MonthlyUsage", back_populates="user")
     chat_messages = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     player_profile = relationship("PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    coach_contents = relationship("CoachContent", back_populates="coach", cascade="all, delete-orphan")
 
     # ── password helpers ──────────────────────────────────────────────────────
 
