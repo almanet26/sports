@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../store/themeStore';
 import { useAuthStore } from '../store/authStore';
@@ -25,6 +25,36 @@ export default function PlayerSettingsPage() {
     email_messages: false,
     push_all: true,
   });
+  const [loading, setLoading] = useState(true);
+  const [savingNotifs, setSavingNotifs] = useState(false);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await api.get('/auth/notifications');
+        setNotifs(response.data);
+      } catch (err) {
+        console.error('Failed to fetch notification preferences:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  const handleNotificationToggle = async (key: string) => {
+    const newNotifs = { ...notifs, [key]: !notifs[key as keyof typeof notifs] };
+    setNotifs(newNotifs);
+    setSavingNotifs(true);
+    try {
+      await api.put('/auth/notifications', newNotifs);
+    } catch (err: any) {
+      console.error('Failed to update notification preferences:', err);
+      setNotifs(notifs);
+    } finally {
+      setSavingNotifs(false);
+    }
+  };
 
   const glass = theme === 'dark' ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg';
   const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200';
@@ -75,6 +105,14 @@ export default function PlayerSettingsPage() {
       <span className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow transition-all ${checked ? 'left-5' : 'left-0.5'}`} />
     </button>
   );
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className={`max-w-2xl mx-auto ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -147,7 +185,13 @@ export default function PlayerSettingsPage() {
               <p className="font-medium text-sm">Account Email</p>
               <p className={`text-xs mt-0.5 ${sub}`}>{user?.email}</p>
             </div>
-            <span className="text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">Verified</span>
+            <span className={`text-xs px-2 py-1 rounded-full border ${
+              user?.is_verified
+                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+            }`}>
+              {user?.is_verified ? 'Verified' : 'Pending'}
+            </span>
           </div>
           <div className={`flex items-center justify-between p-4 rounded-xl border ${cardBg}`}>
             <div>
@@ -164,6 +208,7 @@ export default function PlayerSettingsPage() {
         className={`rounded-3xl p-6 mb-4 border ${glass}`}>
         <h2 className="font-semibold mb-4 flex items-center gap-2">
           <i className="fas fa-bell text-yellow-400"></i>Notification Preferences
+          {savingNotifs && <span className="text-xs text-blue-400">Saving...</span>}
         </h2>
         <div className="space-y-4">
           {[
@@ -177,7 +222,7 @@ export default function PlayerSettingsPage() {
                 <p className="font-medium text-sm">{label}</p>
                 <p className={`text-xs mt-0.5 ${sub}`}>{desc}</p>
               </div>
-              <Toggle checked={notifs[key as keyof typeof notifs]} onChange={() => setNotifs(n => ({ ...n, [key]: !n[key as keyof typeof notifs] }))} />
+              <Toggle checked={notifs[key as keyof typeof notifs]} onChange={() => handleNotificationToggle(key)} />
             </div>
           ))}
         </div>
