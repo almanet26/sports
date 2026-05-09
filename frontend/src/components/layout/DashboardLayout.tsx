@@ -27,6 +27,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-vote-yea", label: "Community Voting" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
+    { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
     { to: "/player/settings", icon: "fas fa-cog", label: "Settings" },
   ],
   COACH: [
