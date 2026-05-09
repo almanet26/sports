@@ -14,6 +14,7 @@ import tempfile
 from google.cloud import storage as gcs
 
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
+USE_GCS = bool(GCS_BUCKET_NAME)
 
 
 def _upload_to_gcs(file: UploadFile, blob_path: str) -> tuple[str, int]:
@@ -32,6 +33,39 @@ def _upload_to_gcs(file: UploadFile, blob_path: str) -> tuple[str, int]:
         return url, size
     finally:
         os.unlink(tmp_path)
+
+
+def _upload_to_local(file: UploadFile, blob_path: str) -> tuple[str, int]:
+    """Save file to local storage as fallback.
+    Returns (public_url, file_size)."""
+    # Create directory if it doesn't exist
+    local_dir = os.path.join("storage", "coach_content")
+    os.makedirs(local_dir, exist_ok=True)
+    
+    # Generate unique filename
+    ext = os.path.splitext(file.filename)[1]
+    filename = f"{uuid.uuid4()}{ext}"
+    file_path = os.path.join(local_dir, filename)
+    
+    # Save file
+    with open(file_path, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    
+    size = os.path.getsize(file_path)
+    url = f"/static/coach_content/{filename}"
+    return url, size
+
+
+def _upload_file(file: UploadFile, blob_path: str) -> tuple[str, int]:
+    """Upload file to GCS or local storage based on configuration."""
+    if USE_GCS:
+        try:
+            return _upload_to_gcs(file, blob_path)
+        except Exception as e:
+            print(f"GCS upload failed: {e}, falling back to local storage")
+            return _upload_to_local(file, blob_path)
+    else:
+        return _upload_to_local(file, blob_path)
 
 router = APIRouter()
 
@@ -126,14 +160,14 @@ def create_content(
     if file and content_type in [ContentType.VIDEO, ContentType.IMAGE]:
         ext = os.path.splitext(file.filename)[1]
         blob_path = f"coach_content/{current_user.id}/{uuid.uuid4()}{ext}"
-        file_url, file_size = _upload_to_gcs(file, blob_path)
+        file_url, file_size = _upload_file(file, blob_path)
         file_name = file.filename
         mime_type = file.content_type
 
     if thumbnail:
         ext = os.path.splitext(thumbnail.filename)[1]
         blob_path = f"coach_content/{current_user.id}/thumbnails/{uuid.uuid4()}{ext}"
-        thumbnail_url, _ = _upload_to_gcs(thumbnail, blob_path)
+        thumbnail_url, _ = _upload_file(thumbnail, blob_path)
     
     # Create content record
     content_record = CoachContent(
@@ -283,14 +317,14 @@ def update_content(
     if file:
         ext = os.path.splitext(file.filename)[1]
         blob_path = f"coach_content/{current_user.id}/{uuid.uuid4()}{ext}"
-        content.file_url, content.file_size = _upload_to_gcs(file, blob_path)
+        content.file_url, content.file_size = _upload_file(file, blob_path)
         content.file_name = file.filename
         content.mime_type = file.content_type
 
     if thumbnail:
         ext = os.path.splitext(thumbnail.filename)[1]
         blob_path = f"coach_content/{current_user.id}/thumbnails/{uuid.uuid4()}{ext}"
-        content.thumbnail_url, _ = _upload_to_gcs(thumbnail, blob_path)
+        content.thumbnail_url, _ = _upload_file(thumbnail, blob_path)
     
     content.updated_at = datetime.utcnow()
     db.commit()

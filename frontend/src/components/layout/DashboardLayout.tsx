@@ -58,7 +58,6 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/admin/users", icon: "fas fa-users", label: "User Management" },
     { to: "/admin/coaches", icon: "fas fa-user-check", label: "Coach Approvals" },
     { to: "/admin/plans", icon: "fas fa-tags", label: "Plans" },
-    { to: "/browse-content", icon: "fas fa-graduation-cap", label: "Learning Hub" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/settings", icon: "fas fa-cog", label: "Settings" },
