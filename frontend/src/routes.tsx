@@ -50,6 +50,7 @@ import BillingPage from './pages/BillingPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
 import ScoutingPage from './pages/ScoutingPage';
 import PlayerProfilePage from './pages/PlayerProfilePage';
+import BrowseContentPage from './pages/BrowseContentPage';
 
 // Protected Route - Requires authentication
 function ProtectedRoute() {
@@ -184,6 +185,7 @@ export default function AppRouter() {
             <Route path="/player/chat" element={<ChatPage />} />
             <Route path="/player/billing" element={<BillingPage />} />
             <Route path="/player/:id" element={<PlayerPerformance />} />
+            <Route path="/browse-content" element={<BrowseContentPage />} />
             <Route path="/coach/messages" element={<CoachMessagesPage />} />
           </Route>
         </Route>
