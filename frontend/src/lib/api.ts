@@ -925,6 +925,60 @@ export const reviewsApi = {
     api.post('/reviews', data),
 };
 
+// ── Earnings ──────────────────────────────────────────────────────────────────
+
+export interface TransactionItem {
+  id: string;
+  player_name: string;
+  player_email: string;
+  transaction_type: string;
+  amount: number;
+  status: string;
+  description: string | null;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface EarningsStats {
+  total_earned: number;
+  pending: number;
+  this_month: number;
+  total_transactions: number;
+}
+
+export interface MonthlyEarnings {
+  month: string;
+  earnings: number;
+}
+
+export const earningsApi = {
+  getStats: () => api.get<EarningsStats>('/coach/earnings/stats'),
+  getMonthly: () => api.get<MonthlyEarnings[]>('/coach/earnings/monthly'),
+  getTransactions: () => api.get<TransactionItem[]>('/coach/earnings/transactions'),
+};
+
+// ── Coach Reviews ─────────────────────────────────────────────────────────────
+
+export interface CoachReviewItem {
+  id: string;
+  player_id: string;
+  player_name: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface CoachReviewsResponse {
+  reviews: CoachReviewItem[];
+  total: number;
+  average_rating: number;
+}
+
+export const coachReviewsApi = {
+  getMyReviews: () => api.get<CoachReviewsResponse>('/reviews/coach/me'),
+  getCoachReviews: (coachId: string) => api.get<CoachReviewsResponse>(`/reviews/coach/${coachId}`),
+};
+
 // ── Training Plans ────────────────────────────────────────────────────────────
 
 export interface TrainingPlanData {
