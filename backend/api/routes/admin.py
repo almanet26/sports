@@ -12,6 +12,7 @@ import uuid
 
 from database.config import get_db
 from database.models.user import User
+from database.models.plan_config import PlanConfig
 from utils.auth import get_current_user
 from pydantic import BaseModel, ConfigDict
 
@@ -67,6 +68,30 @@ class UserListPageResponse(BaseModel):
 
 class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
+
+
+class PlanConfigResponse(BaseModel):
+    plan_key: str
+    role: str
+    display_name: str
+    price_inr: int
+    duration_days: int
+    max_biomech_per_month: int
+    max_ocr_hours_per_month: float
+    max_submissions_per_month: int
+    max_players_in_dashboard: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class PlanConfigUpdate(BaseModel):
+    display_name: Optional[str] = None
+    price_inr: Optional[int] = None
+    duration_days: Optional[int] = None
+    max_biomech_per_month: Optional[int] = None
+    max_ocr_hours_per_month: Optional[float] = None
+    max_submissions_per_month: Optional[int] = None
+    max_players_in_dashboard: Optional[int] = None
 
 
 # ── Dependency ────────────────────────────────────────────────────────────────
@@ -294,3 +319,36 @@ def verify_coach(
     db.refresh(coach)
     logger.info(f"Coach {coach.email} {action} by admin {current_user.email}")
     return UserDetailResponse.model_validate(coach)
+
+
+@router.get("/plans", response_model=List[PlanConfigResponse])
+def list_plans(
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """List all subscription plans."""
+    plans = db.query(PlanConfig).order_by(PlanConfig.role, PlanConfig.price_inr).all()
+    return [PlanConfigResponse.model_validate(p) for p in plans]
+
+
+@router.patch("/plans/{plan_key}", response_model=PlanConfigResponse)
+def update_plan(
+    plan_key: str,
+    update_data: PlanConfigUpdate,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Update a subscription plan's configuration."""
+    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == plan_key).first()
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
+
+    # Update only provided fields
+    update_dict = update_data.model_dump(exclude_unset=True)
+    for field, value in update_dict.items():
+        setattr(plan, field, value)
+
+    db.commit()
+    db.refresh(plan)
+    logger.info(f"Plan {plan_key} updated by admin {current_user.email}")
+    return PlanConfigResponse.model_validate(plan)

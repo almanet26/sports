@@ -287,7 +287,8 @@ from api.routes import (
     worker, WORKER_AVAILABLE, 
     admin_coaches,
     messages, MESSAGES_AVAILABLE,
-    analytics, ANALYTICS_AVAILABLE
+    analytics, ANALYTICS_AVAILABLE,
+    performance, notification, match
 )
 from api.routes import subscription, sessions
 try:
@@ -308,8 +309,8 @@ app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
 
 # Coach Content routes
 try:
-    from api.routes import coach_inbox
-    app.include_router(coach_inbox.router, prefix="/api/v1/coach", tags=["coach-content"])
+    from api.routes import coach_content
+    app.include_router(coach_content.router, prefix="/api/v1/coach", tags=["coach-content"])
     logger.info("Coach content feature enabled")
 except ImportError:
     logger.warning("Coach content feature disabled")
@@ -392,6 +393,18 @@ if WORKER_AVAILABLE and worker is not None:
     logger.info("Internal worker endpoint enabled")
 else:
     logger.warning("Internal worker endpoint disabled")
+
+# Performance routes
+app.include_router(performance.router, prefix="/api/v1", tags=["performance"])
+logger.info("Performance routes enabled")
+
+# Notification routes
+app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
+logger.info("Notification routes enabled")
+
+# Match routes
+app.include_router(match.router, prefix="/api/v1", tags=["matches"])
+logger.info("Match routes enabled")
 
 
 # Entry Point 
