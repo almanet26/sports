@@ -925,4 +925,33 @@ export const reviewsApi = {
     api.post('/reviews', data),
 };
 
+// ── Training Plans ────────────────────────────────────────────────────────────
+
+export interface TrainingPlanData {
+  id: string;
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: string;
+  is_public: boolean;
+  drills?: string[];
+  created_at?: string;
+}
+
+export interface TrainingPlanCreate {
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: 'group_all' | 'individual' | 'age_group';
+  is_public: boolean;
+  drills?: string[];
+}
+
+export const trainingPlansApi = {
+  list: () => api.get<{ plans: TrainingPlanData[] }>('/sessions/training-plans'),
+  create: (data: TrainingPlanCreate) => api.post<TrainingPlanData>('/sessions/training-plans', data),
+  update: (id: string, data: Partial<TrainingPlanCreate>) => api.put<TrainingPlanData>(`/sessions/training-plans/${id}`, data),
+  delete: (id: string) => api.delete(`/sessions/training-plans/${id}`),
+};
+
 

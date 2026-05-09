@@ -1,26 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../store/themeStore';
-import { api } from '../lib/api';
-
-interface TrainingPlanData {
-  id: string;
-  title: string;
-  description?: string;
-  analysis_type: string;
-  plan_type: string;
-  is_public: boolean;
-  drills?: string[];
-}
-
-interface TrainingPlanCreate {
-  title: string;
-  description?: string;
-  analysis_type: string;
-  plan_type: 'group_all' | 'individual' | 'age_group';
-  is_public: boolean;
-  drills?: string[];
-}
+import { trainingPlansApi, type TrainingPlanData, type TrainingPlanCreate } from '../lib/api';
 
 export default function CoachTrainingPlansPage() {
   const { theme } = useThemeStore();
@@ -37,7 +18,7 @@ export default function CoachTrainingPlansPage() {
   const inputCls = `w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none transition-all ${theme === 'dark' ? 'glass border-white/10 text-white focus:border-blue-500' : 'bg-white border-gray-300 focus:border-blue-400'}`;
 
   useEffect(() => {
-    api.get('/training-plans').then((r: {data: {plans: TrainingPlanData[]}}) => setPlans(r.data.plans)).catch(() => setPlans([])).finally(() => setLoading(false));
+    trainingPlansApi.list().then((r) => setPlans(r.data.plans)).catch(() => setPlans([])).finally(() => setLoading(false));
   }, []);
 
   const openCreate = () => { setForm({ title: '', description: '', analysis_type: 'BATTING', plan_type: 'group_all', is_public: true, drills: [] }); setDrillInput(''); setShowModal(true); };
@@ -49,7 +30,7 @@ export default function CoachTrainingPlansPage() {
     if (!form.title.trim()) return;
     setSaving(true);
     try {
-      const r = await api.post('/training-plans', form);
+      const r = await trainingPlansApi.create(form);
       setPlans((prev: TrainingPlanData[]) => [r.data, ...prev]);
       setShowModal(false);
     } catch { alert('Failed to save plan.'); }
@@ -58,7 +39,7 @@ export default function CoachTrainingPlansPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this plan?')) return;
-    await api.delete(`/training-plans/${id}`);
+    await trainingPlansApi.delete(id);
     setPlans((prev: TrainingPlanData[]) => prev.filter((p: TrainingPlanData) => p.id !== id));
   };
 
