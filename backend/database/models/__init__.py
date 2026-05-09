@@ -29,9 +29,29 @@ from database.models.player_stats import PlayerStats
 from database.models.player_submission import PlayerSubmission
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
+from database.models.plan_config import PlanConfig
 from database.models.message import Message
 from database.models.transaction import Transaction, TransactionType, TransactionStatus
 from database.models.review import Review
+
+# New player & coach feature models — wrapped in try/except so missing
+# tables on older DB instances don't crash startup.
+try:
+    from database.models.gamification import PlayerBadge, PlayerStreak
+except Exception:
+    pass
+try:
+    from database.models.player_performance import PlayerPerformanceEntry
+except Exception:
+    pass
+try:
+    from database.models.coach_review import CoachReview
+except Exception:
+    pass
+try:
+    from database.models.match import Match
+except Exception:
+    pass
 
 __all__ = [
     # User models
@@ -57,6 +77,12 @@ __all__ = [
     "ChatHistory",
     "MonthlyUsage",
     "PlayerProfile",
+    "Notification",
+    "PlayerStats",
+    "PlayerSubmission",
+    "AdminAuditLog",
+    "CoachShortlist",
+    "PlanConfig",
     # Messages
     "Message",
     # Transactions
@@ -65,6 +91,9 @@ __all__ = [
     "TransactionStatus",
     # Reviews
     "Review",
+    # Coach Content
+    "CoachContent",
+    "ContentType",
     # Enums
     "VideoVisibility",
     "VideoStatus",
