@@ -46,6 +46,11 @@ import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
 import ScoutingPage from './pages/ScoutingPage';
+import PlayerMyCoachesPage from './pages/PlayerMyCoachesPage';
+import PlayerGamification from './pages/PlayerGamification';
+import PlayerVideosPage from './pages/PlayerVideosPage';
+import PlayerProfile from './pages/PlayerProfile';
+import PlayerSettingsPage from './pages/PlayerSettingsPage';
 
 // Auth Initializer (runs once on module load)
 let authInitialized = false;
@@ -203,6 +208,11 @@ export default function AppRouter() {
               <Route path="/player/subscription" element={<SubscriptionPage />} />
               <Route path="/player/chat" element={<ChatPage />} />
               <Route path="/player/profile" element={<PlayerProfilePage />} />
+              <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
+              <Route path="/player/gamification" element={<PlayerGamification />} />
+              <Route path="/player/videos" element={<PlayerVideosPage />} />
+              <Route path="/player/performance" element={<PlayerProfile />} />
+              <Route path="/player/settings" element={<PlayerSettingsPage />} />
             </Route>
           </Route>
         </Route>
