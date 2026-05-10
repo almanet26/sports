@@ -25,6 +25,7 @@ import PlayerProfile from './pages/PlayerProfile';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
+import PlayerMyCoachesPage from './pages/PlayerMyCoachesPage';
 import CoachInboxPage from './pages/CoachInboxPage';
 import CoachReviewPage from './pages/CoachReviewPage';
 import SubscriptionPage from './pages/SubscriptionPage';
@@ -181,8 +182,10 @@ export default function AppRouter() {
             <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
             <Route path="/player/batting" element={<BattingAnalysisPage />} />
             <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
+            <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
             <Route path="/player/subscription" element={<SubscriptionPage />} />
             <Route path="/player/chat" element={<ChatPage />} />
+            <Route path="/chat" element={<ChatPage />} />
             <Route path="/player/billing" element={<BillingPage />} />
             <Route path="/player/:id" element={<PlayerPerformance />} />
             <Route path="/browse-content" element={<BrowseContentPage />} />
@@ -210,6 +213,8 @@ export default function AppRouter() {
                 <Route path="/coach/content" element={<CoachContentPage />} />
                 <Route path="/coach/settings" element={<CoachSettingsPage />} />
                 <Route path="/coach/chat" element={<CoachChatPage />} />
+                <Route path="/chat" element={<CoachChatPage />} />
+                <Route path="/coach/subscription" element={<SubscriptionPage />} />
                 <Route path="/coach/billing" element={<BillingPage />} />
                 <Route path="/coach/scouting" element={<ScoutingPage />} />
               </Route>

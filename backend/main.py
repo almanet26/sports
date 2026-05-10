@@ -288,7 +288,7 @@ from api.routes import (
     admin_coaches,
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE,
-    performance, notification, match
+    performance, notification, match, billing
 )
 from api.routes import subscription, sessions
 try:
@@ -405,6 +405,10 @@ logger.info("Notification routes enabled")
 # Match routes
 app.include_router(match.router, prefix="/api/v1", tags=["matches"])
 logger.info("Match routes enabled")
+
+# Billing routes
+app.include_router(billing.router, prefix="/api/v1", tags=["billing"])
+logger.info("Billing routes enabled")
 
 
 # Entry Point 

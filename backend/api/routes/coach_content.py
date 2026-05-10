@@ -38,21 +38,36 @@ def _upload_to_gcs(file: UploadFile, blob_path: str) -> tuple[str, int]:
 def _upload_to_local(file: UploadFile, blob_path: str) -> tuple[str, int]:
     """Save file to local storage as fallback.
     Returns (public_url, file_size)."""
-    # Create directory if it doesn't exist
-    local_dir = os.path.join("storage", "coach_content")
-    os.makedirs(local_dir, exist_ok=True)
+    # Create full directory structure matching blob_path
+    local_base = os.path.join("storage", "coach_content")
     
-    # Generate unique filename
-    ext = os.path.splitext(file.filename)[1]
-    filename = f"{uuid.uuid4()}{ext}"
-    file_path = os.path.join(local_dir, filename)
+    # Extract directory structure from blob_path (e.g., "coach_content/user_id/file.jpg")
+    # Remove "coach_content/" prefix if present
+    if blob_path.startswith("coach_content/"):
+        relative_path = blob_path[len("coach_content/"):]
+    else:
+        relative_path = blob_path
+    
+    # Get directory and filename
+    dir_path = os.path.dirname(relative_path)
+    filename = os.path.basename(relative_path)
+    
+    # Create full directory path
+    if dir_path:
+        full_dir = os.path.join(local_base, dir_path)
+        os.makedirs(full_dir, exist_ok=True)
+        file_path = os.path.join(full_dir, filename)
+        url = f"/static/coach_content/{dir_path}/{filename}"
+    else:
+        os.makedirs(local_base, exist_ok=True)
+        file_path = os.path.join(local_base, filename)
+        url = f"/static/coach_content/{filename}"
     
     # Save file
     with open(file_path, "wb") as f:
         shutil.copyfileobj(file.file, f)
     
     size = os.path.getsize(file_path)
-    url = f"/static/coach_content/{filename}"
     return url, size
 
 
