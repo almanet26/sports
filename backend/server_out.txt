@@ -1,0 +1,42 @@
+INFO: CORS allowed origins: ['http://localhost:5173', 'http://localhost:5174', 'http://localhost:3000', 'http://127.0.0.1:5173', 'http://127.0.0.1:5174', 'http://localhost:8000', 'https://sports-teal-two.vercel.app', 'https://sports-l8at.vercel.app']
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+INFO: ✓ Batting engine: MediaPipe loaded via mediapipe.python.solutions (v0.10+)
+INFO: Tutorial resolver init — youtubesearchpython VideosSearch available
+WARNING: GCS_BUCKET_NAME not set — signed-URL endpoint will return 503
+WARNING: Worker: GCS_BUCKET_NAME not set
+WARNING: All log messages before absl::InitializeLog() is called are written to STDERR
+W0000 00:00:1778253051.462071   16372 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.491582   11464 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.519405    3236 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.545059   16552 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.566448    6724 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.582971    3272 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+INFO: Coach content feature enabled
+INFO: Messages feature enabled
+INFO: Analytics feature enabled
+INFO: Earnings feature enabled
+INFO: Reviews feature enabled
+W0000 00:00:1778253051.620669    6724 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.636036    9860 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.636429    3272 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.665678   12576 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.679449    6420 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1778253051.706764   12576 inference_feedback_manager.cc:114] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+INFO: Bowling analysis feature enabled
+INFO: Batting analysis feature enabled
+INFO: B2B2C Submissions pipeline enabled
+INFO: Storage routes enabled (GCS=False)
+INFO: Internal worker endpoint enabled
+INFO: Starting Cricket Highlight Platform API...
+INFO: Checking database connection...
+INFO: Database connection successful.
+INFO: Ensuring database tables exist...
+INFO: Users schema patch check completed.
+INFO: Videos schema patch check completed.
+INFO: Submission status enum patch check completed.
+INFO: Coach tables ensured.
+INFO: Database tables ready.
+ERROR:    [Errno 10048] error while attempting to bind on address ('127.0.0.1', 8000): only one usage of each socket address (protocol/network address/port) is normally permitted
+INFO: Shutting down Cricket Highlight Platform API...
+Strategy 1 failed: No module named 'mediapipe.solutions'
+✓ MediaPipe loaded successfully using: mediapipe.python.solutions (v0.10+)

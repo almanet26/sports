@@ -1,6 +1,5 @@
 import logging
 import os
-import warnings
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -8,61 +7,61 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlalchemy import text
-from dotenv import load_dotenv
 from database.crud import bowling
 from database.config import SessionLocal, engine, Base
 
-# Load environment variables from .env file
-load_dotenv()
-
 # Import all models to ensure they're registered with SQLAlchemy
 from database.models import (
-    User, UserSession,
+    User, UserSession, ProcessingJob,
     Video, HighlightEvent, HighlightJob, MatchRequest, UserVote,
     BattingAnalysis,
     VideoSubmission,
-    VideoAnnotation, CoachPlayer, PlayerSubmission, AcademyBranding,
-    AdminAuditLog,
+    Message,
+    Transaction,
+    Review,
 )
+from database.models.coach_content import CoachContent
+from database.models.coach_session import CoachTrainingSession
+from database.models.coach_availability import CoachAvailability
+from database.models.coach_training_plan import CoachTrainingPlan
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
 
-# Suppress noisy upstream protobuf deprecation warning from Google client internals.
-warnings.filterwarnings(
-    "ignore",
-    message=r"SymbolDatabase\.GetPrototype\(\) is deprecated\..*",
-    category=UserWarning,
-)
-
 
 def _ensure_users_schema(db_session) -> None:
-    """One-time forward-migration for columns that still exist on older DB instances."""
+    """Patch legacy users schema for both PostgreSQL and SQLite."""
     try:
         dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
 
         if dialect == "sqlite":
+            # SQLite support for ADD COLUMN IF NOT EXISTS depends on engine version.
+            # Use PRAGMA + plain ADD COLUMN for broad compatibility.
             cols = db_session.execute(text("PRAGMA table_info(users)")).fetchall()
             existing = {str(c[1]).lower() for c in cols}
+
+            if "subscription_plan" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN subscription_plan VARCHAR(50) DEFAULT 'BASIC'"))
             if "coach_status" not in existing:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_status VARCHAR(20) DEFAULT 'pending'"))
             if "coach_document_url" not in existing:
                 db_session.execute(text("ALTER TABLE users ADD COLUMN coach_document_url TEXT"))
+            if "stripe_customer_id" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN stripe_customer_id VARCHAR(255)"))
+            if "date_of_birth" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN date_of_birth VARCHAR(10)"))
+            if "years_of_experience" not in existing:
+                db_session.execute(text("ALTER TABLE users ADD COLUMN years_of_experience INTEGER"))
         else:
+            # Safe on Postgres and no-ops when columns already exist.
+            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_plan VARCHAR(50) DEFAULT 'BASIC'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_status VARCHAR(20) DEFAULT 'pending'"))
             db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS coach_document_url TEXT"))
+            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(255)"))
+            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS date_of_birth VARCHAR(10)"))
+            db_session.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS years_of_experience INTEGER"))
 
-        # Ensure users.role holds only account-type values (PLAYER|COACH|ADMIN).
-        # Any row that still carries an old subscription-tier value (free, basic …)
-        # is mapped back to PLAYER — the safe default.
-        db_session.execute(
-            text(
-                "UPDATE users "
-                "SET role = 'PLAYER' "
-                "WHERE role NOT IN ('PLAYER', 'COACH', 'ADMIN')"
-            )
-        )
-
+        db_session.execute(text("UPDATE users SET subscription_plan = 'BASIC' WHERE subscription_plan IS NULL"))
         db_session.commit()
         logger.info("Users schema patch check completed.")
     except Exception as patch_err:
@@ -85,68 +84,21 @@ def _ensure_videos_schema(db_session) -> None:
 
 
 def _ensure_submission_status_enum(db_session) -> None:
-    """Ensure legacy PostgreSQL enum includes UPLOADING status value."""
+    """Ensure legacy PostgreSQL enum includes UPLOADING and ACCEPTED status values."""
     try:
         dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
         if dialect != "sqlite":
             db_session.execute(
                 text("ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS 'UPLOADING'")
             )
+            db_session.execute(
+                text("ALTER TYPE submissionstatus ADD VALUE IF NOT EXISTS 'ACCEPTED'")
+            )
             db_session.commit()
             logger.info("Submission status enum patch check completed.")
     except Exception as patch_err:
         db_session.rollback()
         logger.warning("Submission status enum patch skipped/failed: %s", patch_err)
-
-
-def _ensure_plan_config(db_session) -> None:
-    """Keep plan_config aligned with the current monetization rules."""
-    try:
-        plan_rows = [
-            # plan_key, role, display_name, price_inr, duration_days, max_biomech, max_ocr_hours, max_submissions, max_players
-            ("free",           "free",          "Free",          0,     36500, 3,   0,   0,    0),
-            ("coach_free",     "coach_free",    "Coach Free",    0,     36500, 0,   0,   0,    0),
-            ("basic_90d",      "basic",         "Basic",         499,   90,   15,   0,   5,    0),
-            ("platinum_180d",  "platinum",      "Platinum",      1499,  180,  50,   0,   15,   0),
-            ("coach_starter",  "coach_starter", "Coach Starter", 1999,  90,   999,  50,  150,  10),
-            ("coach_pro",      "coach_pro",     "Coach Pro",     4999,  180,  999,  150, 600,  100),
-            ("academy",        "academy",       "Academy",       14999, 365,  999,  500, 1500, -1),
-        ]
-
-        for plan_key, role, display_name, price_inr, duration_days, biomech, ocr_hours, submissions, players in plan_rows:
-            db_session.execute(
-                text(
-                    "INSERT INTO plan_config "
-                    "(plan_key, role, display_name, price_inr, duration_days, max_biomech_per_month, max_ocr_hours_per_month, max_submissions_per_month, max_players_in_dashboard) "
-                    "VALUES (:plan_key, :role, :display_name, :price_inr, :duration_days, :max_biomech_per_month, :max_ocr_hours_per_month, :max_submissions_per_month, :max_players_in_dashboard) "
-                    "ON CONFLICT(plan_key) DO UPDATE SET "
-                    "role = excluded.role, "
-                    "display_name = excluded.display_name, "
-                    "price_inr = excluded.price_inr, "
-                    "duration_days = excluded.duration_days, "
-                    "max_biomech_per_month = excluded.max_biomech_per_month, "
-                    "max_ocr_hours_per_month = excluded.max_ocr_hours_per_month, "
-                    "max_submissions_per_month = excluded.max_submissions_per_month, "
-                    "max_players_in_dashboard = excluded.max_players_in_dashboard"
-                ),
-                {
-                    "plan_key": plan_key,
-                    "role": role,
-                    "display_name": display_name,
-                    "price_inr": price_inr,
-                    "duration_days": duration_days,
-                    "max_biomech_per_month": biomech,
-                    "max_ocr_hours_per_month": ocr_hours,
-                    "max_submissions_per_month": submissions,
-                    "max_players_in_dashboard": players,
-                },
-            )
-
-        db_session.commit()
-        logger.info("Plan config patch check completed.")
-    except Exception as patch_err:
-        db_session.rollback()
-        logger.warning("Plan config patch skipped/failed: %s", patch_err)
 
 # Ensure storage directories exist (skip on Cloud Run — ephemeral, uses /tmp/)
 _CLOUD_RUN = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
@@ -163,9 +115,36 @@ if not _CLOUD_RUN:
         "storage/submission_videos",
         "storage/temp_frames",
         "storage/coach_documents",
+        "storage/coach_intro_videos",
+        "storage/profile_images",
+        "storage/coach_content",
     ]
     for dir_path in STORAGE_DIRS:
         Path(dir_path).mkdir(parents=True, exist_ok=True)
+
+
+def _ensure_coach_tables(db_session) -> None:
+    """Create coach-related tables if they don't exist and patch missing columns."""
+    try:
+        Base.metadata.create_all(bind=db_session.bind)
+        # Patch missing columns on coach_content (table may exist from older schema)
+        dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
+        if dialect == "sqlite":
+            cols = db_session.execute(text("PRAGMA table_info(coach_content)")).fetchall()
+            existing = {str(c[1]).lower() for c in cols}
+            if "views" not in existing:
+                db_session.execute(text("ALTER TABLE coach_content ADD COLUMN views INTEGER DEFAULT 0"))
+            if "file_size" not in existing:
+                db_session.execute(text("ALTER TABLE coach_content ADD COLUMN file_size VARCHAR(50)"))
+        else:
+            db_session.execute(text("ALTER TABLE coach_content ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0"))
+            db_session.execute(text("ALTER TABLE coach_content ADD COLUMN IF NOT EXISTS file_size VARCHAR(50)"))
+        db_session.execute(text("UPDATE coach_content SET views = 0 WHERE views IS NULL"))
+        db_session.commit()
+        logger.info("Coach tables ensured.")
+    except Exception as e:
+        db_session.rollback()
+        logger.warning("Coach tables patch skipped/failed: %s", e)
 
 
 @asynccontextmanager
@@ -188,7 +167,7 @@ async def lifespan(app: FastAPI):
         _ensure_users_schema(db)
         _ensure_videos_schema(db)
         _ensure_submission_status_enum(db)
-        _ensure_plan_config(db)
+        _ensure_coach_tables(db)
         logger.info("Database tables ready.")
         
         db.close()
@@ -225,7 +204,9 @@ if not ALLOWED_ORIGINS or ALLOWED_ORIGINS == [""]:
         "http://localhost:3000",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:5174",
+        "http://localhost:8000",
         "https://sports-teal-two.vercel.app",  # Vercel production frontend
+        "https://sports-l8at.vercel.app",        # Fork deployment
     ]
     # Append additional production frontend URL from env if set
     _frontend = os.getenv("FRONTEND_URL", "").strip()
@@ -260,6 +241,9 @@ if not _CLOUD_RUN:
     app.mount("/static/submission_videos", StaticFiles(directory="storage/submission_videos"), name="submission_videos")
     app.mount("/static/temp_frames", StaticFiles(directory="storage/temp_frames"), name="temp_frames")
     app.mount("/static/coach_documents", StaticFiles(directory="storage/coach_documents"), name="coach_documents")
+    app.mount("/static/coach_intro_videos", StaticFiles(directory="storage/coach_intro_videos"), name="coach_intro_videos")
+    app.mount("/static/profile_images", StaticFiles(directory="storage/profile_images"), name="profile_images")
+    app.mount("/static/coach_content", StaticFiles(directory="storage/coach_content"), name="coach_content")
 
 
 # Health Check Endpoints 
@@ -294,9 +278,26 @@ def db_health_check():
 
 
 # Include API Routers 
-from api.routes import auth, videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
-from api.routes import match, notification
-from api.routes import subscription
+from api.routes import (
+    auth, videos, jobs, requests, player_stats, 
+    bowling, BOWLING_AVAILABLE, 
+    batting, BATTING_AVAILABLE, 
+    submissions, SUBMISSIONS_AVAILABLE, 
+    storage, GCS_AVAILABLE, 
+    worker, WORKER_AVAILABLE, 
+    admin_coaches,
+    messages, MESSAGES_AVAILABLE,
+    analytics, ANALYTICS_AVAILABLE,
+    performance, notification, match, billing
+)
+from api.routes import subscription, sessions
+try:
+    from api.routes import earnings, reviews
+    EARNINGS_AVAILABLE = True
+    REVIEWS_AVAILABLE = True
+except ImportError:
+    EARNINGS_AVAILABLE = False
+    REVIEWS_AVAILABLE = False
 
 # Authentication routes
 app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
@@ -304,6 +305,43 @@ app.include_router(auth.router, prefix="/api/v1", tags=["authentication"])
 # Admin routes
 app.include_router(admin_coaches.router, prefix="/api/v1", tags=["admin"])
 app.include_router(subscription.router, prefix="/api/v1", tags=["subscriptions"])
+app.include_router(sessions.router, prefix="/api/v1", tags=["sessions"])
+
+# Coach Content routes
+try:
+    from api.routes import coach_content
+    app.include_router(coach_content.router, prefix="/api/v1/coach", tags=["coach-content"])
+    logger.info("Coach content feature enabled")
+except ImportError:
+    logger.warning("Coach content feature disabled")
+
+# Messages routes
+if messages is not None and MESSAGES_AVAILABLE:
+    app.include_router(messages.router, prefix="/api/v1", tags=["messages"])
+    logger.info("Messages feature enabled")
+else:
+    logger.warning("Messages feature disabled")
+
+# Analytics routes
+if analytics is not None and ANALYTICS_AVAILABLE:
+    app.include_router(analytics.router, prefix="/api/v1", tags=["analytics"])
+    logger.info("Analytics feature enabled")
+else:
+    logger.warning("Analytics feature disabled")
+
+# Earnings routes
+if EARNINGS_AVAILABLE:
+    app.include_router(earnings.router, prefix="/api/v1/coach", tags=["earnings"])
+    logger.info("Earnings feature enabled")
+else:
+    logger.warning("Earnings feature disabled")
+
+# Reviews routes
+if REVIEWS_AVAILABLE:
+    app.include_router(reviews.router, prefix="/api/v1/coach", tags=["reviews"])
+    logger.info("Reviews feature enabled")
+else:
+    logger.warning("Reviews feature disabled")
 
 from api.routes import admin as admin_users
 app.include_router(admin_users.router, prefix="/api/v1", tags=["admin"])
@@ -317,10 +355,6 @@ app.include_router(jobs.router, prefix="/api/v1", tags=["jobs"])
 
 # Match request/voting routes
 app.include_router(requests.router, prefix="/api/v1", tags=["requests"])
-
-# Matches and notifications routes
-app.include_router(match.router, prefix="/api/v1", tags=["matches"])
-app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
 
 # Player statistics routes (read-only API)
 app.include_router(player_stats.router, prefix="/api/v1", tags=["player-stats"])
@@ -341,18 +375,17 @@ else:
 
 # Submissions routes
 if SUBMISSIONS_AVAILABLE and submissions is not None:
-    app.include_router(submissions.public_router, prefix="/api/v1", tags=["submissions-public"])
     app.include_router(submissions.router, prefix="/api/v1/submissions", tags=["submissions"])
     logger.info("B2B2C Submissions pipeline enabled")
 else:
     logger.warning("Submissions pipeline disabled")
 
-# Cloud Storage (Direct-to-GCS signed URL uploads)
-if GCS_AVAILABLE and storage is not None:
+# Cloud Storage (Direct-to-GCS signed URL uploads + local fallback)
+if storage is not None:
     app.include_router(storage.router, prefix="/api/v1/storage", tags=["storage"])
-    logger.info("Direct-to-GCS upload feature enabled")
+    logger.info("Storage routes enabled (GCS=%s)", GCS_AVAILABLE)
 else:
-    logger.warning("Direct-to-GCS upload feature disabled (GCS not configured)")
+    logger.warning("Storage routes disabled")
 
 # Internal Worker endpoint (called by Cloud Tasks, NOT public API)
 if WORKER_AVAILABLE and worker is not None:
@@ -361,66 +394,21 @@ if WORKER_AVAILABLE and worker is not None:
 else:
     logger.warning("Internal worker endpoint disabled")
 
-# Usage tracking — internal callback + user-facing billing dashboard
-from api.routes.usage import internal_router as usage_internal_router
-from api.routes.usage import billing_router as usage_billing_router
+# Performance routes
+app.include_router(performance.router, prefix="/api/v1", tags=["performance"])
+logger.info("Performance routes enabled")
 
-app.include_router(usage_internal_router, prefix="/internal/usage", tags=["internal"])
-app.include_router(usage_billing_router, prefix="/api/v1/billing", tags=["billing"])
+# Notification routes
+app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
+logger.info("Notification routes enabled")
 
-# Phase 4 player-facing features
-from api.routes.report import router as report_router
-from api.routes.chat import router as chat_router
-from api.routes.benchmarks import router as benchmarks_router
-from api.routes.profile import router as profile_router
-from api.routes.scouting import router as scouting_router
+# Match routes
+app.include_router(match.router, prefix="/api/v1", tags=["matches"])
+logger.info("Match routes enabled")
 
-app.include_router(report_router,     prefix="/api/v1", tags=["report"])
-app.include_router(chat_router,       prefix="/api/v1", tags=["chat"])
-app.include_router(benchmarks_router, prefix="/api/v1", tags=["benchmarks"])
-app.include_router(profile_router,    prefix="/api/v1", tags=["profile"])
-app.include_router(scouting_router,   prefix="/api/v1", tags=["scouting"])
-
-# Phase 5 coach-facing features
-from api.routes.annotations import router as annotations_router
-from api.routes.dashboard import router as dashboard_router
-from api.routes.coach_inbox import router as coach_inbox_router
-from api.routes.academy import router as academy_router
-from api.routes.coach_content import router as coach_content_router
-
-app.include_router(annotations_router, prefix="/api/v1", tags=["annotations"])
-app.include_router(dashboard_router,   prefix="/api/v1", tags=["dashboard"])
-app.include_router(coach_inbox_router, prefix="/api/v1", tags=["coach-inbox"])
-app.include_router(academy_router,     prefix="/api/v1", tags=["academy"])
-
-# New player features — wrapped in try/except so missing deps don't crash startup
-try:
-    from api.routes.reviews import router as reviews_router
-    app.include_router(reviews_router, prefix="/api/v1", tags=["reviews"])
-except Exception as e:
-    logger.warning("Reviews routes disabled: %s", e)
-
-try:
-    from api.routes.gamification import router as gamification_router
-    app.include_router(gamification_router, prefix="/api/v1", tags=["gamification"])
-except Exception as e:
-    logger.warning("Gamification routes disabled: %s", e)
-
-try:
-    from api.routes.performance import router as performance_router
-    app.include_router(performance_router, prefix="/api/v1", tags=["performance"])
-except Exception as e:
-    logger.warning("Performance routes disabled: %s", e)
-
-try:
-    from api.routes.analytics import router as analytics_router
-    app.include_router(analytics_router, prefix="/api/v1", tags=["analytics"])
-except Exception as e:
-    logger.warning("Analytics routes disabled: %s", e)
-
-# POST /internal/cron/expire-subscriptions
-from services.subscription_expiry import register_expiry_endpoint
-register_expiry_endpoint(app)
+# Billing routes
+app.include_router(billing.router, prefix="/api/v1", tags=["billing"])
+logger.info("Billing routes enabled")
 
 
 # Entry Point 

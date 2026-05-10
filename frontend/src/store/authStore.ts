@@ -35,6 +35,9 @@ export interface User {
   intro_video_url?: string;
   profile_image_url?: string;
   coach_category?: string;
+  coach_status?: 'incomplete' | 'pending' | 'verified' | 'rejected';
+  date_of_birth?: string;
+  years_of_experience?: number;
 }
 
 const DEFAULT_QUOTA: QuotaUsage = {
@@ -84,7 +87,7 @@ interface AuthState {
     team?: string;
   }) => Promise<boolean>;
   logout: () => Promise<void>;
-  fetchProfile: () => Promise<void>;
+  fetchProfile: () => Promise<User | null>;
   clearError: () => void;
 
   // ── Subscription actions ──
@@ -94,6 +97,7 @@ interface AuthState {
   // ── Helpers ──
   hasRole: (role: UserRole | UserRole[]) => boolean;
   canUpload: () => boolean;
+  updateUser: (partial: Partial<User>) => void;
 }
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -142,6 +146,7 @@ export const useAuthStore = create<AuthState>()(
             role: (user.account_type ?? user.role ?? roleFromToken) as UserRole,
             is_verified: true,
             created_at: new Date().toISOString(),
+            coach_status: user.coach_status,
           } : {
             id: userIdFromToken,
             email,
@@ -162,8 +167,8 @@ export const useAuthStore = create<AuthState>()(
             subscriptionTier: (user?.subscription_role ?? 'free') as Tier,
           });
 
-          // Fetch full profile + billing in one shot
-          await get().fetchMe();
+          // Always fetch full profile to ensure role and all fields are correct
+          await get().fetchProfile();
 
           set({ isLoading: false });
           return true;
@@ -198,6 +203,8 @@ export const useAuthStore = create<AuthState>()(
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
           localStorage.removeItem('user_profile');
+          localStorage.removeItem('auth-storage');
+
           set({
             user: null,
             token: null,
@@ -217,7 +224,8 @@ export const useAuthStore = create<AuthState>()(
        * fetchProfile — kept for backward compatibility, delegates to fetchMe.
        */
       fetchProfile: async () => {
-        return get().fetchMe();
+        await get().fetchMe();
+        return get().user;
       },
 
       // ── Subscription actions ──────────────────────────────────────────────
@@ -230,15 +238,20 @@ export const useAuthStore = create<AuthState>()(
       fetchMe: async () => {
         set({ isLoading: true });
         try {
-          const [{ data: profile }, { data: usage }] = await Promise.all([
-            api.get('/auth/me'),
-            api.get('/billing/usage'),
-          ]);
+          const profileRes = await api.get('/auth/me');
+          const profile = profileRes.data;
+
+          let usage: Record<string, unknown> = {};
+          try {
+            const usageRes = await api.get('/billing/usage');
+            usage = usageRes.data;
+          } catch { /* billing failure is non-fatal */ }
 
           const mappedUser: User = {
             ...profile,
             role: (profile.account_type ?? profile.role ?? 'PLAYER') as UserRole,
             name: profile.full_name ?? profile.name,
+            coach_status: profile.coach_status,
           };
 
           localStorage.setItem('user_profile', JSON.stringify(mappedUser));
@@ -248,12 +261,12 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: true,
             accountType: mappedUser.role,
             subscriptionTier: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
-            subscriptionStatus: (usage.status ?? 'inactive') as SubscriptionStatus,
-            expiresAt: usage.expires_at ?? null,
+            subscriptionStatus: ((usage.status ?? 'inactive') as SubscriptionStatus),
+            expiresAt: (usage.expires_at as string) ?? null,
             quotaUsage: normalizeQuotaUsage(usage.current_month),
           });
         } catch {
-          // Auth interceptor in api.ts handles 401 redirect; quota failures are non-fatal
+          // Auth interceptor in api.ts handles 401 redirect
         } finally {
           set({ isLoading: false });
         }
@@ -290,6 +303,14 @@ export const useAuthStore = create<AuthState>()(
       canUpload: () => {
         const { user } = get();
         return user?.role === 'ADMIN' || user?.role === 'COACH';
+      },
+
+      updateUser: (partial) => {
+        const current = get().user;
+        if (!current) return;
+        const updated = { ...current, ...partial };
+        localStorage.setItem('user_profile', JSON.stringify(updated));
+        set({ user: updated });
       },
     }),
     {

@@ -53,6 +53,9 @@ class TokenResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+    user: Optional[dict] = None
+
+    model_config = ConfigDict(extra="ignore")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -70,7 +73,7 @@ class UserProfileResponse(BaseModel):
     They may be None when no subscription row exists (new free account that
     hasn't had its seed row written yet — shouldn't happen in practice).
     """
-    id: uuid.UUID
+    id: str
     account_type: str                   # account type: PLAYER | COACH | ADMIN
     name: str
     email: str
@@ -84,6 +87,9 @@ class UserProfileResponse(BaseModel):
     intro_video_url: Optional[str] = None
     profile_image_url: Optional[str] = None
     coach_category: Optional[str] = None
+    coach_status: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    years_of_experience: Optional[int] = None
     is_verified: bool
     created_at: datetime
     last_login: Optional[datetime] = None
@@ -108,6 +114,9 @@ class ProfileUpdateRequest(BaseModel):
     intro_video_url: Optional[str] = None
     profile_image_url: Optional[str] = None
     coach_category: Optional[str] = None
+    date_of_birth: Optional[str] = None
+    years_of_experience: Optional[int] = None
+    notification_preferences: Optional[dict] = None
 
     model_config = ConfigDict(extra="ignore")
 

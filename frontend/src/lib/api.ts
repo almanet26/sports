@@ -147,6 +147,8 @@ export const authApi = {
     certifications: Array<{name: string; issuer: string; year: string}>;
     specialization: string[];
     coach_category: string;
+    date_of_birth: string;
+    years_of_experience: number;
   }>) => api.put('/auth/me', data),
 };
 
@@ -921,6 +923,89 @@ export const reviewsApi = {
   getMyCoaches: () => api.get<{ coaches: MyCoach[] }>('/reviews/player/my-coaches'),
   submitReview: (data: { coach_id: string; rating: number; comment?: string }) =>
     api.post('/reviews', data),
+};
+
+// ── Earnings ──────────────────────────────────────────────────────────────────
+
+export interface TransactionItem {
+  id: string;
+  player_name: string;
+  player_email: string;
+  transaction_type: string;
+  amount: number;
+  status: string;
+  description: string | null;
+  created_at: string;
+  paid_at: string | null;
+}
+
+export interface EarningsStats {
+  total_earned: number;
+  pending: number;
+  this_month: number;
+  total_transactions: number;
+}
+
+export interface MonthlyEarnings {
+  month: string;
+  earnings: number;
+}
+
+export const earningsApi = {
+  getStats: () => api.get<EarningsStats>('/coach/earnings/stats'),
+  getMonthly: () => api.get<MonthlyEarnings[]>('/coach/earnings/monthly'),
+  getTransactions: () => api.get<TransactionItem[]>('/coach/earnings/transactions'),
+};
+
+// ── Coach Reviews ─────────────────────────────────────────────────────────────
+
+export interface CoachReviewItem {
+  id: string;
+  player_id: string;
+  player_name: string;
+  rating: number;
+  comment: string | null;
+  created_at: string;
+}
+
+export interface CoachReviewsResponse {
+  reviews: CoachReviewItem[];
+  total: number;
+  average_rating: number;
+}
+
+export const coachReviewsApi = {
+  getMyReviews: () => api.get<CoachReviewsResponse>('/reviews/coach/me'),
+  getCoachReviews: (coachId: string) => api.get<CoachReviewsResponse>(`/reviews/coach/${coachId}`),
+};
+
+// ── Training Plans ────────────────────────────────────────────────────────────
+
+export interface TrainingPlanData {
+  id: string;
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: string;
+  is_public: boolean;
+  drills?: string[];
+  created_at?: string;
+}
+
+export interface TrainingPlanCreate {
+  title: string;
+  description?: string;
+  analysis_type: string;
+  plan_type: 'group_all' | 'individual' | 'age_group';
+  is_public: boolean;
+  drills?: string[];
+}
+
+export const trainingPlansApi = {
+  list: () => api.get<{ plans: TrainingPlanData[] }>('/sessions/training-plans'),
+  create: (data: TrainingPlanCreate) => api.post<TrainingPlanData>('/sessions/training-plans', data),
+  update: (id: string, data: Partial<TrainingPlanCreate>) => api.put<TrainingPlanData>(`/sessions/training-plans/${id}`, data),
+  delete: (id: string) => api.delete(`/sessions/training-plans/${id}`),
 };
 
 

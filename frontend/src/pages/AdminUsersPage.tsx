@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { adminApi } from '../lib/api';
+import { adminApi, api, resolveMediaUrl } from '../lib/api';
 import { useThemeStore } from '../store/themeStore';
 
 interface UserRow {
@@ -47,6 +47,324 @@ function fmt(d: string | null) {
   return new Date(d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
+interface UserProfile {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  is_active: boolean;
+  created_at: string;
+  last_login: string | null;
+  phone?: string;
+  team?: string;
+  profile_bio?: string;
+  gender?: string;
+  jersey_number?: number;
+  coach_status?: string;
+  coach_category?: string;
+  years_of_experience?: number;
+  date_of_birth?: string;
+  specialization?: string[];
+  certifications?: Array<{ name: string; issuer: string; year: string }>;
+  subscription_plan?: string;
+  intro_video_url?: string;
+  profile_image_url?: string;
+  // Player
+  submissions?: Array<{ id: string; analysis_type: string; status: string; coach_name?: string; created_at?: string; pdf_report_url?: string }>;
+  // Coach
+  submissions_received?: Array<{ id: string; analysis_type: string; status: string; player_name?: string; created_at?: string }>;
+  reviews?: Array<{ player_name: string; rating: number; comment?: string; created_at?: string }>;
+  average_rating?: number;
+  total_reviews?: number;
+}
+
+function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () => void; theme: string }) {
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'profile' | 'activity'>('profile');
+
+  useEffect(() => {
+    api.get(`/admin/users/${userId}`)
+      .then(r => setProfile(r.data))
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  }, [userId]);
+
+  const sub = theme === 'dark' ? 'text-white/40' : 'text-slate-400';
+  const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-slate-50/80 border-slate-200/60';
+  const val = theme === 'dark' ? 'text-white' : 'text-slate-800';
+
+  const Field = ({ label, value }: { label: string; value: any }) =>
+    value ? (
+      <div>
+        <p className={`text-xs mb-0.5 ${sub}`}>{label}</p>
+        <p className={`text-sm font-medium ${val}`}>{value}</p>
+      </div>
+    ) : null;
+
+  const statusColor = (s: string) => {
+    if (['PUBLISHED', 'verified', 'Active'].includes(s)) return 'bg-green-500/20 text-green-400 border-green-500/30';
+    if (['PENDING', 'pending'].includes(s)) return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+    if (['PROCESSING', 'DRAFT_REVIEW'].includes(s)) return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+    return 'bg-white/10 text-white/50 border-white/20';
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        exit={{ opacity: 0, scale: 0.95 }}
+        onClick={e => e.stopPropagation()}
+        className={`relative w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl border shadow-2xl ${
+          theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-slate-200 text-slate-900'
+        }`}
+      >
+        {/* Header */}
+        <div className={`sticky top-0 z-10 flex items-center justify-between p-6 border-b backdrop-blur-md ${
+          theme === 'dark' ? 'border-white/10 bg-black/20' : 'border-slate-200/60 bg-white/80'
+        }`}>
+          <h2 className="text-xl font-bold gradient-text">User Profile</h2>
+          <button onClick={onClose} className="w-8 h-8 rounded-full glass border border-white/20 flex items-center justify-center hover:bg-white/10 transition-all">
+            <i className="fas fa-times text-sm"></i>
+          </button>
+        </div>
+
+        <div className="p-6">
+          {loading ? (
+            <div className="flex justify-center py-12">
+              <div className="w-10 h-10 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+            </div>
+          ) : profile ? (
+            <div className="space-y-5">
+              {/* Avatar + basic */}
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 bg-gradient-to-r from-blue-500 to-purple-600 flex items-center justify-center text-white text-2xl font-bold">
+                  {profile.profile_image_url
+                    ? <img src={profile.profile_image_url} alt={profile.name} className="w-full h-full object-cover" />
+                    : profile.name.charAt(0).toUpperCase()
+                  }
+                </div>
+                <div className="flex-1">
+                  <p className="text-lg font-bold">{profile.name}</p>
+                  <p className={`text-sm ${sub}`}>{profile.email}</p>
+                  <div className="flex gap-2 mt-1 flex-wrap">
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                      profile.role === 'COACH' ? 'bg-green-500/20 text-green-400 border-green-500/30' :
+                      profile.role === 'ADMIN' ? 'bg-red-500/20 text-red-400 border-red-500/30' :
+                      'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                    }`}>{profile.role}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full border ${
+                      profile.is_active ? 'bg-green-500/20 text-green-400 border-green-500/30' : 'bg-red-500/20 text-red-400 border-red-500/30'
+                    }`}>{profile.is_active ? 'Active' : 'Suspended'}</span>
+                    {profile.coach_status && (
+                      <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(profile.coach_status)}`}>
+                        {profile.coach_status}
+                      </span>
+                    )}
+                    {profile.subscription_plan && (
+                      <span className="text-xs px-2 py-0.5 rounded-full border bg-purple-500/20 text-purple-400 border-purple-500/30">
+                        {profile.subscription_plan}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Tabs */}
+              <div className={`flex gap-1 p-1 rounded-xl w-fit ${ theme === 'dark' ? 'bg-white/5' : 'bg-slate-100'}`}>
+                {(['profile', 'activity'] as const).map(t => (
+                  <button key={t} onClick={() => setTab(t)}
+                    className={`px-4 py-1.5 rounded-lg text-sm font-medium capitalize transition-all ${
+                      tab === t ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white' : `${sub} hover:text-white`
+                    }`}>{t}</button>
+                ))}
+              </div>
+
+              {tab === 'profile' && (
+                <>
+                  {/* Personal Info */}
+                  <div className={`rounded-2xl p-4 border ${cardBg}`}>
+                    <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                      <i className="fas fa-user text-blue-400"></i> Personal Info
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Phone" value={profile.phone} />
+                      <Field label="Gender" value={profile.gender} />
+                      <Field label="Team" value={profile.team} />
+                      <Field label="Jersey #" value={profile.jersey_number} />
+                      <Field label="Date of Birth" value={profile.date_of_birth} />
+                      <Field label="Joined" value={new Date(profile.created_at).toLocaleDateString()} />
+                      <Field label="Last Login" value={profile.last_login ? new Date(profile.last_login).toLocaleDateString() : 'Never'} />
+                    </div>
+                    {profile.profile_bio && (
+                      <div className="mt-3">
+                        <p className={`text-xs mb-0.5 ${sub}`}>Bio</p>
+                        <p className={`text-sm ${val}`}>{profile.profile_bio}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Coach Details */}
+                  {profile.role === 'COACH' && (
+                    <div className={`rounded-2xl p-4 border ${cardBg}`}>
+                      <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i className="fas fa-chalkboard-teacher text-green-400"></i> Coach Details
+                      </p>
+                      <div className="grid grid-cols-2 gap-3 mb-3">
+                        <Field label="Category" value={profile.coach_category} />
+                        <Field label="Experience" value={profile.years_of_experience ? `${profile.years_of_experience} years` : null} />
+                        <Field label="Avg Rating" value={profile.average_rating ? `${profile.average_rating} ⭐ (${profile.total_reviews} reviews)` : null} />
+                      </div>
+                      {profile.specialization?.length ? (
+                        <div className="mb-3">
+                          <p className={`text-xs mb-1 ${sub}`}>Specialization</p>
+                          <div className="flex flex-wrap gap-1">
+                            {profile.specialization.map(s => (
+                              <span key={s} className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/20">{s}</span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {profile.certifications?.length ? (
+                        <div>
+                          <p className={`text-xs mb-1 ${sub}`}>Certifications</p>
+                          <div className="space-y-1">
+                            {profile.certifications.map((c, i) => (
+                              <p key={i} className={`text-xs ${val}`}>{c.name} — {c.issuer} ({c.year})</p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                      {profile.intro_video_url && (
+                        <div className="mt-3">
+                          <p className={`text-xs mb-1 ${sub}`}>Intro Video</p>
+                          <video
+                            controls
+                            className="w-full rounded-xl max-h-48 bg-black"
+                            src={resolveMediaUrl(profile.intro_video_url)}
+                            onError={e => {
+                              const el = e.currentTarget.parentElement;
+                              if (el) el.innerHTML = '<p class="text-xs text-yellow-400 mt-1"><i class="fas fa-exclamation-triangle mr-1"></i>Video file not found on server.</p>';
+                            }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {tab === 'activity' && (
+                <>
+                  {/* Player submissions */}
+                  {profile.role === 'PLAYER' && (
+                    <div className={`rounded-2xl p-4 border ${cardBg}`}>
+                      <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i className="fas fa-paper-plane text-blue-400"></i>
+                        Submissions ({profile.submissions?.length || 0})
+                      </p>
+                      {!profile.submissions?.length ? (
+                        <p className={`text-sm ${sub}`}>No submissions yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {profile.submissions.map(s => (
+                            <div key={s.id} className={`flex items-center justify-between p-3 rounded-xl border ${
+                              theme === 'dark' ? 'border-white/5 bg-white/3' : 'border-slate-200 bg-white'
+                            }`}>
+                              <div>
+                                <p className={`text-xs font-medium ${val}`}>{s.analysis_type} Analysis</p>
+                                <p className={`text-xs ${sub}`}>
+                                  Coach: {s.coach_name || 'N/A'} · {s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(s.status)}`}>{s.status}</span>
+                                {s.pdf_report_url && (
+                                  <a href={s.pdf_report_url} target="_blank" rel="noopener noreferrer"
+                                    className="text-xs text-blue-400 hover:text-blue-300">
+                                    <i className="fas fa-file-pdf"></i>
+                                  </a>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Coach submissions received */}
+                  {profile.role === 'COACH' && (
+                    <div className={`rounded-2xl p-4 border ${cardBg}`}>
+                      <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i className="fas fa-inbox text-green-400"></i>
+                        Submissions Received ({profile.submissions_received?.length || 0})
+                      </p>
+                      {!profile.submissions_received?.length ? (
+                        <p className={`text-sm ${sub}`}>No submissions received yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {profile.submissions_received.map(s => (
+                            <div key={s.id} className={`flex items-center justify-between p-3 rounded-xl border ${
+                              theme === 'dark' ? 'border-white/5 bg-white/3' : 'border-slate-200 bg-white'
+                            }`}>
+                              <div>
+                                <p className={`text-xs font-medium ${val}`}>{s.analysis_type} — {s.player_name || 'Unknown'}</p>
+                                <p className={`text-xs ${sub}`}>{s.created_at ? new Date(s.created_at).toLocaleDateString() : ''}</p>
+                              </div>
+                              <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(s.status)}`}>{s.status}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Coach reviews */}
+                  {profile.role === 'COACH' && (
+                    <div className={`rounded-2xl p-4 border ${cardBg}`}>
+                      <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <i className="fas fa-star text-yellow-400"></i>
+                        Reviews ({profile.reviews?.length || 0})
+                        {profile.average_rating ? <span className="text-yellow-400 font-bold">{profile.average_rating} ⭐</span> : null}
+                      </p>
+                      {!profile.reviews?.length ? (
+                        <p className={`text-sm ${sub}`}>No reviews yet.</p>
+                      ) : (
+                        <div className="space-y-2">
+                          {profile.reviews.map((r, i) => (
+                            <div key={i} className={`p-3 rounded-xl border ${
+                              theme === 'dark' ? 'border-white/5 bg-white/3' : 'border-slate-200 bg-white'
+                            }`}>
+                              <div className="flex items-center justify-between mb-1">
+                                <p className={`text-xs font-medium ${val}`}>{r.player_name}</p>
+                                <div className="flex gap-0.5">
+                                  {[1,2,3,4,5].map(s => (
+                                    <i key={s} className={`fas fa-star text-[10px] ${r.rating >= s ? 'text-yellow-400' : sub}`}></i>
+                                  ))}
+                                </div>
+                              </div>
+                              {r.comment && <p className={`text-xs ${sub}`}>{r.comment}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+          ) : (
+            <p className="text-center py-8 text-white/50">Failed to load profile</p>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 export default function AdminUsersPage() {
   const { theme } = useThemeStore();
   const navigate = useNavigate();
@@ -60,6 +378,7 @@ export default function AdminUsersPage() {
   const [page, setPage]         = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal]       = useState(0);
+  const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
 
   // Subscription edit modal
   const [editTarget, setEditTarget]   = useState<UserRow | null>(null);
@@ -170,6 +489,16 @@ export default function AdminUsersPage() {
 
   return (
     <div className={th ? 'text-white' : 'text-gray-900'}>
+      <AnimatePresence>
+        {selectedUserId && (
+          <ProfileModal
+            userId={selectedUserId}
+            onClose={() => setSelectedUserId(null)}
+            theme={theme}
+          />
+        )}
+      </AnimatePresence>
+
       {/* Toast */}
       {toast && (
         <motion.div

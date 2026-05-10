@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuthStore, useSubscriptionStore } from './store/authStore';
+import { useAuthStore } from './store/authStore';
 import type { UserRole } from './store/authStore';
 import { useMemo } from 'react';
 
@@ -15,86 +15,55 @@ import CoachDashboard from './pages/CoachDashboard';
 import AdminPlansPage from './pages/AdminPlansPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AdminUsersPage from './pages/AdminUsersPage';
-import AdminAuditLogPage from './pages/AdminAuditLogPage';
 import UploadPage from './pages/UploadPage';
 import HighlightsPage from './pages/HighlightsPage';
 import VideoDetailPage from './pages/VideoDetailPage';
 import RequestsPage from './pages/RequestsPage';
-import PlayerProfilePage from './pages/PlayerProfilePage';
-import CoachProfilePage from './pages/CoachProfilePage';
-
-// Profile Dispatcher - Renders the correct profile based on user role
-function ProfileDispatcher() {
-  const user = useAuthStore((state) => state.user);
-  if (user?.role === 'PLAYER') return <PlayerProfilePage />;
-  if (user?.role === 'COACH' || user?.role === 'ADMIN') return <CoachProfilePage />;
-  return <Navigate to="/dashboard" replace />;
-}
+import ProfilePage from './pages/ProfilePage';
 import PlayerPerformance from './pages/PlayerPerformance';
+import PlayerProfile from './pages/PlayerProfile';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
+import PlayerMyCoachesPage from './pages/PlayerMyCoachesPage';
 import CoachInboxPage from './pages/CoachInboxPage';
 import CoachReviewPage from './pages/CoachReviewPage';
-import BillingPage from './pages/BillingPage';
 import SubscriptionPage from './pages/SubscriptionPage';
 import CoachPendingPage from './pages/CoachPendingPage';
 import CoachVerificationPage from './pages/CoachVerificationPage';
+import CoachProfileSetupPage from './pages/CoachProfileSetupPage';
 import FeaturesDetailPage from './pages/FeaturesDetailPage';
 import StatsPage from './pages/PlayerStatsPage';
 import MatchesPage from './pages/MatchesPage';
 import NotificationsPage from './pages/NotificationsPage';
+import CoachSessionsPage from './pages/CoachSessionsPage';
+import CoachAvailabilityPage from './pages/CoachAvailabilityPage';
+import CoachTrainingPlansPage from './pages/CoachTrainingPlansPage';
+import CoachAnalyticsPage from './pages/CoachAnalyticsPage';
+import CoachReviewsPage from './pages/CoachReviewsPage';
+import CoachEarningsPage from './pages/CoachEarningsPage';
+import CoachMyPlayersPage from './pages/CoachMyPlayersPage';
+import CoachMessagesPage from './pages/CoachMessagesPage';
+import CoachContentPage from './pages/CoachContentPage';
+import CoachSettingsPage from './pages/CoachSettingsPage';
+import AdminAuditLogPage from './pages/AdminAuditLogPage';
+import BillingPage from './pages/BillingPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
 import ScoutingPage from './pages/ScoutingPage';
-import PlayerMyCoachesPage from './pages/PlayerMyCoachesPage';
-import PlayerGamification from './pages/PlayerGamification';
-import PlayerVideosPage from './pages/PlayerVideosPage';
-import PlayerProfile from './pages/PlayerProfile';
-import PlayerSettingsPage from './pages/PlayerSettingsPage';
-
-// Auth Initializer (runs once on module load)
-let authInitialized = false;
-
-function initializeAuthOnce() {
-  if (authInitialized) return;
-  authInitialized = true;
-
-  const token = localStorage.getItem('access_token');
-  const userProfile = localStorage.getItem('user_profile');
-
-  if (token && userProfile) {
-    try {
-      const user = JSON.parse(userProfile);
-      useAuthStore.setState({
-        token,
-        isAuthenticated: true,
-        user,
-      });
-      // Hydrate subscription + quota state in the background
-      useSubscriptionStore.getState().fetchMe().catch(() => {});
-      console.log('[Auth] Initialized from localStorage:', { userRole: user?.role });
-    } catch (e) {
-      console.error('[Auth] Failed to parse user profile:', e);
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('user_profile');
-    }
-  }
-}
-
-// Initialize immediately on module load
-initializeAuthOnce();
+import PlayerProfilePage from './pages/PlayerProfilePage';
+import BrowseContentPage from './pages/BrowseContentPage';
 
 // Protected Route - Requires authentication
 function ProtectedRoute() {
   const location = useLocation();
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-
+  
   const shouldRedirect = useMemo(() => !isAuthenticated, [isAuthenticated]);
-
+  
   if (shouldRedirect) {
     return <Navigate to="/login" state={{ from: location }} replace />;
   }
-
+  
   return <Outlet />;
 }
 
@@ -104,13 +73,7 @@ interface RoleGuardProps {
   fallbackPath?: string;
 }
 
-function getRoleHome(role: UserRole): string {
-  if (role === 'ADMIN') return '/admin';
-  if (role === 'COACH') return '/coach';
-  return '/player';
-}
-
-function RoleGuard({ allowedRoles, fallbackPath }: RoleGuardProps) {
+function RoleGuard({ allowedRoles, fallbackPath = '/player' }: RoleGuardProps) {
   const user = useAuthStore((state) => state.user);
   const location = useLocation();
 
@@ -119,7 +82,23 @@ function RoleGuard({ allowedRoles, fallbackPath }: RoleGuardProps) {
   }
 
   if (!allowedRoles.includes(user.role)) {
-    return <Navigate to={fallbackPath ?? getRoleHome(user.role)} replace />;
+    return <Navigate to={fallbackPath} replace />;
+  }
+
+  return <Outlet />;
+}
+
+// CoachStatusGuard — blocks incomplete/pending coaches from accessing coach routes
+function CoachStatusGuard() {
+  const user = useAuthStore((state) => state.user);
+
+  if (user?.role === 'COACH') {
+    if (user.coach_status === 'incomplete') {
+      return <Navigate to="/coach/setup" replace />;
+    }
+    if (user.coach_status === 'pending') {
+      return <Navigate to="/coach-pending" replace />;
+    }
   }
 
   return <Outlet />;
@@ -135,7 +114,7 @@ function GuestRoute() {
       user.role === 'ADMIN'
         ? '/admin'
         : user.role === 'COACH'
-          ? '/coach'
+          ? (user.coach_status === 'incomplete' ? '/coach/setup' : user.coach_status === 'pending' ? '/coach-pending' : '/coach')
           : '/player';
 
     return <Navigate to={targetPath} replace />;
@@ -157,7 +136,7 @@ function DashboardRedirect() {
     user.role === 'ADMIN'
       ? '/admin'
       : user.role === 'COACH'
-        ? '/coach'
+        ? (user.coach_status === 'incomplete' ? '/coach/setup' : user.coach_status === 'pending' ? '/coach-pending' : '/coach')
         : '/player';
 
   return <Navigate to={targetPath} replace />;
@@ -170,7 +149,6 @@ export default function AppRouter() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<LandingPage />} />
-        <Route path="/coach-pending" element={<CoachPendingPage />} />
         <Route path="/features-detail" element={<FeaturesDetailPage />} />
 
         {/* Guest only */}
@@ -179,56 +157,67 @@ export default function AppRouter() {
           <Route path="/register" element={<RegisterPage />} />
         </Route>
 
+        {/* Coach profile setup & pending — authenticated coaches only */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/coach/setup" element={<CoachProfileSetupPage />} />
+          <Route path="/coach-pending" element={<CoachPendingPage />} />
+        </Route>
+
         {/* Dashboard redirect */}
         <Route path="/dashboard" element={<DashboardRedirect />} />
 
-        {/* Shared authenticated routes (all roles) */}
+        {/* Authenticated users */}
         <Route element={<ProtectedRoute />}>
           <Route element={<DashboardLayout />}>
             <Route path="/library" element={<HighlightsPage />} />
             <Route path="/video/:videoId" element={<VideoDetailPage />} />
             <Route path="/requests" element={<RequestsPage />} />
-            <Route path="/settings" element={<ProfileDispatcher />} />
+            <Route path="/settings" element={<ProfilePage />} />
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/billing" element={<BillingPage />} />
-          </Route>
-        </Route>
-
-        {/* Player-only routes — non-players are redirected to their role home */}
-        <Route element={<ProtectedRoute />}>
-          <Route element={<RoleGuard allowedRoles={['PLAYER']} />}>
-            <Route element={<DashboardLayout />}>
-              <Route path="/player" element={<PlayerDashboard />} />
-              <Route path="/player/:id" element={<PlayerPerformance />} />
-              <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
-              <Route path="/player/batting" element={<BattingAnalysisPage />} />
-              <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
-              <Route path="/player/subscription" element={<SubscriptionPage />} />
-              <Route path="/player/chat" element={<ChatPage />} />
-              <Route path="/player/profile" element={<PlayerProfilePage />} />
-              <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
-              <Route path="/player/gamification" element={<PlayerGamification />} />
-              <Route path="/player/videos" element={<PlayerVideosPage />} />
-              <Route path="/player/performance" element={<PlayerProfile />} />
-              <Route path="/player/settings" element={<PlayerSettingsPage />} />
-            </Route>
+            <Route path="/player" element={<PlayerDashboard />} />
+            <Route path="/player/profile" element={<PlayerProfile />} />
+            <Route path="/player/profile/edit" element={<PlayerProfilePage />} />
+            <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
+            <Route path="/player/batting" element={<BattingAnalysisPage />} />
+            <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
+            <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
+            <Route path="/player/subscription" element={<SubscriptionPage />} />
+            <Route path="/player/chat" element={<ChatPage />} />
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="/player/billing" element={<BillingPage />} />
+            <Route path="/player/:id" element={<PlayerPerformance />} />
+            <Route path="/browse-content" element={<BrowseContentPage />} />
+            <Route path="/coach/messages" element={<CoachMessagesPage />} />
           </Route>
         </Route>
 
         {/* Coach */}
         <Route element={<ProtectedRoute />}>
           <Route element={<RoleGuard allowedRoles={['COACH', 'ADMIN']} />}>
-            <Route element={<DashboardLayout />}>
-              <Route path="/coach" element={<CoachDashboard />} />
-              <Route path="/coach/upload" element={<UploadPage />} />
-              <Route path="/coach/chat" element={<CoachChatPage />} />
-              <Route path="/coach/profile" element={<CoachProfilePage />} />
-              <Route path="/coach/player/:id" element={<PlayerPerformance />} />
-              <Route path="/coach/submissions" element={<CoachInboxPage />} />
-              <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
-              <Route path="/coach/scouting" element={<ScoutingPage />} />
+            <Route element={<CoachStatusGuard />}>
+              <Route element={<DashboardLayout />}>
+                <Route path="/coach" element={<CoachDashboard />} />
+                <Route path="/coach/upload" element={<UploadPage />} />
+                <Route path="/coach/player/:id" element={<PlayerPerformance />} />
+                <Route path="/coach/players" element={<CoachMyPlayersPage />} />
+                <Route path="/coach/submissions" element={<CoachInboxPage />} />
+                <Route path="/coach/submissions/:submissionId/review" element={<CoachReviewPage />} />
+                <Route path="/coach/sessions" element={<CoachSessionsPage />} />
+                <Route path="/coach/availability" element={<CoachAvailabilityPage />} />
+                <Route path="/coach/training-plans" element={<CoachTrainingPlansPage />} />
+                <Route path="/coach/analytics" element={<CoachAnalyticsPage />} />
+                <Route path="/coach/reviews" element={<CoachReviewsPage />} />
+                <Route path="/coach/earnings" element={<CoachEarningsPage />} />
+                <Route path="/coach/content" element={<CoachContentPage />} />
+                <Route path="/coach/settings" element={<CoachSettingsPage />} />
+                <Route path="/coach/chat" element={<CoachChatPage />} />
+                <Route path="/chat" element={<CoachChatPage />} />
+                <Route path="/coach/subscription" element={<SubscriptionPage />} />
+                <Route path="/coach/billing" element={<BillingPage />} />
+                <Route path="/coach/scouting" element={<ScoutingPage />} />
+              </Route>
             </Route>
           </Route>
         </Route>
@@ -246,11 +235,11 @@ export default function AppRouter() {
             </Route>
           </Route>
         </Route>
+        
 
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
-        <Route path="/profile" element={<Navigate to="/dashboard" replace />} />
-        <Route path="/settings" element={<ProfileDispatcher />} />
+        <Route path="/profile" element={<Navigate to="/player/profile" replace />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />
@@ -259,4 +248,4 @@ export default function AppRouter() {
   );
 }
 
-export { ProtectedRoute, RoleGuard, GuestRoute, DashboardRedirect };
+export { ProtectedRoute, RoleGuard, GuestRoute, DashboardRedirect, CoachStatusGuard };
