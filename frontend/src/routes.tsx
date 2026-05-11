@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore, useSubscriptionStore } from './store/authStore';
 import type { UserRole } from './store/authStore';
 import { useMemo } from 'react';
 
@@ -232,8 +232,6 @@ export default function AppRouter() {
               <Route path="/player/settings" element={<PlayerSettingsPage />} />
               <Route path="/player/billing" element={<BillingPage />} />
               <Route path="/browse-content" element={<BrowseContentPage />} />
-              <Route path="/coach/messages" element={<CoachMessagesPage />} />
-              
             </Route>
           </Route>
         </Route>
@@ -285,7 +283,6 @@ export default function AppRouter() {
         {/* Legacy */}
         <Route path="/highlights" element={<Navigate to="/library" replace />} />
         <Route path="/profile" element={<Navigate to="/player/profile" replace />} />
-        <Route path="/settings" element={<ProfileDispatcher />} />
 
         {/* Fallback */}
         <Route path="*" element={<Navigate to="/" replace />} />

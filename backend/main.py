@@ -554,21 +554,6 @@ except Exception as e:
 
 # POST /internal/cron/expire-subscriptions
 register_expiry_endpoint(app)
-# Performance routes
-app.include_router(performance.router, prefix="/api/v1", tags=["performance"])
-logger.info("Performance routes enabled")
-
-# Notification routes
-app.include_router(notification.router, prefix="/api/v1", tags=["notifications"])
-logger.info("Notification routes enabled")
-
-# Match routes
-app.include_router(match.router, prefix="/api/v1", tags=["matches"])
-logger.info("Match routes enabled")
-
-# Billing routes
-app.include_router(billing.router, prefix="/api/v1", tags=["billing"])
-logger.info("Billing routes enabled")
 
 
 # Entry Point

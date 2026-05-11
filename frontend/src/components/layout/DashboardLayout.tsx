@@ -30,7 +30,6 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/my-coaches", icon: "fas fa-chalkboard-teacher", label: "My Coaches" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/browse-content", icon: "fas fa-graduation-cap", label: "Learning Hub" },
-    { to: "/coach/messages", icon: "fas fa-comments", label: "Messages" },
     { to: "/chat", icon: "fas fa-robot", label: "AI Chat" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
@@ -102,76 +101,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     navigate("/login");
   };
 
-  const navItems = dashboardItems[accountType || 'PLAYER'] || dashboardItems.PLAYER;
-  const currentTier = (subscriptionTier || 'free') as Tier;
-
-  const canSeeNavItem = (item: NavItem): boolean => {
-    if (!item.minTier) return true;
-    return TIER_HIERARCHY[currentTier] >= TIER_HIERARCHY[item.minTier];
-  };
-
-  const renderNavItem = (item: NavItem, index: number, mobile = false) => {
-    if (!canSeeNavItem(item)) return null;
-
-    return (
-      <motion.div
-        key={item.to}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ delay: index * 0.1 }}
-      >
-        <NavLink
-          to={item.to}
-          end={item.label === 'Dashboard'}
-          onClick={() => setSidebarOpen(false)}
-          className={({ isActive }) =>
-            mobile
-              ? `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive
-                ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border border-white/20'
-                : 'text-white/60 hover:text-white hover:bg-white/5'
-              }`
-              : `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group border ${theme === 'dark'
-                ? isActive
-                  ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border-white/20'
-                  : 'text-white/60 hover:text-white hover:bg-white/5 border-transparent'
-                : isActive
-                  ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-blue-200'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 border-transparent'
-              }`
-          }
-        >
-          {({ isActive }) => (
-            <>
-              <div
-                className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${mobile
-                    ? isActive
-                      ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                      : 'bg-white/10'
-                    : theme === 'dark'
-                      ? isActive
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                        : 'bg-white/10 group-hover:bg-white/20'
-                      : isActive
-                        ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                        : 'bg-gray-200 group-hover:bg-gray-300'
-                  }`}
-              >
-                <i className={`${item.icon} text-sm ${isActive ? 'text-white' : mobile ? 'text-white/60' : theme === 'dark' ? 'text-white/60 group-hover:text-white' : 'text-gray-600 group-hover:text-gray-900'
-                  }`}></i>
-              </div>
-              <span className="font-medium">{item.label}</span>
-              {!mobile && isActive && (
-                <motion.div
-                  layoutId="activeIndicator"
-                  className="ml-auto w-2 h-2 rounded-full bg-gradient-to-r from-blue-400 to-purple-500"
-                />
-              )}
-            </>
-          )}
-        </NavLink>
-      </motion.div>
-    );
-  // Get role-specific navigation items
+  const navItems = dashboardItems[user?.role || 'PLAYER'] || dashboardItems.PLAYER;
 
 
   const getRoleBadge = () => {

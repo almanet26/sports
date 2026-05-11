@@ -17,6 +17,9 @@ from database.models.bowling import BowlingAnalysis
 from database.models.batting import BattingAnalysis
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.subscription import Subscription
+from database.models.video_annotation import VideoAnnotation
+from database.models.coach_player import CoachPlayer
+from database.models.academy_branding import AcademyBranding
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
@@ -76,6 +79,12 @@ __all__ = [
     # Submissions
     "VideoSubmission",
     "SubmissionStatus",
+    # Subscription
+    "Subscription",
+    # Coach features
+    "VideoAnnotation",
+    "CoachPlayer",
+    "AcademyBranding",
     # Coach Content
     "CoachContent",
     "ChatHistory",
