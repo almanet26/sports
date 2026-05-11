@@ -99,6 +99,18 @@ def get_coach_reviews(
     return {"reviews": result, "total": len(result), "average_rating": avg}
 
 
+@router.get("/coach/me", response_model=dict)
+def get_my_reviews(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Get reviews for the current coach"""
+    if current_user.role != "COACH":
+        raise HTTPException(status_code=403, detail="Coaches only")
+    
+    return get_coach_reviews(current_user.id, db, current_user)
+
+
 @router.get("/player/my-coaches", response_model=dict)
 def get_player_coaches(
     db: Session = Depends(get_db),

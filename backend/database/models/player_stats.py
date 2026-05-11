@@ -1,14 +1,13 @@
-from sqlalchemy import Column, Integer, Float
-from sqlalchemy.ext.declarative import declarative_base
-
-Base = declarative_base()
+from sqlalchemy import Column, Integer, Float, String, ForeignKey
+from sqlalchemy.orm import relationship
+from database.config import Base
 
 
 class PlayerStats(Base):
     __tablename__ = "player_stats"
 
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, nullable=False)
+    player_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
     # Batting stats
     matches = Column(Integer, default=0)
@@ -25,3 +24,5 @@ class PlayerStats(Base):
     # Fielding stats
     catches = Column(Integer, default=0)
     run_outs = Column(Integer, default=0)
+
+    player = relationship("User", foreign_keys=[player_id], backref="player_stats")

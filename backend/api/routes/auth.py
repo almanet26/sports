@@ -73,7 +73,6 @@ async def register(
     role: str = Form(...),          # PLAYER | COACH
     phone: str = Form(None),
     team: str = Form(None),
-    coach_document: UploadFile = File(None),
     db: Session = Depends(get_db),
 ):
     role = role.upper()
@@ -117,16 +116,14 @@ async def register(
         email=email,
         password_hash=get_password_hash(password),
         name=name,
-        role=role,                  # permanent account type: PLAYER | COACH
+        role=role,
         phone=phone,
         team=team,
-        coach_document_url=coach_document_url,
-        coach_status="pending" if role == "COACH" else None,
+        coach_status='incomplete' if role == 'COACH' else None,
     )
     db.add(new_user)
-    db.flush()  # get new_user.id without committing
+    db.flush()
 
-    # ── seed subscription in the same transaction ─────────────────────────────
     _seed_subscription(new_user.id, role, db)
     db.commit()
     db.refresh(new_user)
@@ -138,7 +135,167 @@ async def register(
     return _build_profile_response(new_user, sub)
 
 
-# ── Login ──────────────────────────────────────────────────────────────────────
+
+@router.post("/coach-profile", response_model=UserResponse)
+async def complete_coach_profile(
+    phone: str = Form(None),
+    team: str = Form(None),
+    profile_bio: str = Form(None),
+    specialization: str = Form(None),
+    coach_category: str = Form(None),
+    coach_document: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    if current_user.role != 'COACH':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can use this endpoint")
+    if current_user.coach_status not in ('incomplete',):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Profile already submitted for review")
+
+    ALLOWED_EXTENSIONS = {'.pdf', '.jpg', '.jpeg', '.png', '.doc', '.docx'}
+    file_extension = os.path.splitext(coach_document.filename)[1].lower()
+    if file_extension not in ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED_EXTENSIONS))}")
+
+    MAX_DOC_SIZE = 5 * 1024 * 1024  # 5MB limit for documents
+    try:
+        content = await coach_document.read()
+        if len(content) > MAX_DOC_SIZE:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Maximum size is 5MB.")
+
+        import base64
+        encoded = base64.b64encode(content).decode('utf-8')
+        mime = coach_document.content_type or 'application/octet-stream'
+        coach_document_url = f"data:{mime};base64,{encoded}"
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Coach document upload failed: %s", e)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to upload document. Please try again.")
+    finally:
+        await coach_document.close()
+
+    if phone: current_user.phone = phone
+    if team: current_user.team = team
+    if profile_bio: current_user.profile_bio = profile_bio
+    if specialization:
+        import json
+        try:
+            current_user.specialization = json.loads(specialization)
+        except Exception:
+            current_user.specialization = [specialization]
+    if coach_category: current_user.coach_category = coach_category
+    current_user.coach_document_url = coach_document_url
+    current_user.coach_status = 'pending'
+    db.commit()
+    db.refresh(current_user)
+    logger.info("Coach profile completed: %s, status -> pending", current_user.email)
+    sub = _get_active_sub(current_user.id, db)
+    return _build_profile_response(current_user, sub)
+
+
+@router.post("/profile-image")
+async def upload_profile_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace profile image for any user."""
+    ALLOWED_IMAGE = {'.jpg', '.jpeg', '.png', '.webp', '.gif'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_IMAGE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid image format. Allowed: jpg, jpeg, png, webp, gif")
+
+    MAX_SIZE = 5 * 1024 * 1024  # 5MB
+    try:
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 5MB.")
+
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+        if gcs_bucket:
+            import google.cloud.storage as gcs_lib
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            gcs_client = gcs_lib.Client()
+            bucket = gcs_client.bucket(gcs_bucket)
+            blob = bucket.blob(f"profile_images/{unique_filename}")
+            blob.upload_from_string(content, content_type=file.content_type or "image/jpeg")
+            profile_image_url = f"https://storage.googleapis.com/{gcs_bucket}/profile_images/{unique_filename}"
+        else:
+            storage_dir = Path("storage/profile_images")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            file_path = storage_dir / unique_filename
+            with open(file_path, "wb") as buf:
+                buf.write(content)
+            profile_image_url = f"/static/profile_images/{unique_filename}"
+
+        current_user.profile_image_url = profile_image_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"Profile image uploaded for user: {current_user.email}")
+        return {"profile_image_url": profile_image_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Profile image upload failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
+
+
+@router.post("/coach-intro-video")
+async def upload_intro_video(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload intro video for coaches."""
+    if current_user.role != 'COACH':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
+    
+    ALLOWED_VIDEO = {'.mp4', '.avi', '.mov', '.wmv', '.webm'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_VIDEO:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid video format. Allowed: mp4, avi, mov, wmv, webm")
+
+    MAX_SIZE = 50 * 1024 * 1024  # 50MB
+    try:
+        content = await file.read()
+        if len(content) > MAX_SIZE:
+            raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large. Max 50MB.")
+
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+        if gcs_bucket:
+            import google.cloud.storage as gcs_lib
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            gcs_client = gcs_lib.Client()
+            bucket = gcs_client.bucket(gcs_bucket)
+            blob = bucket.blob(f"coach_intro_videos/{unique_filename}")
+            blob.upload_from_string(content, content_type=file.content_type or "video/mp4")
+            intro_video_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_intro_videos/{unique_filename}"
+        else:
+            storage_dir = Path("storage/coach_intro_videos")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            file_path = storage_dir / unique_filename
+            with open(file_path, "wb") as buf:
+                buf.write(content)
+            intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
+
+        current_user.intro_video_url = intro_video_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(f"Intro video uploaded for coach: {current_user.email}")
+        return {"intro_video_url": intro_video_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Intro video upload failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+    finally:
+        await file.close()
+
 
 @router.post("/login", response_model=TokenResponse)
 def login(login_data: UserLogin, db: Session = Depends(get_db)):
@@ -151,12 +308,7 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if user.role == "COACH" and user.coach_status == "pending":
-        raise HTTPException(
-            status_code=403,
-            detail="Your account is pending verification. Please wait until Admin reviews your documents.",
-        )
-    if user.role == "COACH" and user.coach_status == "rejected":
+    if user.role == 'COACH' and user.coach_status == 'rejected':
         raise HTTPException(
             status_code=403,
             detail="Your coach application has been rejected. Please contact support.",
@@ -204,13 +356,21 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": int(access_token_expires.total_seconds()),
+        "user": {
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.name,
+            "role": user.role,
+            "team": user.team,
+            "jersey_number": user.jersey_number,
+            "coach_status": user.coach_status,
+        },
     }
 
 
 # ── /me ────────────────────────────────────────────────────────────────────────
 
 def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
-    """Merge user row with active subscription for /me and /register responses."""
     return {
         "id": user.id,
         "account_type": user.role,
@@ -226,12 +386,12 @@ def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
         "intro_video_url": user.intro_video_url,
         "profile_image_url": user.profile_image_url,
         "coach_category": user.coach_category,
+        "coach_status": user.coach_status,
         "is_verified": user.is_verified,
         "created_at": user.created_at,
         "last_login": user.last_login,
         "subscription_role": (
-            sub.role
-            if sub
+            sub.role if sub
             else ("coach_free" if user.role == "COACH" else ("academy" if user.role == "ADMIN" else "free"))
         ),
         "subscription_status": sub.status if sub else "inactive",
@@ -359,8 +519,7 @@ def change_password(
 def get_notification_preferences(
     current_user: User = Depends(get_current_user),
 ):
-    default = {"email_submissions": True, "email_published": True,
-               "email_messages": False, "push_all": True}
+    default = {"email_submissions": True, "email_published": True, "email_messages": False, "push_all": True}
     return current_user.notification_preferences or default
 
 

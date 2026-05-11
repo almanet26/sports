@@ -160,12 +160,7 @@ export default function AdminDashboard() {
         totalCoaches: statsResponse.data.total_coaches || 0,
         pendingCoaches: statsResponse.data.pending_coaches || 0,
         subscription_breakdown: statsResponse.data.subscription_breakdown,
-        revenue: statsResponse.data.revenue
-          ? {
-              monthly: statsResponse.data.revenue.this_month ?? statsResponse.data.revenue.monthly ?? 0,
-              yearly: statsResponse.data.revenue.last_month ?? statsResponse.data.revenue.yearly ?? 0,
-            }
-          : undefined,
+        revenue: statsResponse.data.revenue,
       });
 
       // Store the extended platform stats if the new fields are present
@@ -352,7 +347,7 @@ export default function AdminDashboard() {
               </div>
             </div>
             <div className="text-right">
-              <p className="text-2xl font-bold text-green-400">${(stats.revenue?.monthly ?? 0).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-green-400">${stats.revenue?.monthly.toLocaleString() || 0}</p>
               <p className="text-xs text-white/60">MRR</p>
             </div>
           </div>
@@ -436,11 +431,11 @@ export default function AdminDashboard() {
           <div className="mt-6 pt-4 border-t border-white/10">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-white/60">Monthly Revenue</span>
-              <span className="font-semibold text-green-400">${(stats.revenue?.monthly ?? 0).toLocaleString()}</span>
+              <span className="font-semibold text-green-400">${stats.revenue?.monthly.toLocaleString() || 0}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-white/60">Yearly Projection</span>
-              <span className="font-semibold text-blue-400">${(stats.revenue?.yearly ?? 0).toLocaleString()}</span>
+              <span className="font-semibold text-blue-400">${stats.revenue?.yearly.toLocaleString() || 0}</span>
             </div>
           </div>
         </motion.div>
@@ -448,12 +443,8 @@ export default function AdminDashboard() {
 
       {/* Metrics Cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5 }}
-          className="glass rounded-2xl p-6 border border-white/20"
-        >
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}
+          className="glass rounded-2xl p-6 border border-white/20">
           <div className="flex items-center gap-3 mb-3">
             <div className="w-10 h-10 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 flex items-center justify-center">
               <i className="fas fa-users text-white"></i>

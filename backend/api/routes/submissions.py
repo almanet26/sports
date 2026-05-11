@@ -135,6 +135,76 @@ public_router = APIRouter(tags=["submissions-public"])
 
 _COACH_SUBMISSION_TIERS = ("coach_starter", "coach_pro", "academy")
 
+
+# ── Pydantic Models (must be defined before endpoints) ──────────────────────
+
+class PlayerSubmissionCreate(BaseModel):
+    coach_id: str
+    note: str | None = None
+    job_id: str | None = None
+
+
+class PlayerSubmissionItem(BaseModel):
+    id: str
+    coach_name: str | None = None
+    job_id: str | None = None
+    status: str
+    note: str | None = None
+    created_at: str
+    reviewed_at: str | None = None
+
+
+class PlayerSubmissionListResponse(BaseModel):
+    submissions: list[PlayerSubmissionItem]
+    total: int
+
+
+class PlayerProgressPlayer(BaseModel):
+    id: str
+    name: str
+    email: str
+    team: str | None = None
+
+
+class PlayerProgressSummary(BaseModel):
+    total_submissions: int
+    published_reports: int
+    batting_submissions: int
+    bowling_submissions: int
+    completion_rate: float
+    days_since_last_submission: int | None
+    improvement_trend: str
+
+
+class PlayerProgressFlaw(BaseModel):
+    flaw: str
+    count: int
+
+
+class PlayerProgressFlawTrend(BaseModel):
+    first_report_flaw_count: int
+    latest_report_flaw_count: int
+    delta: int
+    trend: str
+
+
+class PlayerProgressTimelineItem(BaseModel):
+    id: str
+    analysis_type: str
+    status: str
+    created_at: str
+    published_at: str | None = None
+    flaw_count: int
+    pdf_report_url: str | None = None
+
+
+class PlayerProgressResponse(BaseModel):
+    player: PlayerProgressPlayer
+    summary: PlayerProgressSummary
+    flaw_frequency: list[PlayerProgressFlaw]
+    flaw_trend: PlayerProgressFlawTrend | None
+    submission_timeline: list[PlayerProgressTimelineItem]
+
 #  Storage dirs — use /tmp/ on Cloud Run (ephemeral), local storage/ for dev
 _USE_TMP = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
 if _USE_TMP:
@@ -946,74 +1016,6 @@ def player_progress_by_id(
             raise HTTPException(status_code=404, detail="Player not found")
 
     return _build_player_progress(db, player)
-
-
-class PlayerSubmissionCreate(BaseModel):
-    coach_id: str
-    note: str | None = None
-    job_id: str | None = None
-
-
-class PlayerSubmissionItem(BaseModel):
-    id: str
-    coach_name: str | None = None
-    job_id: str | None = None
-    status: str
-    note: str | None = None
-    created_at: str
-    reviewed_at: str | None = None
-
-
-class PlayerSubmissionListResponse(BaseModel):
-    submissions: list[PlayerSubmissionItem]
-    total: int
-
-
-class PlayerProgressPlayer(BaseModel):
-    id: str
-    name: str
-    email: str
-    team: str | None = None
-
-
-class PlayerProgressSummary(BaseModel):
-    total_submissions: int
-    published_reports: int
-    batting_submissions: int
-    bowling_submissions: int
-    completion_rate: float
-    days_since_last_submission: int | None
-    improvement_trend: str
-
-
-class PlayerProgressFlaw(BaseModel):
-    flaw: str
-    count: int
-
-
-class PlayerProgressFlawTrend(BaseModel):
-    first_report_flaw_count: int
-    latest_report_flaw_count: int
-    delta: int
-    trend: str
-
-
-class PlayerProgressTimelineItem(BaseModel):
-    id: str
-    analysis_type: str
-    status: str
-    created_at: str
-    published_at: str | None = None
-    flaw_count: int
-    pdf_report_url: str | None = None
-
-
-class PlayerProgressResponse(BaseModel):
-    player: PlayerProgressPlayer
-    summary: PlayerProgressSummary
-    flaw_frequency: list[PlayerProgressFlaw]
-    flaw_trend: PlayerProgressFlawTrend | None
-    submission_timeline: list[PlayerProgressTimelineItem]
 
 
 @public_router.post("/submissions", status_code=201, response_model=PlayerSubmissionItem)

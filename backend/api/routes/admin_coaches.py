@@ -3,7 +3,7 @@ Admin API routes for coach approval.
 """
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from sqlalchemy.orm import Session
 from sqlalchemy import func, distinct
 from typing import Optional, List
