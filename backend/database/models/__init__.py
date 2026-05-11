@@ -30,8 +30,6 @@ from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
 from database.models.coach_content import CoachContent, ContentType
 from database.models.message import Message
-from database.models.transaction import Transaction, TransactionType, TransactionStatus
-from database.models.review import Review
 from database.models.coach_review import CoachReview
 from database.models.match import Match
 
@@ -77,7 +75,7 @@ __all__ = [
     "BowlingAnalysis",
     # Batting
     "BattingAnalysis",
-    # Submissions 
+    # Submissions
     "VideoSubmission",
     "SubmissionStatus",
     # Subscriptions and quota

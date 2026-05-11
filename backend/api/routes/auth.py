@@ -4,6 +4,7 @@ from datetime import timedelta, datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import logging
 import secrets
 import os
@@ -77,7 +78,8 @@ async def register(
 ):
     role = role.upper()
     if role not in ("PLAYER", "COACH"):
-        raise HTTPException(status_code=400, detail="role must be PLAYER or COACH")
+        raise HTTPException(
+            status_code=400, detail="role must be PLAYER or COACH")
 
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -88,11 +90,13 @@ async def register(
         ALLOWED = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
         ext = os.path.splitext(coach_document.filename)[1].lower()
         if ext not in ALLOWED:
-            raise HTTPException(status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED))}")
+            raise HTTPException(
+                status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED))}")
         try:
             content = await coach_document.read()
             if len(content) > 10 * 1024 * 1024:
-                raise HTTPException(status_code=413, detail="File too large. Maximum size is 10MB.")
+                raise HTTPException(
+                    status_code=413, detail="File too large. Maximum size is 10MB.")
             storage_dir = Path("storage/coach_documents")
             storage_dir.mkdir(parents=True, exist_ok=True)
             unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
@@ -103,7 +107,8 @@ async def register(
             raise
         except Exception as exc:
             logger.error("Coach document upload failed: %s", exc)
-            raise HTTPException(status_code=500, detail="Failed to upload document. Please try again.")
+            raise HTTPException(
+                status_code=500, detail="Failed to upload document. Please try again.")
         finally:
             await coach_document.close()
 
@@ -126,7 +131,8 @@ async def register(
     db.commit()
     db.refresh(new_user)
 
-    logger.info("New user registered: %s (ID: %s, role: %s)", new_user.email, new_user.id, role)
+    logger.info("New user registered: %s (ID: %s, role: %s)",
+                new_user.email, new_user.id, role)
 
     sub = _get_active_sub(new_user.id, db)
     return _build_profile_response(new_user, sub)
@@ -170,7 +176,8 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
 
     user.last_login = datetime.now(timezone.utc)
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
             "sub": user.email,
@@ -247,7 +254,8 @@ def logout(current_user: User = Depends(get_current_user), db: Session = Depends
     try:
         db.query(UserSession).filter(UserSession.user_id == user_id).delete()
         db.commit()
-        logger.info("User logged out: %s (ID: %s)", current_user.email, user_id)
+        logger.info("User logged out: %s (ID: %s)",
+                    current_user.email, user_id)
     except Exception as exc:
         db.rollback()
         logger.error("Logout error for user %s: %s", user_id, exc)
@@ -261,7 +269,7 @@ def update_current_user(
     db: Session = Depends(get_db),
 ):
     from api.routes.notification import create_notification
-    
+
     update_dict = update_data.model_dump(exclude_unset=True)
 
     for field, value in update_dict.items():
@@ -270,7 +278,7 @@ def update_current_user(
     db.commit()
     db.refresh(current_user)
     logger.info("User profile updated: %s", current_user.email)
-    
+
     # Create notification
     create_notification(
         db=db,
@@ -320,18 +328,20 @@ def change_password(
 ):
     from utils.auth import verify_password, get_password_hash
     from api.routes.notification import create_notification
-    
+
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
 
     if not verify_password(current_password, current_user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Current password is incorrect")
     if len(new_password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="New password must be at least 8 characters")
 
     current_user.password_hash = get_password_hash(new_password)
     db.commit()
-    
+
     # Create notification
     create_notification(
         db=db,
@@ -340,7 +350,7 @@ def change_password(
         message="Your password was successfully changed. If you didn't make this change, please contact support immediately.",
         notif_type="system"
     )
-    
+
     logger.info(f"Password changed for user: {current_user.email}")
     return None
 
@@ -349,7 +359,8 @@ def change_password(
 def get_notification_preferences(
     current_user: User = Depends(get_current_user),
 ):
-    default = {"email_submissions": True, "email_published": True, "email_messages": False, "push_all": True}
+    default = {"email_submissions": True, "email_published": True,
+               "email_messages": False, "push_all": True}
     return current_user.notification_preferences or default
 
 
@@ -365,6 +376,11 @@ def update_notification_preferences(
     return current_user.notification_preferences
 
 
+class IntroVideoResponse(BaseModel):
+    """Response model for intro video upload endpoint."""
+    intro_video_url: str
+
+
 @router.post("/coach-intro-video", response_model=IntroVideoResponse)
 async def upload_intro_video(
     file: UploadFile = File(...),
@@ -373,7 +389,8 @@ async def upload_intro_video(
 ):
     """Upload or replace coach intro video — streams directly to GCS, falls back to local disk in dev."""
     if current_user.role != 'COACH':
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only coaches can upload intro videos")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only coaches can upload intro videos")
 
     ALLOWED_VIDEO = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
     ext = os.path.splitext(file.filename)[1].lower()
@@ -433,14 +450,15 @@ async def upload_intro_video(
         current_user.intro_video_url = intro_video_url
         db.commit()
         db.refresh(current_user)
-        logger.info(f"Intro video uploaded for coach: {current_user.email} -> {intro_video_url}")
+        logger.info(
+            f"Intro video uploaded for coach: {current_user.email} -> {intro_video_url}")
         return IntroVideoResponse(intro_video_url=intro_video_url)
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Intro video upload failed: {e}")
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Upload failed. Please try again.")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Upload failed. Please try again.")
     finally:
         await file.close()
->>>>>>> 7754698 (Dynamic notification page)
