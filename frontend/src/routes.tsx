@@ -211,6 +211,7 @@ export default function AppRouter() {
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
             <Route path="/billing" element={<BillingPage />} />
+            <Route path="/chat" element={<ChatPage />} />
           </Route>
         </Route>
 
@@ -228,7 +229,7 @@ export default function AppRouter() {
               <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
               <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
               <Route path="/player/subscription" element={<SubscriptionPage />} />
-              <Route path="/player/chat" element={<ChatPage />} />
+
               <Route path="/player/settings" element={<PlayerSettingsPage />} />
               <Route path="/player/billing" element={<BillingPage />} />
               <Route path="/browse-content" element={<BrowseContentPage />} />
@@ -253,10 +254,10 @@ export default function AppRouter() {
                 <Route path="/coach/analytics" element={<CoachAnalyticsPage />} />
                 <Route path="/coach/reviews" element={<CoachReviewsPage />} />
                 <Route path="/coach/earnings" element={<CoachEarningsPage />} />
+                <Route path="/coach/messages" element={<CoachMessagesPage />} />
                 <Route path="/coach/content" element={<CoachContentPage />} />
                 <Route path="/coach/settings" element={<CoachSettingsPage />} />
-                <Route path="/coach/chat" element={<CoachChatPage />} />
-                <Route path="/chat" element={<CoachChatPage />} />
+
                 <Route path="/coach/subscription" element={<SubscriptionPage />} />
                 <Route path="/coach/billing" element={<BillingPage />} />
                 <Route path="/coach/scouting" element={<ScoutingPage />} />
