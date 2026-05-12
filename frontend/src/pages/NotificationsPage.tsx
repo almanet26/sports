@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { notificationsApi, type NotificationItem } from "../lib/api";
 
+// ── Category config ──────────────────────────────────────────────────────────
 type FilterKey = "all" | "unread" | "match" | "report" | "message" | "request" | "system";
 
 interface CategoryConfig {
@@ -37,6 +38,7 @@ const FILTERS: { key: FilterKey; label: string }[] = [
   { key: "system",  label: "System"   },
 ];
 
+// ── Helpers ──────────────────────────────────────────────────────────────────
 function timeAgo(dateStr: string): string {
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins  = Math.floor(diff / 60000);
@@ -53,6 +55,7 @@ function getCat(type: string): CategoryConfig {
   return CATEGORY_MAP[type?.toLowerCase()] ?? DEFAULT_CAT;
 }
 
+// ── Component ────────────────────────────────────────────────────────────────
 export default function NotificationsPage() {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount]     = useState(0);
@@ -217,15 +220,18 @@ export default function NotificationsPage() {
                       : "border-blue-400/20 bg-blue-500/[0.04] hover:border-blue-400/30"
                   }`}
                 >
+                  {/* Unread dot */}
                   {!n.is_read && (
                     <span className="absolute top-4 right-12 w-2 h-2 rounded-full bg-blue-400" />
                   )}
 
                   <div className="flex items-start gap-4">
+                    {/* Icon */}
                     <div className={`flex-shrink-0 w-11 h-11 rounded-xl bg-gradient-to-r ${cat.gradient} flex items-center justify-center`}>
                       <i className={`${cat.icon} text-white text-sm`}></i>
                     </div>
 
+                    {/* Body */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between gap-2">
                         <p className={`font-semibold text-sm leading-snug ${n.is_read ? "text-white/70" : "text-white"}`}>
@@ -242,6 +248,7 @@ export default function NotificationsPage() {
                     </div>
                   </div>
 
+                  {/* Delete button */}
                   <button
                     onClick={e => { e.stopPropagation(); handleDelete(n.id); }}
                     disabled={deletingId === n.id}

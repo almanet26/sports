@@ -4,6 +4,7 @@ from datetime import timedelta, datetime, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import logging
 import secrets
 import os
@@ -76,11 +77,41 @@ async def register(
 ):
     role = role.upper()
     if role not in ("PLAYER", "COACH"):
-        raise HTTPException(status_code=400, detail="role must be PLAYER or COACH")
+        raise HTTPException(
+            status_code=400, detail="role must be PLAYER or COACH")
 
     if db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
 
+    # ── coach document upload ─────────────────────────────────────────────────
+    coach_document_url = None
+    if coach_document and role == "COACH":
+        ALLOWED = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+        ext = os.path.splitext(coach_document.filename)[1].lower()
+        if ext not in ALLOWED:
+            raise HTTPException(
+                status_code=400, detail=f"Invalid file type. Allowed: {', '.join(sorted(ALLOWED))}")
+        try:
+            content = await coach_document.read()
+            if len(content) > 10 * 1024 * 1024:
+                raise HTTPException(
+                    status_code=413, detail="File too large. Maximum size is 10MB.")
+            storage_dir = Path("storage/coach_documents")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+            with open(storage_dir / unique_filename, "wb") as buf:
+                buf.write(content)
+            coach_document_url = f"coach_documents/{unique_filename}"
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.error("Coach document upload failed: %s", exc)
+            raise HTTPException(
+                status_code=500, detail="Failed to upload document. Please try again.")
+        finally:
+            await coach_document.close()
+
+    # ── create user ───────────────────────────────────────────────────────────
     new_user = User(
         email=email,
         password_hash=get_password_hash(password),
@@ -97,7 +128,8 @@ async def register(
     db.commit()
     db.refresh(new_user)
 
-    logger.info("New user registered: %s (ID: %s, role: %s)", new_user.email, new_user.id, role)
+    logger.info("New user registered: %s (ID: %s, role: %s)",
+                new_user.email, new_user.id, role)
 
     sub = _get_active_sub(new_user.id, db)
     return _build_profile_response(new_user, sub)
@@ -296,7 +328,8 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
 
     user.last_login = datetime.now(timezone.utc)
 
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token_expires = timedelta(
+        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
         data={
             "sub": user.email,
@@ -381,7 +414,8 @@ def logout(current_user: User = Depends(get_current_user), db: Session = Depends
     try:
         db.query(UserSession).filter(UserSession.user_id == user_id).delete()
         db.commit()
-        logger.info("User logged out: %s (ID: %s)", current_user.email, user_id)
+        logger.info("User logged out: %s (ID: %s)",
+                    current_user.email, user_id)
     except Exception as exc:
         db.rollback()
         logger.error("Logout error for user %s: %s", user_id, exc)
@@ -394,12 +428,26 @@ def update_current_user(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    for field, value in update_data.model_dump(exclude_unset=True).items():
+    from api.routes.notification import create_notification
+
+    update_dict = update_data.model_dump(exclude_unset=True)
+
+    for field, value in update_dict.items():
         if hasattr(current_user, field):
             setattr(current_user, field, value)
     db.commit()
     db.refresh(current_user)
     logger.info("User profile updated: %s", current_user.email)
+
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Profile Updated",
+        message="Your profile information has been successfully updated.",
+        notif_type="system"
+    )
+
     sub = _get_active_sub(current_user.id, db)
     return _build_profile_response(current_user, sub)
 
@@ -439,16 +487,31 @@ def change_password(
     db: Session = Depends(get_db),
 ):
     from utils.auth import verify_password, get_password_hash
+    from api.routes.notification import create_notification
+
     current_password = data.get("current_password", "")
     new_password = data.get("new_password", "")
 
     if not verify_password(current_password, current_user.password_hash):
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Current password is incorrect")
     if len(new_password) < 8:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New password must be at least 8 characters")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="New password must be at least 8 characters")
 
     current_user.password_hash = get_password_hash(new_password)
     db.commit()
+
+    # Create notification
+    create_notification(
+        db=db,
+        user_id=current_user.id,
+        title="Password Changed",
+        message="Your password was successfully changed. If you didn't make this change, please contact support immediately.",
+        notif_type="system"
+    )
+
+    logger.info(f"Password changed for user: {current_user.email}")
     return None
 
 
@@ -470,3 +533,91 @@ def update_notification_preferences(
     db.commit()
     db.refresh(current_user)
     return current_user.notification_preferences
+
+
+class IntroVideoResponse(BaseModel):
+    """Response model for intro video upload endpoint."""
+    intro_video_url: str
+
+
+@router.post("/coach-intro-video", response_model=IntroVideoResponse)
+async def upload_intro_video(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Upload or replace coach intro video — streams directly to GCS, falls back to local disk in dev."""
+    if current_user.role != 'COACH':
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Only coaches can upload intro videos")
+
+    ALLOWED_VIDEO = {'.mp4', '.mov', '.avi', '.webm', '.mkv'}
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ALLOWED_VIDEO:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid video format. Allowed: mp4, mov, avi, webm, mkv"
+        )
+
+    unique_filename = f"{secrets.token_urlsafe(16)}{ext}"
+
+    try:
+        gcs_bucket = os.getenv("GCS_BUCKET_NAME", "")
+
+        if gcs_bucket:
+            # Stream directly to GCS — never loads full file into RAM
+            import google.cloud.storage as gcs_lib
+            gcs_client = gcs_lib.Client()
+            bucket = gcs_client.bucket(gcs_bucket)
+            blob = bucket.blob(f"coach_intro_videos/{unique_filename}")
+
+            CHUNK = 256 * 1024  # 256 KB chunks
+            with blob.open("wb", content_type=file.content_type or "video/mp4") as gcs_stream:
+                while True:
+                    chunk = await file.read(CHUNK)
+                    if not chunk:
+                        break
+                    gcs_stream.write(chunk)
+
+            intro_video_url = f"https://storage.googleapis.com/{gcs_bucket}/coach_intro_videos/{unique_filename}"
+        else:
+            # Local dev fallback — stream to disk in chunks (no full RAM load)
+            storage_dir = Path("storage/coach_intro_videos")
+            storage_dir.mkdir(parents=True, exist_ok=True)
+            file_path = storage_dir / unique_filename
+
+            CHUNK = 256 * 1024  # 256 KB chunks
+            MAX_SIZE = 100 * 1024 * 1024  # 100 MB
+            written = 0
+            with open(file_path, "wb") as buf:
+                while True:
+                    chunk = await file.read(CHUNK)
+                    if not chunk:
+                        break
+                    written += len(chunk)
+                    if written > MAX_SIZE:
+                        buf.close()
+                        file_path.unlink(missing_ok=True)
+                        raise HTTPException(
+                            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                            detail="File too large. Max 100MB."
+                        )
+                    buf.write(chunk)
+
+            intro_video_url = f"/static/coach_intro_videos/{unique_filename}"
+
+        current_user.intro_video_url = intro_video_url
+        db.commit()
+        db.refresh(current_user)
+        logger.info(
+            f"Intro video uploaded for coach: {current_user.email} -> {intro_video_url}")
+        return IntroVideoResponse(intro_video_url=intro_video_url)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Intro video upload failed: {e}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Upload failed. Please try again.")
+    finally:
+        await file.close()

@@ -30,7 +30,6 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/my-coaches", icon: "fas fa-chalkboard-teacher", label: "My Coaches" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/browse-content", icon: "fas fa-graduation-cap", label: "Learning Hub" },
-    { to: "/coach/messages", icon: "fas fa-comments", label: "Messages" },
     { to: "/chat", icon: "fas fa-robot", label: "AI Chat" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
@@ -102,8 +101,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
     navigate("/login");
   };
 
-  // Get role-specific navigation items
   const navItems = dashboardItems[user?.role || 'PLAYER'] || dashboardItems.PLAYER;
+
 
   const getRoleBadge = () => {
     switch (user?.role) {

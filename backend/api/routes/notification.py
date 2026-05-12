@@ -1,110 +1,108 @@
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import text
 from sqlalchemy.orm import Session
+from pydantic import BaseModel, ConfigDict
+from datetime import datetime
+from typing import Optional
+import uuid
 
 from database.config import get_db
+from database.models.notification import Notification
+from database.models.user import User
 from utils.auth import get_current_user
 
-router = APIRouter(prefix="/notifications", tags=["notifications"])
+router = APIRouter(prefix="/notifications")
 
 
-@router.get("")
-def get_notifications(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    """Return notifications for current user when table exists."""
-    try:
-        rows = db.execute(
-            text(
-                """
-                SELECT id, user_id, title, message, type, is_read, created_at
-                FROM notifications
-                WHERE user_id = :user_id
-                ORDER BY id DESC
-                LIMIT 100
-                """
-            ),
-            {"user_id": str(user.id)},
-        ).mappings().all()
-        notifications = []
-        for row in rows:
-            created_at = row.get("created_at")
-            if isinstance(created_at, datetime):
-                created_at = created_at.isoformat()
-            notifications.append(
-                {
-                    "id": row.get("id"),
-                    "title": row.get("title"),
-                    "message": row.get("message"),
-                    "type": row.get("type") or "info",
-                    "is_read": bool(row.get("is_read")),
-                    "created_at": created_at,
-                }
-            )
+def create_notification(db: Session, user_id: str, title: str, message: str, notif_type: str = "info") -> Notification:
+    """Helper to create a notification from any route/event."""
+    notif = Notification(
+        id=str(uuid.uuid4()),
+        user_id=user_id,
+        title=title,
+        message=message,
+        type=notif_type,
+    )
+    db.add(notif)
+    db.commit()
+    return notif
 
-        unread_count = sum(1 for item in notifications if not item["is_read"])
-        return {"notifications": notifications, "unread_count": unread_count}
-    except Exception:
-        return {"notifications": [], "unread_count": 0}
+
+class NotificationResponse(BaseModel):
+    id: str
+    title: str
+    message: str
+    type: str
+    is_read: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.get("", response_model=dict)
+def get_notifications(
+    limit: int = 20,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notifs = (
+        db.query(Notification)
+        .filter(Notification.user_id == current_user.id)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    unread = db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,
+    ).count()
+
+    return {
+        "notifications": [NotificationResponse.model_validate(n) for n in notifs],
+        "unread_count": unread,
+    }
 
 
 @router.patch("/{notification_id}/read")
-def mark_read(notification_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    try:
-        db.execute(
-            text(
-                """
-                UPDATE notifications
-                SET is_read = true
-                WHERE id = :id AND user_id = :user_id
-                """
-            ),
-            {"id": notification_id, "user_id": str(user.id)},
-        )
+def mark_read(
+    notification_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notif = db.query(Notification).filter(
+        Notification.id == notification_id,
+        Notification.user_id == current_user.id,
+    ).first()
+    if notif:
+        notif.is_read = True
         db.commit()
-        return {"status": "ok"}
-    except Exception:
-        db.rollback()
-        return {"status": "ok"}
+    return {"ok": True}
 
 
 @router.patch("/read-all")
-def mark_all_read(db: Session = Depends(get_db), user=Depends(get_current_user)):
-    try:
-        db.execute(
-            text(
-                """
-                UPDATE notifications
-                SET is_read = true
-                WHERE user_id = :user_id
-                """
-            ),
-            {"user_id": str(user.id)},
-        )
-        db.commit()
-        return {"status": "ok"}
-    except Exception:
-        db.rollback()
-        return {"status": "ok"}
+def mark_all_read(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    db.query(Notification).filter(
+        Notification.user_id == current_user.id,
+        Notification.is_read == False,
+    ).update({"is_read": True})
+    db.commit()
+    return {"ok": True}
 
 
 @router.delete("/{notification_id}")
-def delete_notification(notification_id: str, db: Session = Depends(get_db), user=Depends(get_current_user)):
-    try:
-        result = db.execute(
-            text(
-                """
-                DELETE FROM notifications
-                WHERE id = :id AND user_id = :user_id
-                """
-            ),
-            {"id": notification_id, "user_id": str(user.id)},
-        )
-        db.commit()
-        if result.rowcount == 0:
-            raise HTTPException(status_code=404, detail="Notification not found")
-        return {"status": "ok"}
-    except HTTPException:
-        raise
-    except Exception:
-        db.rollback()
-        return {"status": "ok"}
+def delete_notification(
+    notification_id: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    notif = db.query(Notification).filter(
+        Notification.id == notification_id,
+        Notification.user_id == current_user.id,
+    ).first()
+    if not notif:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    db.delete(notif)
+    db.commit()
+    return {"ok": True}

@@ -40,10 +40,25 @@ export interface PlayerProfileState {
 
 export type ProfileFieldName = Extract<
   keyof PlayerProfileState,
-  | "fullName" | "username" | "avatar" | "age" | "gender" | "city" | "state"
-  | "country" | "educationType" | "institutionName" | "hasCricketClub"
-  | "cricketClubName" | "cricketRole" | "experienceLevel" | "battingHand"
-  | "bowlingArm" | "bowlingType" | "preferredFormat" | "bio"
+  | "fullName"
+  | "username"
+  | "avatar"
+  | "age"
+  | "gender"
+  | "city"
+  | "state"
+  | "country"
+  | "educationType"
+  | "institutionName"
+  | "hasCricketClub"
+  | "cricketClubName"
+  | "cricketRole"
+  | "experienceLevel"
+  | "battingHand"
+  | "bowlingArm"
+  | "bowlingType"
+  | "preferredFormat"
+  | "bio"
 >;
 
 export type FormErrors = Partial<Record<ProfileFieldName, string>>;

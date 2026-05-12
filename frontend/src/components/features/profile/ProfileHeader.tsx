@@ -12,7 +12,10 @@ interface Props {
   onEdit: () => void;
 }
 
-export default function ProfileHeader({ displayName, displayUsername, email, avatar, verified, isProfileCompleted, bio, onEdit }: Props) {
+export default function ProfileHeader({
+  displayName, displayUsername, email, avatar,
+  verified, isProfileCompleted, bio, onEdit,
+}: Props) {
   return (
     <motion.section
       initial={{ opacity: 0, y: 20 }}
@@ -59,13 +62,18 @@ export default function ProfileHeader({ displayName, displayUsername, email, ava
               <span>{email || "No email available"}</span>
             </div>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-200">
-              {isProfileCompleted ? bio || "Track your progress and achievements." : "Complete your player profile to unlock a better sports identity."}
+              {isProfileCompleted
+                ? bio || "Track your progress and achievements."
+                : "Complete your player profile to unlock a better sports identity."}
             </p>
           </div>
         </div>
 
-        <button type="button" onClick={onEdit}
-          className="rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:from-blue-600 hover:to-violet-700">
+        <button
+          type="button"
+          onClick={onEdit}
+          className="rounded-xl bg-gradient-to-r from-blue-500 to-violet-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:from-blue-600 hover:to-violet-700"
+        >
           {isProfileCompleted ? "Edit Profile" : "Complete Profile"}
         </button>
       </div>

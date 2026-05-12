@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, Outlet, useLocation } from 'react-router-dom';
-import { useAuthStore } from './store/authStore';
+import { useAuthStore, useSubscriptionStore } from './store/authStore';
 import type { UserRole } from './store/authStore';
 import { useMemo } from 'react';
 
@@ -22,6 +22,7 @@ import RequestsPage from './pages/RequestsPage';
 import ProfilePage from './pages/ProfilePage';
 import PlayerPerformance from './pages/PlayerPerformance';
 import PlayerProfile from './pages/PlayerProfile';
+import PlayerVideosPage from './pages/PlayerVideosPage';
 import BowlingAnalysisPage from './pages/BowlingAnalysisPage';
 import BattingAnalysisPage from './pages/BattingAnalysisPage';
 import PlayerSubmissionsPage from './pages/PlayerSubmissionsPage';
@@ -50,6 +51,39 @@ import AdminAuditLogPage from './pages/AdminAuditLogPage';
 import BillingPage from './pages/BillingPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
 import ScoutingPage from './pages/ScoutingPage';
+import PlayerSettingsPage from './pages/PlayerSettingsPage';
+
+// Auth Initializer (runs once on module load)
+let authInitialized = false;
+
+function initializeAuthOnce() {
+  if (authInitialized) return;
+  authInitialized = true;
+
+  const token = localStorage.getItem('access_token');
+  const userProfile = localStorage.getItem('user_profile');
+
+  if (token && userProfile) {
+    try {
+      const user = JSON.parse(userProfile);
+      useAuthStore.setState({
+        token,
+        isAuthenticated: true,
+        user,
+      });
+      // Hydrate subscription + quota state in the background
+      useSubscriptionStore.getState().fetchMe().catch(() => {});
+      console.log('[Auth] Initialized from localStorage:', { userRole: user?.role });
+    } catch (e) {
+      console.error('[Auth] Failed to parse user profile:', e);
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('user_profile');
+    }
+  }
+}
+
+// Initialize immediately on module load
+initializeAuthOnce();
 import PlayerProfilePage from './pages/PlayerProfilePage';
 import BrowseContentPage from './pages/BrowseContentPage';
 
@@ -176,20 +210,30 @@ export default function AppRouter() {
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
-            <Route path="/player" element={<PlayerDashboard />} />
-            <Route path="/player/profile" element={<PlayerProfile />} />
-            <Route path="/player/profile/edit" element={<PlayerProfilePage />} />
-            <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
-            <Route path="/player/batting" element={<BattingAnalysisPage />} />
-            <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
-            <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
-            <Route path="/player/subscription" element={<SubscriptionPage />} />
-            <Route path="/player/chat" element={<ChatPage />} />
+            <Route path="/billing" element={<BillingPage />} />
             <Route path="/chat" element={<ChatPage />} />
-            <Route path="/player/billing" element={<BillingPage />} />
-            <Route path="/player/:id" element={<PlayerPerformance />} />
-            <Route path="/browse-content" element={<BrowseContentPage />} />
-            <Route path="/coach/messages" element={<CoachMessagesPage />} />
+          </Route>
+        </Route>
+
+        {/* Player-only routes — non-players are redirected to their role home */}
+        <Route element={<ProtectedRoute />}>
+          <Route element={<RoleGuard allowedRoles={['PLAYER']} />}>
+            <Route element={<DashboardLayout />}>
+              <Route path="/player" element={<PlayerDashboard />} />
+              <Route path="/player/profile" element={<PlayerProfile />} />
+              <Route path="/player/profile/edit" element={<PlayerProfilePage />} />
+              <Route path="/player/videos" element={<PlayerVideosPage />} />
+              <Route path="/player/:id" element={<PlayerPerformance />} />
+              <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
+              <Route path="/player/batting" element={<BattingAnalysisPage />} />
+              <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
+              <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
+              <Route path="/player/subscription" element={<SubscriptionPage />} />
+
+              <Route path="/player/settings" element={<PlayerSettingsPage />} />
+              <Route path="/player/billing" element={<BillingPage />} />
+              <Route path="/browse-content" element={<BrowseContentPage />} />
+            </Route>
           </Route>
         </Route>
 
@@ -210,10 +254,10 @@ export default function AppRouter() {
                 <Route path="/coach/analytics" element={<CoachAnalyticsPage />} />
                 <Route path="/coach/reviews" element={<CoachReviewsPage />} />
                 <Route path="/coach/earnings" element={<CoachEarningsPage />} />
+                <Route path="/coach/messages" element={<CoachMessagesPage />} />
                 <Route path="/coach/content" element={<CoachContentPage />} />
                 <Route path="/coach/settings" element={<CoachSettingsPage />} />
-                <Route path="/coach/chat" element={<CoachChatPage />} />
-                <Route path="/chat" element={<CoachChatPage />} />
+
                 <Route path="/coach/subscription" element={<SubscriptionPage />} />
                 <Route path="/coach/billing" element={<BillingPage />} />
                 <Route path="/coach/scouting" element={<ScoutingPage />} />

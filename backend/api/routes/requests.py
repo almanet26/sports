@@ -352,6 +352,8 @@ def update_request_status(
     - `completed`: Request has been fulfilled (requires video_id)
     - `rejected`: Request was rejected
     """
+    from api.routes.notification import create_notification
+    
     if new_status not in ["approved", "completed", "rejected"]:
         raise HTTPException(status_code=400, detail="Invalid status")
     
@@ -374,6 +376,32 @@ def update_request_status(
     match_request.status = new_status
     db.commit()
     db.refresh(match_request)
+    
+    # Notify the requester
+    if new_status == "approved":
+        create_notification(
+            db=db,
+            user_id=match_request.requested_by,
+            title="Request Approved",
+            message=f"Your match request '{match_request.match_title}' has been approved and will be processed soon",
+            notif_type="request"
+        )
+    elif new_status == "completed":
+        create_notification(
+            db=db,
+            user_id=match_request.requested_by,
+            title="Request Completed",
+            message=f"Your match request '{match_request.match_title}' is now available in the library",
+            notif_type="request"
+        )
+    elif new_status == "rejected":
+        create_notification(
+            db=db,
+            user_id=match_request.requested_by,
+            title="Request Rejected",
+            message=f"Your match request '{match_request.match_title}' was not approved",
+            notif_type="request"
+        )
     
     logger.info(f"Request {request_id} status updated to {new_status} by {current_user.email}")
     

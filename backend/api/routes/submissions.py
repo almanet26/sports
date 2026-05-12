@@ -75,6 +75,7 @@ from database.models.player_submission import PlayerSubmission
 from database.models.user import User
 from database.models.subscription import Subscription
 from database.models.submission import VideoSubmission, SubmissionStatus
+from database.models.video import Video
 from database.crud.submission import (
     create_submission,
     get_submission_by_id,
@@ -884,6 +885,64 @@ async def player_upload(
     return _to_detail(sub)
 
 
+#  PLAYER: Submit existing gallery video (no re-upload)
+@router.post("/from-video", response_model=SubmissionDetail)
+def player_submit_existing_video(
+    video_id: str = Form(...),
+    coach_id: str = Form(...),
+    analysis_type: str = Form("BATTING"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Player submits an already-uploaded private gallery video to a coach.
+
+    This does NOT upload the file again; it links the existing video into a new submission.
+    """
+    if current_user.role not in ("PLAYER", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only players can submit videos.")
+
+    if analysis_type not in ("BATTING", "BOWLING"):
+        raise HTTPException(status_code=400, detail="analysis_type must be BATTING or BOWLING.")
+
+    coach = db.query(User).filter(User.id == coach_id, User.role == "COACH").first()
+    if not coach:
+        raise HTTPException(status_code=404, detail="Coach not found.")
+
+    video = db.query(Video).filter(Video.id == video_id, Video.deleted_at == None).first()
+    if not video:
+        raise HTTPException(status_code=404, detail="Video not found.")
+
+    if str(video.uploaded_by) != str(current_user.id) and current_user.role != "ADMIN":
+        raise HTTPException(status_code=403, detail="Access denied.")
+
+    # Map local stored path to a served URL; keep remote URLs unchanged.
+    file_path = str(video.file_path or "")
+    if file_path.startswith("http://") or file_path.startswith("https://"):
+        video_url = file_path
+    else:
+        # Typical stored value is "storage/uploads/<uuid>.ext"
+        name = Path(file_path).name if file_path else ""
+        video_url = f"/static/uploads/{name}" if name else file_path
+
+    original_name = video.title or f"{video.id}.mp4"
+
+    sub = create_submission(
+        db,
+        player_id=current_user.id,
+        coach_id=coach_id,
+        original_filename=original_name,
+        video_url=video_url,
+        analysis_type=analysis_type,
+    )
+
+    logger.info(
+        "Submission %s created from existing video: player=%s video=%s coach=%s type=%s",
+        sub.id, current_user.id, video.id, coach_id, analysis_type,
+    )
+    return _to_detail(sub)
+
+
 #  PLAYER: My Published Reports
 @router.get("/player/me", response_model=SubmissionListResponse)
 def player_reports(
@@ -1111,6 +1170,19 @@ def coach_run_analysis(
             annotated_video_url=annotated_video_url,
             key_frame_url=key_frame_url,
         )
+        
+        # Notify player that analysis is complete
+        try:
+            from api.routes.notification import create_notification
+            create_notification(
+                db=db,
+                user_id=sub.player_id,
+                title="Analysis Complete",
+                message=f"Your {sub.analysis_type.lower()} video analysis is ready for coach review",
+                notif_type="report"
+            )
+        except Exception as notif_err:
+            logger.warning("Failed to create analysis notification: %s", notif_err)
 
         logger.info("Analysis complete for submission %s → DRAFT_REVIEW", sub.id)
         return _to_detail(sub)
@@ -1271,6 +1343,19 @@ def coach_publish(
             pdf_report_url=pdf_report_url,
             coach_sketches=sketches,  # Save sketches to DB
         )
+        
+        # Notify player that report is published
+        try:
+            from api.routes.notification import create_notification
+            create_notification(
+                db=db,
+                user_id=sub.player_id,
+                title="Report Published",
+                message=f"Your {sub.analysis_type.lower()} performance report is now available",
+                notif_type="report"
+            )
+        except Exception as notif_err:
+            logger.warning("Failed to create publish notification: %s", notif_err)
 
         logger.info("Submission %s published by coach %s", sub.id, current_user.id)
         return _to_detail(sub)

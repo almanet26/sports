@@ -17,6 +17,9 @@ from database.models.bowling import BowlingAnalysis
 from database.models.batting import BattingAnalysis
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.subscription import Subscription
+from database.models.video_annotation import VideoAnnotation
+from database.models.coach_player import CoachPlayer
+from database.models.academy_branding import AcademyBranding
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
@@ -29,6 +32,10 @@ from database.models.player_stats import PlayerStats
 from database.models.player_submission import PlayerSubmission
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
+from database.models.coach_content import CoachContent, ContentType
+from database.models.message import Message
+from database.models.coach_review import CoachReview
+from database.models.match import Match
 from database.models.plan_config import PlanConfig
 from database.models.message import Message
 from database.models.transaction import Transaction, TransactionType, TransactionStatus
@@ -69,9 +76,15 @@ __all__ = [
     "BowlingAnalysis",
     # Batting
     "BattingAnalysis",
-    # Submissions 
+    # Submissions
     "VideoSubmission",
     "SubmissionStatus",
+    # Subscription
+    "Subscription",
+    # Coach features
+    "VideoAnnotation",
+    "CoachPlayer",
+    "AcademyBranding",
     # Coach Content
     "CoachContent",
     "ChatHistory",
@@ -94,6 +107,17 @@ __all__ = [
     # Coach Content
     "CoachContent",
     "ContentType",
+    # Messages
+    "Message",
+    # Transactions
+    "Transaction",
+    "TransactionType",
+    "TransactionStatus",
+    # Reviews
+    "Review",
+    "CoachReview",
+    # Matches
+    "Match",
     # Enums
     "VideoVisibility",
     "VideoStatus",

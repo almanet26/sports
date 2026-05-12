@@ -29,19 +29,27 @@ export default function PlayerSettingsPage() {
   const [savingNotifs, setSavingNotifs] = useState(false);
 
   useEffect(() => {
-    api.get('/notifications/preferences')
-      .then(r => setNotifs(r.data))
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    const fetchSettings = async () => {
+      try {
+        const response = await api.get('/auth/notifications');
+        setNotifs(response.data);
+      } catch (err) {
+        console.error('Failed to fetch notification preferences:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchSettings();
   }, []);
 
   const handleNotificationToggle = async (key: string) => {
-    const updated = { ...notifs, [key]: !notifs[key as keyof typeof notifs] };
-    setNotifs(updated);
+    const newNotifs = { ...notifs, [key]: !notifs[key as keyof typeof notifs] };
+    setNotifs(newNotifs);
     setSavingNotifs(true);
     try {
-      await api.put('/notifications/preferences', updated);
-    } catch {
+      await api.put('/auth/notifications', newNotifs);
+    } catch (err: any) {
+      console.error('Failed to update notification preferences:', err);
       setNotifs(notifs);
     } finally {
       setSavingNotifs(false);
@@ -57,19 +65,25 @@ export default function PlayerSettingsPage() {
 
   const handleChangePassword = async () => {
     setPwMsg(null);
-    if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) { setPwMsg({ type: 'error', text: 'All fields are required.' }); return; }
-    if (pwForm.newPw.length < 8) { setPwMsg({ type: 'error', text: 'New password must be at least 8 characters.' }); return; }
-    if (pwForm.newPw !== pwForm.confirm) { setPwMsg({ type: 'error', text: 'New passwords do not match.' }); return; }
+    if (!pwForm.current || !pwForm.newPw || !pwForm.confirm) {
+      setPwMsg({ type: 'error', text: 'All fields are required.' }); return;
+    }
+    if (pwForm.newPw.length < 8) {
+      setPwMsg({ type: 'error', text: 'New password must be at least 8 characters.' }); return;
+    }
+    if (pwForm.newPw !== pwForm.confirm) {
+      setPwMsg({ type: 'error', text: 'New passwords do not match.' }); return;
+    }
     setPwLoading(true);
     try {
-      await api.post('/auth/change-password', { current_password: pwForm.current, new_password: pwForm.newPw });
+      await api.post('/auth/change-password', {
+        current_password: pwForm.current,
+        new_password: pwForm.newPw,
+      });
       setPwMsg({ type: 'success', text: 'Password changed successfully.' });
       setPwForm({ current: '', newPw: '', confirm: '' });
-    } catch (err: unknown) {
-      const detail = typeof err === 'object' && err !== null && 'response' in err
-        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-        : undefined;
-      setPwMsg({ type: 'error', text: detail || 'Failed to change password.' });
+    } catch (err: any) {
+      setPwMsg({ type: 'error', text: err.response?.data?.detail || 'Failed to change password.' });
     } finally { setPwLoading(false); }
   };
 
@@ -80,11 +94,8 @@ export default function PlayerSettingsPage() {
       await api.delete('/auth/me');
       await logout();
       navigate('/');
-    } catch (err: unknown) {
-      const detail = typeof err === 'object' && err !== null && 'response' in err
-        ? (err as { response?: { data?: { detail?: string } } }).response?.data?.detail
-        : undefined;
-      alert(detail || 'Failed to delete account.');
+    } catch (err: any) {
+      alert(err.response?.data?.detail || 'Failed to delete account.');
     } finally { setDeleting(false); }
   };
 
@@ -95,15 +106,19 @@ export default function PlayerSettingsPage() {
     </button>
   );
 
-  if (loading) return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-    </div>
-  );
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className={`max-w-2xl mx-auto ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className={`rounded-3xl p-6 mb-6 border ${glass}`}>
+      {/* Header */}
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        className={`rounded-3xl p-6 mb-6 border ${glass}`}>
         <h1 className="text-3xl font-bold gradient-text flex items-center gap-3">
           <i className="fas fa-cog text-blue-400"></i>Settings
         </h1>
@@ -116,18 +131,23 @@ export default function PlayerSettingsPage() {
         <h2 className="font-semibold mb-4 flex items-center gap-2">
           <i className="fas fa-lock text-blue-400"></i>Change Password
         </h2>
+
         <div className="space-y-3">
-          {([
+          {[
             { key: 'current', label: 'Current Password', show: showPw.current, toggle: () => setShowPw(s => ({ ...s, current: !s.current })) },
             { key: 'newPw', label: 'New Password', show: showPw.newPw, toggle: () => setShowPw(s => ({ ...s, newPw: !s.newPw })) },
             { key: 'confirm', label: 'Confirm New Password', show: showPw.confirm, toggle: () => setShowPw(s => ({ ...s, confirm: !s.confirm })) },
-          ] as const).map(({ key, label, show, toggle }) => (
+          ].map(({ key, label, show, toggle }) => (
             <div key={key}>
               <label className={`block text-xs mb-1 ${sub}`}>{label}</label>
               <div className="relative">
-                <input type={show ? 'text' : 'password'} value={pwForm[key]}
+                <input
+                  type={show ? 'text' : 'password'}
+                  value={pwForm[key as keyof typeof pwForm]}
                   onChange={e => setPwForm(f => ({ ...f, [key]: e.target.value }))}
-                  placeholder="••••••••" className={inputCls + ' pr-10'} />
+                  placeholder="••••••••"
+                  className={inputCls + ' pr-10'}
+                />
                 <button type="button" onClick={toggle}
                   className={`absolute right-3 top-1/2 -translate-y-1/2 ${sub} hover:text-white transition-colors`}>
                   <i className={`fas ${show ? 'fa-eye-slash' : 'fa-eye'} text-sm`}></i>
@@ -136,6 +156,7 @@ export default function PlayerSettingsPage() {
             </div>
           ))}
         </div>
+
         <AnimatePresence>
           {pwMsg && (
             <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
@@ -145,6 +166,7 @@ export default function PlayerSettingsPage() {
             </motion.div>
           )}
         </AnimatePresence>
+
         <button onClick={handleChangePassword} disabled={pwLoading}
           className="mt-4 px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold text-sm disabled:opacity-50 flex items-center gap-2 hover:opacity-90 transition-opacity">
           {pwLoading ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Saving...</> : <><i className="fas fa-save" />Update Password</>}
@@ -163,9 +185,20 @@ export default function PlayerSettingsPage() {
               <p className="font-medium text-sm">Account Email</p>
               <p className={`text-xs mt-0.5 ${sub}`}>{user?.email}</p>
             </div>
-            <span className={`text-xs px-2 py-1 rounded-full border ${user?.is_verified ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'}`}>
+            <span className={`text-xs px-2 py-1 rounded-full border ${
+              user?.is_verified
+                ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
+                : 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30'
+            }`}>
               {user?.is_verified ? 'Verified' : 'Pending'}
             </span>
+          </div>
+          <div className={`flex items-center justify-between p-4 rounded-xl border ${cardBg}`}>
+            <div>
+              <p className="font-medium text-sm">Profile Visibility</p>
+              <p className={`text-xs mt-0.5 ${sub}`}>Your profile is visible to coaches on the platform</p>
+            </div>
+            <span className="text-xs px-2 py-1 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">Public</span>
           </div>
         </div>
       </motion.div>
@@ -208,6 +241,7 @@ export default function PlayerSettingsPage() {
         </button>
       </motion.div>
 
+      {/* Delete Confirmation Modal */}
       <AnimatePresence>
         {showDeleteModal && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={() => setShowDeleteModal(false)}>
@@ -219,14 +253,18 @@ export default function PlayerSettingsPage() {
                 <i className="fas fa-trash-alt text-2xl text-red-400"></i>
               </div>
               <h3 className="text-xl font-bold text-center mb-2">Delete Account</h3>
-              <p className="text-white/60 text-sm text-center mb-4">This will permanently delete your account and all data.</p>
+              <p className="text-white/60 text-sm text-center mb-4">
+                This will permanently delete your account and all data. This cannot be undone.
+              </p>
               <p className="text-sm mb-2">Type your email to confirm: <span className="text-red-400 font-medium">{user?.email}</span></p>
               <input value={deleteConfirm} onChange={e => setDeleteConfirm(e.target.value)}
                 placeholder={user?.email}
                 className="w-full px-4 py-3 rounded-xl glass border border-white/10 text-white text-sm focus:outline-none focus:border-red-500 mb-4" />
               <div className="flex gap-3">
                 <button onClick={() => { setShowDeleteModal(false); setDeleteConfirm(''); }}
-                  className="flex-1 py-2.5 rounded-xl glass border border-white/20 text-sm font-medium hover:bg-white/10 transition-all">Cancel</button>
+                  className="flex-1 py-2.5 rounded-xl glass border border-white/20 text-sm font-medium hover:bg-white/10 transition-all">
+                  Cancel
+                </button>
                 <button onClick={handleDeleteAccount} disabled={deleteConfirm !== user?.email || deleting}
                   className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-semibold disabled:opacity-50 hover:bg-red-600 transition-all flex items-center justify-center gap-2">
                   {deleting ? <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />Deleting...</> : 'Delete Account'}
