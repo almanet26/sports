@@ -121,11 +121,16 @@ def get_player_coaches(
         raise HTTPException(status_code=403, detail="Players only")
 
     from database.models.submission import VideoSubmission
-    rows = (
-        db.query(User)
-        .join(VideoSubmission, VideoSubmission.coach_id == User.id)
+    coach_ids = (
+        db.query(VideoSubmission.coach_id)
         .filter(VideoSubmission.player_id == current_user.id)
         .distinct()
+        .subquery()
+    )
+
+    rows = (
+        db.query(User)
+        .join(coach_ids, coach_ids.c.coach_id == User.id)
         .all()
     )
 
