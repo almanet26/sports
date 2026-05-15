@@ -68,7 +68,6 @@ sports/
 ├── docs/
 ├── storage/
 ├── cloudbuild.yaml
-├── main.py
 └── package.json
 ```
 
