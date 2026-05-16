@@ -11,6 +11,7 @@
 import React, { useRef, useState } from "react";
 import axios, { AxiosError, type CancelTokenSource } from "axios";
 import { storageApi } from "../../lib/api";
+import { useSubscriptionStore } from "../../stores/authStore";
 import { Button } from "../ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Progress } from "../ui/Progress";
@@ -74,6 +75,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   const [errorDetail, setErrorDetail] = useState("");
   const [dragActive, setDragActive] = useState(false);
   const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const refreshQuota = useSubscriptionStore((s) => s.refreshQuota);
 
   const isUploading = !["idle", "done", "error"].includes(stage);
 
@@ -196,6 +198,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
       setStatusMessage(STAGE_LABELS.queuing);
 
       await storageApi.startProcessing(submission_id);
+      await refreshQuota();
 
       // Done 
       setStage("done");
@@ -213,7 +216,10 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
       const detail =
         axiosErr.response?.data?.detail || axiosErr.message || "Unknown error";
 
-      if (status === 403 || status === 400) {
+      if (status === 429) {
+        fail("Monthly quota reached - upgrade your plan to continue.", detail);
+        await refreshQuota();
+      } else if (status === 403 || status === 400) {
         // Signed URL expired or invalid
         fail("Upload link expired — please try again.", detail);
       } else if (status === 503) {

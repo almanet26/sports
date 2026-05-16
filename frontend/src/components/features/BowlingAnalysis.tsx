@@ -294,10 +294,29 @@ const BowlingAnalysis: React.FC = () => {
       // Sync quota state with backend after successful analysis
       await refreshQuota();
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { detail?: string } } })?.response?.data
-          ?.detail ??
-        (err instanceof Error ? err.message : "Analysis failed. Please try again.");
+      const response = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response;
+      const status = response?.status;
+      const detail = response?.data?.detail;
+
+      if (status === 429) {
+        const info = typeof detail === "object" && detail !== null
+          ? (detail as { used?: number; limit?: number; resets?: string })
+          : null;
+        const used = typeof info?.used === "number" ? info.used : null;
+        const limit = typeof info?.limit === "number" ? info.limit : null;
+        const reset = info?.resets ? ` Resets ${info.resets}.` : "";
+        const msg = typeof detail === "string"
+          ? detail
+          : `Quota exceeded.${used !== null && limit !== null ? ` ${used}/${limit} used.` : ""}${reset}`;
+        setErrorMsg(msg);
+        setPhase("error");
+        await refreshQuota();
+        return;
+      }
+
+      const msg = typeof detail === "string"
+        ? detail
+        : (err instanceof Error ? err.message : "Analysis failed. Please try again.");
       setErrorMsg(msg);
       setPhase("error");
     }

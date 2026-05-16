@@ -53,6 +53,7 @@ export default function PlayerSubmissions() {
   const [loadingList, setLoadingList] = useState(true);
   const [activeTab, setActiveTab] = useState<'upload' | 'all' | 'published' | 'my'>('upload');
   const submissionQuota = useSubscriptionStore((s) => s.quotaUsage.submissions);
+  const refreshQuota = useSubscriptionStore((s) => s.refreshQuota);
   const remainingSubmissions = Math.max(0, submissionQuota.limit - submissionQuota.used);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -148,6 +149,7 @@ export default function PlayerSubmissions() {
         setUploadProgress(0);
         await submissionsApi.upload(file, selectedCoach, analysisType, setUploadProgress);
       }
+      await refreshQuota();
       setFile(null);
       setExistingVideoId(null);
       setSelectedCoach('');
@@ -155,8 +157,18 @@ export default function PlayerSubmissions() {
       setActiveTab('all');
       fetchSubmissions();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Upload failed';
-      setUploadError(msg);
+      const response = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response;
+      const status = response?.status;
+      const detail = response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : (err instanceof Error ? err.message : 'Upload failed');
+      if (status === 429) {
+        setUploadError(msg || 'Monthly submission quota reached.');
+        await refreshQuota();
+      } else {
+        setUploadError(msg);
+      }
     } finally {
       setUploading(false);
       setSubmittingExisting(false);
@@ -173,13 +185,24 @@ export default function PlayerSubmissions() {
         coachId: selectedCoach,
         note: requestNote.trim() || undefined,
       });
+      await refreshQuota();
       setRequestNote('');
       setRequestSuccess('Coach request sent.');
       setActiveTab('my');
       fetchSubmissions();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Request failed';
-      setRequestError(msg);
+      const response = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response;
+      const status = response?.status;
+      const detail = response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : (err instanceof Error ? err.message : 'Request failed');
+      if (status === 429) {
+        setRequestError(msg || 'Monthly submission quota reached.');
+        await refreshQuota();
+      } else {
+        setRequestError(msg);
+      }
     } finally {
       setRequesting(false);
     }

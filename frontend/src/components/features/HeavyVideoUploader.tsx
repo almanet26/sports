@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Progress } from "../ui/Progress";
 import { formatFileSize } from "../../lib/utils";
 import { resolveMediaUrl, videosApi } from "../../lib/api";
+import { useSubscriptionStore } from "../../stores/authStore";
 
 type UploadStatus = "idle" | "ready" | "requesting" | "uploading" | "finishing" | "done" | "error";
 
@@ -161,6 +162,7 @@ export default function HeavyVideoUploader({
   const [paused, setPaused] = useState(false);
   const [generatedHighlights, setGeneratedHighlights] = useState<GeneratedVideoItem[]>([]);
   const [loadingGenerated, setLoadingGenerated] = useState(false);
+  const refreshQuota = useSubscriptionStore((s) => s.refreshQuota);
 
   const isBusy = useMemo(
     () => state.status === "requesting" || state.status === "uploading" || state.status === "finishing",
@@ -474,6 +476,7 @@ export default function HeavyVideoUploader({
           }));
 
           await triggerProcessing(submissionId);
+          await refreshQuota();
 
           setState((prev) => ({
             ...prev,
@@ -485,33 +488,63 @@ export default function HeavyVideoUploader({
 
           onUploadComplete?.({ submissionId, filename: file.name });
         } catch (processingError: unknown) {
-          const detail =
-            typeof processingError === "object" && processingError && "response" in processingError
-              ? String((processingError as { response?: { data?: { detail?: string } } }).response?.data?.detail || "Failed to trigger processing.")
-              : String((processingError as Error)?.message || "Failed to trigger processing.");
+          const response = typeof processingError === "object" && processingError && "response" in processingError
+            ? (processingError as { response?: { status?: number; data?: { detail?: unknown } } }).response
+            : undefined;
+          const status = response?.status;
+          const detail = response?.data?.detail;
+          const msg = typeof detail === "string"
+            ? detail
+            : String((processingError as Error)?.message || "Failed to trigger processing.");
+
+          if (status === 429) {
+            setState((prev) => ({
+              ...prev,
+              status: "error",
+              message: "Monthly quota reached - upgrade your plan to continue.",
+              error: msg,
+            }));
+            await refreshQuota();
+            return;
+          }
 
           setState((prev) => ({
             ...prev,
             status: "error",
             message: "Upload succeeded, but processing trigger failed.",
-            error: detail,
+            error: msg,
           }));
         }
       });
     } catch (error: unknown) {
-      const detail =
-        typeof error === "object" && error && "response" in error
-          ? String((error as { response?: { data?: { detail?: string } } }).response?.data?.detail || "Failed to initialize resumable upload.")
-          : String((error as Error)?.message || "Failed to initialize resumable upload.");
+      const response = typeof error === "object" && error && "response" in error
+        ? (error as { response?: { status?: number; data?: { detail?: unknown } } }).response
+        : undefined;
+      const status = response?.status;
+      const detail = response?.data?.detail;
+      const msg = typeof detail === "string"
+        ? detail
+        : String((error as Error)?.message || "Failed to initialize resumable upload.");
+
+      if (status === 429) {
+        setState((prev) => ({
+          ...prev,
+          status: "error",
+          message: "Monthly quota reached - upgrade your plan to continue.",
+          error: msg,
+        }));
+        await refreshQuota();
+        return;
+      }
 
       setState((prev) => ({
         ...prev,
         status: "error",
         message: "Could not start upload.",
-        error: detail,
+        error: msg,
       }));
     }
-  }, [file, isBusy, onUploadComplete, pollSubmissionForHighlight, requestSessionUri, triggerProcessing]);
+  }, [file, isBusy, onUploadComplete, pollSubmissionForHighlight, refreshQuota, requestSessionUri, triggerProcessing]);
 
   const pauseUpload = useCallback(() => {
     if (!uploadRef.current) return;
