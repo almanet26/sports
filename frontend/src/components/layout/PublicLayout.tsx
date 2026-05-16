@@ -2,6 +2,7 @@ import React from "react";
 import { Link, Outlet, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
+import ToastHost from "../ui/ToastHost";
 
 export const PublicLayout: React.FC = () => {
   const { isAuthenticated, user, logout } = useAuthStore();
@@ -14,6 +15,7 @@ export const PublicLayout: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] relative overflow-hidden">
+      <ToastHost />
       {/* Background decorations */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <motion.div

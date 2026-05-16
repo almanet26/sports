@@ -5,6 +5,7 @@ import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { getStoredPlayerProfileSummary } from "../../services/playerProfile";
 import { resolveMediaUrl } from "../../lib/api";
+import ToastHost from "../ui/ToastHost";
 import logoImage from '/logo.webp';
 
 
@@ -135,6 +136,7 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
         ? 'bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white'
         : 'bg-gradient-to-br from-[#f0f4ff] via-[#f5f3ff] to-[#fdf4ff] text-slate-800'
       }`}>
+      <ToastHost />
       {/* Background decorations */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <motion.div

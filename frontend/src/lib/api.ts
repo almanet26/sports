@@ -1,5 +1,6 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import type { PlanConfig } from '../types/subscriptionPlans';
+import { useToastStore } from '../store/toastStore';
 
 // Base URL from environment or default
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -82,6 +83,7 @@ api.interceptors.response.use(
   },
   async (error: AxiosError) => {
     const originalRequest = error.config;
+    const status = error.response?.status;
     
     // Log errors in development
     if (import.meta.env.DEV) {
@@ -96,8 +98,17 @@ api.interceptors.response.use(
       });
     }
     
+    // Handle 429 Quota Exceeded
+    if (status === 429) {
+      const detail = (error.response?.data as { detail?: unknown } | undefined)?.detail;
+      const message = typeof detail === 'string'
+        ? detail
+        : 'Monthly quota reached - upgrade your plan to continue.';
+      useToastStore.getState().pushToast(message, 'error');
+    }
+
     // Handle 401 Unauthorized
-    if (error.response?.status === 401) {
+    if (status === 401) {
       // Clear auth data
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
@@ -1016,4 +1027,4 @@ export const trainingPlansApi = {
   delete: (id: string) => api.delete(`/sessions/training-plans/${id}`),
 };
 
-
+

@@ -25,6 +25,7 @@ interface UploadJobCard {
 export default function UploadPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const refreshQuota = useAuthStore((state) => state.refreshQuota);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeTitle, setYoutubeTitle] = useState('');
   const [youtubeBusy, setYoutubeBusy] = useState(false);
@@ -124,6 +125,7 @@ export default function UploadPage() {
 
       setYoutubeMessage('Starting OCR highlight generation...');
       await jobsApi.trigger(videoId, { delete_source_after_processing: true });
+      await refreshQuota();
 
       setActiveJob({
         videoId,
@@ -136,11 +138,17 @@ export default function UploadPage() {
       setYoutubeUrl('');
       setYoutubeTitle('');
     } catch (error: any) {
+      const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
       const message = typeof detail === 'string' && detail
         ? detail
         : (error?.message || 'Failed to process YouTube URL.');
-      setYoutubeMessage(message);
+      if (status === 429) {
+        setYoutubeMessage(message);
+        await refreshQuota();
+      } else {
+        setYoutubeMessage(message);
+      }
     } finally {
       setYoutubeBusy(false);
     }

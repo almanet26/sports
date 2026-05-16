@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '../../store/themeStore';
+import { useSubscriptionStore } from '../../stores/authStore';
 import { submissionsApi, storageApi, resolveMediaUrl, type SubmissionSummary } from '../../lib/api';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string; bg: string }> = {
@@ -19,6 +20,7 @@ export default function CoachInbox() {
   const { theme } = useThemeStore();
   const dark = theme === 'dark';
   const navigate = useNavigate();
+  const refreshQuota = useSubscriptionStore((s) => s.refreshQuota);
 
   const [submissions, setSubmissions] = useState<SubmissionSummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -48,10 +50,21 @@ export default function CoachInbox() {
     setError('');
     try {
       await storageApi.startProcessing(id);
+      await refreshQuota();
       await fetchInbox();
     } catch (err: unknown) {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail || 'Analysis failed';
-      setError(msg);
+      const response = (err as { response?: { status?: number; data?: { detail?: unknown } } })?.response;
+      const status = response?.status;
+      const detail = response?.data?.detail;
+      const msg = typeof detail === 'string'
+        ? detail
+        : (err instanceof Error ? err.message : 'Analysis failed');
+      if (status === 429) {
+        setError(msg || 'Monthly quota reached.');
+        await refreshQuota();
+      } else {
+        setError(msg);
+      }
     } finally {
       setAnalyzing(null);
     }
