@@ -36,8 +36,8 @@ steps:
       - --cache-from
       - $_IMAGE:latest       # layer-cache from previous build (best-effort)
       - -f
-      - backend/Dockerfile
-      - backend/             # Docker build context
+      - Dockerfile
+      - .                    # Backend build context
 
   # Step 2: Push both tags to Artifact Registry
   - name: "gcr.io/cloud-builders/docker"
