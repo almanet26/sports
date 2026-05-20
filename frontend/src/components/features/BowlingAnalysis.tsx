@@ -560,7 +560,13 @@ const BowlingAnalysis: React.FC = () => {
                     </video>
                   </div>
                   <p className="text-xs text-slate-400 mt-2 text-center">
-                    🟡 Yellow dots = joint positions | ⚪ White lines = skeleton connections
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-3 w-3 rounded-full bg-yellow-400 border border-slate-600" />
+                      <span>Yellow dots = joint positions</span>
+                      <span className="mx-2">|</span>
+                      <span className="inline-block h-3 w-3 rounded-full bg-white border border-slate-600" />
+                      <span>White lines = skeleton connections</span>
+                    </span>
                   </p>
                 </CardContent>
               </Card>

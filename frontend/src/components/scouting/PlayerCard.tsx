@@ -101,7 +101,10 @@ export default function PlayerCard({ player, onViewProfile, initialShortlisted =
           </div>
           <div className="glass rounded-xl p-2 border border-white/5 text-center">
             <p className="text-xs text-white/40 mb-0.5">Analyses</p>
-            <p className="text-sm font-bold text-white">{player.total_analyses} <span className="text-blue-400">🔬</span></p>
+            <p className="text-sm font-bold text-white inline-flex items-center justify-center gap-1">
+              {player.total_analyses}
+              <i className="fas fa-flask text-blue-400" aria-hidden="true" />
+            </p>
           </div>
         </div>
 

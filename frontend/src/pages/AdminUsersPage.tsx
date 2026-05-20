@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { adminApi, api, resolveMediaUrl } from '../lib/api';
@@ -78,6 +78,23 @@ interface UserProfile {
   total_reviews?: number;
 }
 
+interface FieldProps {
+  label: string;
+  value: ReactNode;
+  labelClassName: string;
+  valueClassName: string;
+}
+
+function Field({ label, value, labelClassName, valueClassName }: FieldProps) {
+  if (!value) return null;
+  return (
+    <div>
+      <p className={`text-xs mb-0.5 ${labelClassName}`}>{label}</p>
+      <p className={`text-sm font-medium ${valueClassName}`}>{value}</p>
+    </div>
+  );
+}
+
 function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () => void; theme: string }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -93,14 +110,6 @@ function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () 
   const sub = theme === 'dark' ? 'text-white/40' : 'text-slate-400';
   const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-slate-50/80 border-slate-200/60';
   const val = theme === 'dark' ? 'text-white' : 'text-slate-800';
-
-  const Field = ({ label, value }: { label: string; value: any }) =>
-    value ? (
-      <div>
-        <p className={`text-xs mb-0.5 ${sub}`}>{label}</p>
-        <p className={`text-sm font-medium ${val}`}>{value}</p>
-      </div>
-    ) : null;
 
   const statusColor = (s: string) => {
     if (['PUBLISHED', 'verified', 'Active'].includes(s)) return 'bg-green-500/20 text-green-400 border-green-500/30';
@@ -190,13 +199,13 @@ function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () 
                       <i className="fas fa-user text-blue-400"></i> Personal Info
                     </p>
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Phone" value={profile.phone} />
-                      <Field label="Gender" value={profile.gender} />
-                      <Field label="Team" value={profile.team} />
-                      <Field label="Jersey #" value={profile.jersey_number} />
-                      <Field label="Date of Birth" value={profile.date_of_birth} />
-                      <Field label="Joined" value={new Date(profile.created_at).toLocaleDateString()} />
-                      <Field label="Last Login" value={profile.last_login ? new Date(profile.last_login).toLocaleDateString() : 'Never'} />
+                      <Field label="Phone" value={profile.phone} labelClassName={sub} valueClassName={val} />
+                      <Field label="Gender" value={profile.gender} labelClassName={sub} valueClassName={val} />
+                      <Field label="Team" value={profile.team} labelClassName={sub} valueClassName={val} />
+                      <Field label="Jersey #" value={profile.jersey_number} labelClassName={sub} valueClassName={val} />
+                      <Field label="Date of Birth" value={profile.date_of_birth} labelClassName={sub} valueClassName={val} />
+                      <Field label="Joined" value={new Date(profile.created_at).toLocaleDateString()} labelClassName={sub} valueClassName={val} />
+                      <Field label="Last Login" value={profile.last_login ? new Date(profile.last_login).toLocaleDateString() : 'Never'} labelClassName={sub} valueClassName={val} />
                     </div>
                     {profile.profile_bio && (
                       <div className="mt-3">
@@ -213,9 +222,25 @@ function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () 
                         <i className="fas fa-chalkboard-teacher text-green-400"></i> Coach Details
                       </p>
                       <div className="grid grid-cols-2 gap-3 mb-3">
-                        <Field label="Category" value={profile.coach_category} />
-                        <Field label="Experience" value={profile.years_of_experience ? `${profile.years_of_experience} years` : null} />
-                        <Field label="Avg Rating" value={profile.average_rating ? `${profile.average_rating} ⭐ (${profile.total_reviews} reviews)` : null} />
+                        <Field label="Category" value={profile.coach_category} labelClassName={sub} valueClassName={val} />
+                        <Field
+                          label="Experience"
+                          value={profile.years_of_experience ? `${profile.years_of_experience} years` : null}
+                          labelClassName={sub}
+                          valueClassName={val}
+                        />
+                        <Field
+                          label="Avg Rating"
+                          value={profile.average_rating ? (
+                            <span className="inline-flex items-center gap-1">
+                              {profile.average_rating}
+                              <i className="fas fa-star text-yellow-400 text-xs" aria-hidden="true" />
+                              <span>({profile.total_reviews} reviews)</span>
+                            </span>
+                          ) : null}
+                          labelClassName={sub}
+                          valueClassName={val}
+                        />
                       </div>
                       {profile.specialization?.length ? (
                         <div className="mb-3">
@@ -508,7 +533,10 @@ export default function AdminUsersPage() {
             toast.ok ? 'bg-green-600' : 'bg-red-600'
           }`}
         >
-          {toast.ok ? '✓' : '✗'} {toast.msg}
+          <span className="inline-flex items-center gap-2">
+            <i className={`fas ${toast.ok ? 'fa-check' : 'fa-times'}`} aria-hidden="true" />
+            {toast.msg}
+          </span>
         </motion.div>
       )}
 

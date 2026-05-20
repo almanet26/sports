@@ -100,7 +100,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white flex items-center justify-center px-4 py-8 relative overflow-hidden">
+    <div className="min-h-screen app-shell text-white flex items-center justify-center px-4 py-8 relative overflow-hidden">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
@@ -136,7 +136,7 @@ export default function RegisterPage() {
         className="relative w-full max-w-md"
       >
         {/* Main card */}
-        <div className="glass rounded-3xl p-8 shadow-2xl border border-white/20">
+        <div className="app-card rounded-3xl p-8 shadow-2xl border border-white/20 backdrop-blur-xl">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -144,10 +144,10 @@ export default function RegisterPage() {
             transition={{ delay: 0.2 }}
             className="text-center mb-8"
           >
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-green-500 to-blue-600 mb-4 pulse-glow">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[image:var(--primary-gradient)] mb-4 pulse-glow">
               <i className="fas fa-user-plus text-white text-2xl"></i>
             </div>
-            <h1 className="text-2xl font-bold gradient-text mb-2">Create Account</h1>
+            <h1 className="text-2xl font-bold gradient-text mb-2 font-display">Create Account</h1>
             <p className="text-white/60 text-sm">Join PitchVision and start improving</p>
           </motion.div>
 
@@ -230,7 +230,7 @@ export default function RegisterPage() {
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setFormData({ ...formData, role: 'PLAYER' })}
                   className={`px-4 py-3 rounded-xl border transition-all duration-300 ${formData.role === 'PLAYER'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-transparent text-white'
+                    ? 'bg-[image:var(--primary-gradient)] border-transparent text-white shadow-lg shadow-blue-500/20'
                     : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
                     }`}
 
@@ -244,7 +244,7 @@ export default function RegisterPage() {
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setFormData({ ...formData, role: 'COACH' })}
                   className={`px-4 py-3 rounded-xl border transition-all duration-300 ${formData.role === 'COACH'
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 border-transparent text-white'
+                    ? 'bg-[image:var(--primary-gradient)] border-transparent text-white shadow-lg shadow-blue-500/20'
                     : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10 hover:border-white/20'
                     }`}
                 >
@@ -397,7 +397,7 @@ export default function RegisterPage() {
               whileTap={{ scale: 0.98 }}
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold hover:from-blue-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
+              className="w-full btn-primary py-3 px-4 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
             >
               {loading ? (
                 <div className="flex items-center justify-center">

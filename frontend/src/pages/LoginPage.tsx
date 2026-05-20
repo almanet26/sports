@@ -63,7 +63,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white flex items-center justify-center px-4 relative overflow-hidden">
+    <div className="min-h-screen app-shell text-white flex items-center justify-center px-4 relative overflow-hidden">
       {/* Animated background elements */}
       <div className="absolute inset-0 overflow-hidden">
         <motion.div
@@ -99,7 +99,7 @@ export default function LoginPage() {
         className="relative w-full max-w-md"
       >
         {/* Main card */}
-        <div className="glass rounded-3xl p-8 shadow-2xl border border-white/20">
+        <div className="app-card rounded-3xl p-8 shadow-2xl border border-white/20 backdrop-blur-xl">
           {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -107,10 +107,10 @@ export default function LoginPage() {
             transition={{ delay: 0.2 }}
             className="text-center mb-8"
           >
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-r from-blue-500 to-purple-600 mb-4 pulse-glow">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[image:var(--primary-gradient)] mb-4 pulse-glow">
               <i className="fas fa-cricket-bat-ball text-white text-2xl"></i>
             </div>
-            <h1 className="text-2xl font-bold gradient-text mb-2">Welcome Back</h1>
+            <h1 className="text-2xl font-bold gradient-text mb-2 font-display">Welcome Back</h1>
             <p className="text-white/60 text-sm">Sign in to your PitchVision account</p>
           </motion.div>
 
@@ -201,7 +201,7 @@ export default function LoginPage() {
               whileTap={{ scale: 0.98 }}
               type="submit"
               disabled={loading}
-              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 text-white font-semibold hover:from-blue-600 hover:to-purple-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-gray-900 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 shadow-lg hover:shadow-xl"
+              className="w-full btn-primary py-3 px-4 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300"
             >
               {loading ? (
                 <div className="flex items-center justify-center">

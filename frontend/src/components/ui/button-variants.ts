@@ -6,17 +6,17 @@ export const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          "bg-emerald-500 text-white hover:bg-emerald-600 active:bg-emerald-700",
+          "bg-[image:var(--primary-gradient)] text-white hover:opacity-95 active:opacity-90 shadow-lg shadow-blue-500/20",
         destructive:
           "bg-red-500 text-white hover:bg-red-600 active:bg-red-700",
         outline:
-          "border border-slate-700 bg-transparent text-slate-200 hover:bg-slate-800 hover:text-white",
+          "border border-white/20 bg-transparent text-slate-100 hover:bg-white/5 hover:text-white",
         secondary:
-          "bg-slate-700 text-white hover:bg-slate-600 active:bg-slate-800",
+          "bg-slate-800/80 text-white hover:bg-slate-700/80 active:bg-slate-800",
         ghost:
-          "text-slate-300 hover:bg-slate-800 hover:text-white",
+          "text-slate-300 hover:bg-white/5 hover:text-white",
         link:
-          "text-emerald-500 underline-offset-4 hover:underline",
+          "text-blue-400 underline-offset-4 hover:underline",
       },
       size: {
         default: "h-10 px-4 py-2",

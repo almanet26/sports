@@ -133,8 +133,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
   return (
     <div className={`min-h-screen relative overflow-hidden ${theme === 'dark'
-        ? 'bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] text-white'
-        : 'bg-gradient-to-br from-[#f0f4ff] via-[#f5f3ff] to-[#fdf4ff] text-slate-800'
+        ? 'app-shell text-white'
+        : 'app-shell-light text-slate-800'
       }`}>
       <ToastHost />
       {/* Background decorations */}

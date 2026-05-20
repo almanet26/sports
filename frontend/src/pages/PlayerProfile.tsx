@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CheckCircle2, X } from "lucide-react";
+import { CheckCircle2, Sparkles, X, Zap } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useAuthStore } from "../store/authStore";
 import { submissionsApi, type PlayerProgress } from "../lib/api";
@@ -677,7 +677,7 @@ export default function PlayerProfile() {
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-cyan-500">
-                <span className="text-white text-lg">⚡</span>
+                <Zap className="h-5 w-5 text-white" aria-hidden="true" />
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Recent Activity</p>
@@ -711,7 +711,7 @@ export default function PlayerProfile() {
           >
             <div className="flex items-center gap-3 mb-6">
               <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500">
-                <span className="text-white text-lg">✦</span>
+                <Sparkles className="h-5 w-5 text-white" aria-hidden="true" />
               </div>
               <div>
                 <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Profile Status</p>
