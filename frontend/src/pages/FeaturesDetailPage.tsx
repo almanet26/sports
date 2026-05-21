@@ -73,7 +73,7 @@ const features = [
 
 export default function FeaturesDetailPage() {
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white pt-24 pb-20 px-4">
+    <div className="min-h-screen app-shell text-white pt-24 pb-20 px-4">
       <div className="max-w-6xl mx-auto">
 
         {/* Back link */}
@@ -99,7 +99,7 @@ export default function FeaturesDetailPage() {
           transition={{ duration: 0.5 }}
           className="text-center mb-16"
         >
-          <h1 className="text-5xl md:text-6xl font-black text-white mb-6">
+          <h1 className="text-5xl md:text-6xl font-black text-white mb-6 font-display">
             Powerful Features
           </h1>
           <p className="text-xl text-gray-300 max-w-3xl mx-auto">
@@ -116,7 +116,7 @@ export default function FeaturesDetailPage() {
               whileInView={{ opacity: 1, y: 0 }}
               transition={{ delay: i * 0.1, duration: 0.5 }}
               viewport={{ once: true }}
-              className="bg-slate-800/50 border border-slate-700 rounded-2xl p-8 hover:border-purple-500 hover:shadow-lg hover:shadow-purple-500/10 transition-all duration-300 group"
+              className="app-card p-8 hover:border-blue-500/50 hover:shadow-lg hover:shadow-blue-500/10 transition-all duration-300 group"
             >
               <div className="flex items-start gap-4 mb-6">
                 <div className="w-14 h-14 bg-[image:var(--primary-gradient)] rounded-xl flex items-center justify-center flex-shrink-0 group-hover:shadow-lg group-hover:shadow-purple-500/40 transition-all duration-300">
@@ -150,7 +150,7 @@ export default function FeaturesDetailPage() {
         >
           <Link
             to="/register"
-            className="px-8 py-3 bg-[image:var(--primary-gradient)] hover:opacity-90 text-white font-bold rounded transition inline-block shadow-lg hover:shadow-xl"
+            className="btn-primary px-8 py-3 inline-block"
           >
             Start Using These Features
           </Link>

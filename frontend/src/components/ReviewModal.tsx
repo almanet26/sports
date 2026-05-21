@@ -80,7 +80,36 @@ export default function ReviewModal({ isOpen, onClose, coachId, coachName, onSuc
                 </div>
                 {rating > 0 && (
                   <p className={`text-center mt-2 text-sm ${theme === 'dark' ? 'text-white/60' : 'text-gray-600'}`}>
-                    {rating === 5 && '⭐ Excellent!'}{rating === 4 && '👍 Very Good!'}{rating === 3 && '😊 Good'}{rating === 2 && '😐 Fair'}{rating === 1 && '😞 Poor'}
+                    {rating === 5 && (
+                      <span className="inline-flex items-center gap-2">
+                        <i className="fas fa-star text-yellow-400" />
+                        Excellent!
+                      </span>
+                    )}
+                    {rating === 4 && (
+                      <span className="inline-flex items-center gap-2">
+                        <i className="fas fa-thumbs-up text-emerald-400" />
+                        Very Good!
+                      </span>
+                    )}
+                    {rating === 3 && (
+                      <span className="inline-flex items-center gap-2">
+                        <i className="fas fa-smile text-blue-400" />
+                        Good
+                      </span>
+                    )}
+                    {rating === 2 && (
+                      <span className="inline-flex items-center gap-2">
+                        <i className="fas fa-meh text-amber-400" />
+                        Fair
+                      </span>
+                    )}
+                    {rating === 1 && (
+                      <span className="inline-flex items-center gap-2">
+                        <i className="fas fa-frown text-red-400" />
+                        Poor
+                      </span>
+                    )}
                   </p>
                 )}
               </div>

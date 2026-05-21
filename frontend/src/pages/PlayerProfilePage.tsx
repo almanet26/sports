@@ -452,8 +452,18 @@ export default function PlayerProfilePage() {
           }`}>
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="font-semibold text-white mb-1">
-                  {stats.scouting_visible ? '👁 Visible to coaches' : '🔒 Profile is private'}
+                <p className="font-semibold text-white mb-1 inline-flex items-center gap-2">
+                  {stats.scouting_visible ? (
+                    <>
+                      <i className="fas fa-eye text-emerald-300" aria-hidden="true" />
+                      Visible to coaches
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-lock text-slate-300" aria-hidden="true" />
+                      Profile is private
+                    </>
+                  )}
                 </p>
                 <p className="text-sm text-white/50">
                   {stats.scouting_visible

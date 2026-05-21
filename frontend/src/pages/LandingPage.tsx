@@ -7,7 +7,7 @@ import {
   Upload, UserCheck, List, TrendingUp,
   Facebook, Twitter, Instagram, Youtube,
   Zap, Play, DollarSign, Target, Handshake, Users,
-  Lock, CheckCircle, Star, Trophy, Flame, MessageCircle, ChevronUp, Menu, X
+  Lock, CheckCircle, Star, Trophy, Flame, Bot, Hand, Smile, MessageCircle, ChevronUp, Menu, X
 } from 'lucide-react';
 import cricketBatting from '../gallery/batting-action.webp';
 import cricketFielding from '../gallery/bat-ball.webp';
@@ -292,13 +292,28 @@ const translations: Record<string, Record<string, string>> = {
   }
 };
 
+type ChatIcon = 'wave' | 'smile';
+
+type ChatMessage = {
+  id: number;
+  text: string;
+  sender: 'bot' | 'user';
+  timestamp: Date;
+  icon?: ChatIcon;
+};
+
+type ChatResponse = {
+  text: string;
+  icon?: ChatIcon;
+};
+
 export default function LandingPage() {
   const [language, setLanguage] = useState('en');
   const [showDemoModal, setShowDemoModal] = useState(false);
   const [showChat, setShowChat] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [messages, setMessages] = useState([
-    { id: 1, text: 'Hi! 👋 How can I help you today?', sender: 'bot', timestamp: new Date() }
+  const [messages, setMessages] = useState<ChatMessage[]>([
+    { id: 1, text: 'Hi! How can I help you today?', sender: 'bot', timestamp: new Date(), icon: 'wave' }
   ]);
   const [inputValue, setInputValue] = useState('');
   const [showScrollTop, setShowScrollTop] = useState(false);
@@ -325,55 +340,101 @@ export default function LandingPage() {
     }
   };
 
-  const chatResponses: Record<string, Record<string, string>> = {
+  const chatResponses: Record<string, Record<string, ChatResponse>> = {
     en: {
-      pricing: 'We offer pay-as-you-go pricing. Start with 20 free credits, then pay only for what you use. No subscriptions!',
-      features: 'PitchVision offers Action Detection, Technique Analysis, Smart Recommendations, Performance Metrics, and Auto Highlight Generation.',
-      free: 'Yes! You get 20 free credits when you sign up, plus 10 free credits every month.',
-      support: 'Our support team is available 24/7. You can also email us at support@PitchVision.com',
-      demo: 'You can watch our demo video by clicking the "Watch Demo" button on the page!',
-      signup: 'Ready to get started? Click the "Register Now" button to create your free account!',
-      default: 'Great question! Feel free to ask me about pricing, features, or how to get started. 😊'
+      pricing: { text: 'We offer pay-as-you-go pricing. Start with 20 free credits, then pay only for what you use. No subscriptions!' },
+      features: { text: 'PitchVision offers Action Detection, Technique Analysis, Smart Recommendations, Performance Metrics, and Auto Highlight Generation.' },
+      free: { text: 'Yes! You get 20 free credits when you sign up, plus 10 free credits every month.' },
+      support: { text: 'Our support team is available 24/7. You can also email us at support@PitchVision.com' },
+      demo: { text: 'You can watch our demo video by clicking the "Watch Demo" button on the page!' },
+      signup: { text: 'Ready to get started? Click the "Register Now" button to create your free account!' },
+      default: { text: 'Great question! Feel free to ask me about pricing, features, or how to get started.', icon: 'smile' }
     },
     es: {
-      pricing: 'Ofrecemos precios de pago por uso. Comienza con 20 créditos gratis, luego paga solo por lo que uses. ¡Sin suscripciones!',
-      features: 'PitchVision ofrece Detección de Acciones, Análisis de Técnica, Recomendaciones Inteligentes, Métricas de Rendimiento y Generación Automática de Destacados.',
-      free: '¡Sí! Obtienes 20 créditos gratis al registrarte, más 10 créditos gratis cada mes.',
-      support: 'Nuestro equipo de soporte está disponible 24/7. ¡También puedes enviarnos un correo electrónico!',
-      demo: '¡Puedes ver nuestro video de demostración haciendo clic en el botón "Ver Demostración" en la página!',
-      signup: '¿Listo para comenzar? ¡Haz clic en el botón "Registrarse Ahora" para crear tu cuenta gratuita!',
-      default: '¡Gran pregunta! Siéntete libre de preguntarme sobre precios, características o cómo comenzar. 😊'
+      pricing: { text: 'Ofrecemos precios de pago por uso. Comienza con 20 créditos gratis, luego paga solo por lo que uses. ¡Sin suscripciones!' },
+      features: { text: 'PitchVision ofrece Detección de Acciones, Análisis de Técnica, Recomendaciones Inteligentes, Métricas de Rendimiento y Generación Automática de Destacados.' },
+      free: { text: '¡Sí! Obtienes 20 créditos gratis al registrarte, más 10 créditos gratis cada mes.' },
+      support: { text: 'Nuestro equipo de soporte está disponible 24/7. ¡También puedes enviarnos un correo electrónico!' },
+      demo: { text: '¡Puedes ver nuestro video de demostración haciendo clic en el botón "Ver Demostración" en la página!' },
+      signup: { text: '¿Listo para comenzar? ¡Haz clic en el botón "Registrarse Ahora" para crear tu cuenta gratuita!' },
+      default: { text: '¡Gran pregunta! Siéntete libre de preguntarme sobre precios, características o cómo comenzar.', icon: 'smile' }
     },
     fr: {
-      pricing: 'Nous proposons une tarification à l\'usage. Commencez avec 20 crédits gratuits, puis payez uniquement ce que vous utilisez. Pas d\'abonnements!',
-      features: 'PitchVision offre la Détection d\'Actions, l\'Analyse de Technique, les Recommandations Intelligentes, les Métriques de Performance et la Génération Automatique de Faits Saillants.',
-      free: 'Oui! Vous obtenez 20 crédits gratuits lors de l\'inscription, plus 10 crédits gratuits chaque mois.',
-      support: 'Notre équipe d\'assistance est disponible 24h/24, 7j/7. Vous pouvez aussi nous envoyer un email!',
-      demo: 'Vous pouvez regarder notre vidéo de démonstration en cliquant sur le bouton "Regarder la Démo" sur la page!',
-      signup: 'Prêt à commencer? Cliquez sur le bouton "S\'inscrire Maintenant" pour créer votre compte gratuit!',
-      default: 'Excellente question! N\'hésitez pas à me poser des questions sur les tarifs, les fonctionnalités ou comment commencer. 😊'
+      pricing: { text: 'Nous proposons une tarification à l\'usage. Commencez avec 20 crédits gratuits, puis payez uniquement ce que vous utilisez. Pas d\'abonnements!' },
+      features: { text: 'PitchVision offre la Détection d\'Actions, l\'Analyse de Technique, les Recommandations Intelligentes, les Métriques de Performance et la Génération Automatique de Faits Saillants.' },
+      free: { text: 'Oui! Vous obtenez 20 crédits gratuits lors de l\'inscription, plus 10 crédits gratuits chaque mois.' },
+      support: { text: 'Notre équipe d\'assistance est disponible 24h/24, 7j/7. Vous pouvez aussi nous envoyer un email!' },
+      demo: { text: 'Vous pouvez regarder notre vidéo de démonstration en cliquant sur le bouton "Regarder la Démo" sur la page!' },
+      signup: { text: 'Prêt à commencer? Cliquez sur le bouton "S\'inscrire Maintenant" pour créer votre compte gratuit!' },
+      default: { text: 'Excellente question! N\'hésitez pas à me poser des questions sur les tarifs, les fonctionnalités ou comment commencer.', icon: 'smile' }
     },
     de: {
-      pricing: 'Wir bieten Pay-as-you-go-Preise. Beginnen Sie mit 20 kostenlosen Credits und zahlen Sie dann nur für das, was Sie verwenden. Keine Abos!',
-      features: 'PitchVision bietet Aktionserkennung, Technikanalyse, intelligente Empfehlungen, Leistungsmetriken und automatische Highlight-Generierung.',
-      free: 'Ja! Sie erhalten 20 kostenlose Credits bei der Anmeldung plus 10 kostenlose Credits jeden Monat.',
-      support: 'Unser Support-Team ist 24/7 verfügbar. Sie können uns auch eine E-Mail senden!',
-      demo: 'Sie können unser Demo-Video ansehen, indem Sie auf der Seite auf die Schaltfläche "Demo ansehen" klicken!',
-      signup: 'Bereit zum Starten? Klicken Sie auf die Schaltfläche "Jetzt registrieren", um Ihr kostenloses Konto zu erstellen!',
-      default: 'Großartig! Fragen Sie mich gerne nach Preisen, Funktionen oder wie Sie anfangen können. 😊'
+      pricing: { text: 'Wir bieten Pay-as-you-go-Preise. Beginnen Sie mit 20 kostenlosen Credits und zahlen Sie dann nur für das, was Sie verwenden. Keine Abos!' },
+      features: { text: 'PitchVision bietet Aktionserkennung, Technikanalyse, intelligente Empfehlungen, Leistungsmetriken und automatische Highlight-Generierung.' },
+      free: { text: 'Ja! Sie erhalten 20 kostenlose Credits bei der Anmeldung plus 10 kostenlose Credits jeden Monat.' },
+      support: { text: 'Unser Support-Team ist 24/7 verfügbar. Sie können uns auch eine E-Mail senden!' },
+      demo: { text: 'Sie können unser Demo-Video ansehen, indem Sie auf der Seite auf die Schaltfläche "Demo ansehen" klicken!' },
+      signup: { text: 'Bereit zum Starten? Klicken Sie auf die Schaltfläche "Jetzt registrieren", um Ihr kostenloses Konto zu erstellen!' },
+      default: { text: 'Großartig! Fragen Sie mich gerne nach Preisen, Funktionen oder wie Sie anfangen können.', icon: 'smile' }
     },
     hi: {
-      pricing: 'हम पे-एज-यू-गो मूल्य निर्धारण प्रदान करते हैं। 20 मुफ्त क्रेडिट के साथ शुरू करें, फिर केवल जो आप उपयोग करते हैं उसके लिए भुगतान करें। कोई सदस्यता नहीं!',
-      features: 'PitchVision एक्शन डिटेक्शन, तकनीक विश्लेषण, स्मार्ट सिफारिशें, प्रदर्शन मेट्रिक्स और ऑटो हाइलाइट जनरेशन प्रदान करता है।',
-      free: 'हाँ! आपको साइन अप करने पर 20 मुफ्त क्रेडिट मिलते हैं, साथ ही हर महीने 10 मुफ्त क्रेडिट।',
-      support: 'हमारी सहायता टीम 24/7 उपलब्ध है। आप हमें ईमेल भी कर सकते हैं!',
-      demo: 'आप पृष्ठ पर "डेमो देखें" बटन पर क्लिक करके हमारा डेमो वीडियो देख सकते हैं!',
-      signup: 'शुरू करने के लिए तैयार? अपना मुफ्त खाता बनाने के लिए "अभी पंजीकरण करें" बटन पर क्लिक करें!',
-      default: 'बहुत अच्छा सवाल! मुझसे मूल्य निर्धारण, सुविधाओं या कैसे शुरू करें के बारे में पूछने में संकोच न करें। 😊'
+      pricing: { text: 'हम पे-एज-यू-गो मूल्य निर्धारण प्रदान करते हैं। 20 मुफ्त क्रेडिट के साथ शुरू करें, फिर केवल जो आप उपयोग करते हैं उसके लिए भुगतान करें। कोई सदस्यता नहीं!' },
+      features: { text: 'PitchVision एक्शन डिटेक्शन, तकनीक विश्लेषण, स्मार्ट सिफारिशें, प्रदर्शन मेट्रिक्स और ऑटो हाइलाइट जनरेशन प्रदान करता है।' },
+      free: { text: 'हाँ! आपको साइन अप करने पर 20 मुफ्त क्रेडिट मिलते हैं, साथ ही हर महीने 10 मुफ्त क्रेडिट।' },
+      support: { text: 'हमारी सहायता टीम 24/7 उपलब्ध है। आप हमें ईमेल भी कर सकते हैं!' },
+      demo: { text: 'आप पृष्ठ पर "डेमो देखें" बटन पर क्लिक करके हमारा डेमो वीडियो देख सकते हैं!' },
+      signup: { text: 'शुरू करने के लिए तैयार? अपना मुफ्त खाता बनाने के लिए "अभी पंजीकरण करें" बटन पर क्लिक करें!' },
+      default: { text: 'बहुत अच्छा सवाल! मुझसे मूल्य निर्धारण, सुविधाओं या कैसे शुरू करें के बारे में पूछने में संकोच न करें।', icon: 'smile' }
     }
   };
 
-  const getBotResponse = (userMessage: string) => {
+  const pricingTiers = [
+    {
+      name: 'Free',
+      audience: 'Try PitchVision risk-free',
+      price: 'INR 0',
+      note: '20 free credits + 10 free credits every month',
+      cta: 'Start Free',
+      highlight: true,
+    },
+    {
+      name: 'Basic',
+      audience: 'Individual players & small teams',
+      price: 'Usage-based (INR)',
+      note: 'Fixed duration: 90d / 180d / 365d',
+      cta: 'Choose Basic',
+    },
+    {
+      name: 'Platinum',
+      audience: 'High-volume analysis',
+      price: 'Usage-based (INR)',
+      note: 'Fixed duration: 90d / 180d / 365d',
+      cta: 'Choose Platinum',
+    },
+    {
+      name: 'Coach Starter',
+      audience: 'Solo coaches',
+      price: 'Usage-based (INR)',
+      note: 'Fixed duration: 90d / 180d / 365d',
+      cta: 'Coach Starter',
+    },
+    {
+      name: 'Coach Pro',
+      audience: 'Multi-squad coaches',
+      price: 'Usage-based (INR)',
+      note: 'Fixed duration: 90d / 180d / 365d',
+      cta: 'Coach Pro',
+    },
+    {
+      name: 'Academy',
+      audience: 'Academies & institutes',
+      price: 'Usage-based (INR)',
+      note: 'Fixed duration: 90d / 180d / 365d',
+      cta: 'Talk to Us',
+    },
+  ];
+
+  const getBotResponse = (userMessage: string): ChatResponse => {
     const msg = userMessage.toLowerCase();
     const responses = chatResponses[language] || chatResponses['en'];
 
@@ -397,7 +458,7 @@ export default function LandingPage() {
   const handleSendMessage = () => {
     if (inputValue.trim() === '') return;
 
-    const userMessage = {
+    const userMessage: ChatMessage = {
       id: messages.length + 1,
       text: inputValue,
       sender: 'user',
@@ -408,11 +469,13 @@ export default function LandingPage() {
     setInputValue('');
 
     setTimeout(() => {
-      const botMessage = {
+      const response = getBotResponse(inputValue);
+      const botMessage: ChatMessage = {
         id: messages.length + 2,
-        text: getBotResponse(inputValue),
+        text: response.text,
         sender: 'bot',
-        timestamp: new Date()
+        timestamp: new Date(),
+        icon: response.icon,
       };
       setMessages(prev => [...prev, botMessage]);
     }, 500);
@@ -425,13 +488,13 @@ export default function LandingPage() {
     }
   };
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white relative overflow-hidden">
+    <div className="min-h-screen app-shell text-white relative overflow-hidden">
       {/* Animated Background Pattern */}
       <div className="fixed inset-0 opacity-5 pointer-events-none z-0">
         <div className="absolute inset-0 bg-gradient-to-br from-purple-500 via-transparent to-blue-500" style={{ animation: 'float 20s ease-in-out infinite' }}></div>
       </div>
       {/* Navbar */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900/80 backdrop-blur border-b border-slate-700 relative">
+      <header className="fixed top-0 left-0 right-0 z-50 app-header relative">
         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-transparent to-purple-500/5 pointer-events-none"></div>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="flex items-center justify-between h-16">
@@ -471,7 +534,7 @@ export default function LandingPage() {
               <select 
                 value={language} 
                 onChange={(e) => setLanguage(e.target.value)}
-                className="text-gray-300 text-sm font-medium bg-transparent border-b-2 border-slate-600 focus:outline-none cursor-pointer hover:border-purple-500 transition-colors"
+                className="text-gray-300 text-sm font-medium bg-transparent border-b-2 border-white/20 focus:outline-none cursor-pointer hover:border-blue-400 transition-colors"
               >
                 <option value="en">English</option>
                 <option value="es">Español</option>
@@ -480,10 +543,10 @@ export default function LandingPage() {
                 <option value="hi">हिन्दी</option>
               </select>
               <motion.div whileHover={{ scale: 1.05 }}>
-                <Link to="/login" className="text-gray-300 hover:text-white transition text-sm font-medium border-b-2 border-slate-600 pb-1 hover:border-purple-500">{t.login}</Link>
+                <Link to="/login" className="btn-outline text-sm">{t.login}</Link>
               </motion.div>
               <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-                <Link to="/register" className="px-4 py-2 bg-[image:var(--primary-gradient)] hover:opacity-90 text-white font-bold text-sm rounded transition shadow-lg hover:shadow-xl">{t.register}</Link>
+                <Link to="/register" className="btn-primary text-sm">{t.register}</Link>
               </motion.div>
             </div>
 
@@ -526,8 +589,8 @@ export default function LandingPage() {
               <option value="hi">हिन्दी</option>
             </select>
             <div className="flex gap-3">
-              <Link to="/login" className="flex-1 text-center py-2 border border-slate-600 text-gray-300 hover:text-white rounded text-sm font-medium transition">{t.login}</Link>
-              <Link to="/register" className="flex-1 text-center py-2 bg-[image:var(--primary-gradient)] text-white font-bold text-sm rounded transition">{t.register}</Link>
+              <Link to="/login" className="flex-1 text-center btn-outline text-sm">{t.login}</Link>
+              <Link to="/register" className="flex-1 text-center btn-primary text-sm">{t.register}</Link>
             </div>
           </div>
         )}
@@ -553,7 +616,7 @@ export default function LandingPage() {
 
               {/* Text and BOTH buttons (Left Side) */}
               <div className="flex flex-col gap-2">
-                <h1 className="text-xl font-black text-white leading-tight">
+                <h1 className="text-xl font-black text-white leading-tight font-display">
                   {t.uploadYour} <br /> {t.cricketVideo} <br />
                   <span className="bg-gradient-to-r from-blue-400 to-purple-500 bg-clip-text text-transparent">{t.getCoach}</span>
                 </h1>
@@ -561,10 +624,10 @@ export default function LandingPage() {
                   {t.heroDescription.substring(0, 60)}...
                 </p>
                 <div className="flex flex-col gap-2 mt-2">
-                  <Link to="/register" className="w-full py-2 bg-[image:var(--primary-gradient)] text-white font-bold text-[10px] rounded text-center shadow-lg">
+                  <Link to="/register" className="w-full btn-primary text-[10px] text-center py-2 px-3">
                     REGISTER
                   </Link>
-                  <button onClick={() => setShowDemoModal(true)} className="w-full py-2 border border-purple-500 text-purple-400 font-bold text-[10px] rounded flex items-center justify-center gap-1">
+                  <button onClick={() => setShowDemoModal(true)} className="w-full btn-outline text-[10px] py-2 px-3 flex items-center justify-center gap-1">
                     <Play className="w-3 h-3" /> WATCH DEMO
                   </button>
                 </div>
@@ -594,7 +657,7 @@ export default function LandingPage() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ duration: 0.6 }}
                 >
-                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-4 sm:mb-6">
+                  <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-black text-white leading-tight mb-4 sm:mb-6 font-display">
                     {t.uploadYour}
                     <br />
                     {t.cricketVideo}
@@ -607,7 +670,7 @@ export default function LandingPage() {
                   </p>
 
                   {/* Trust Badge */}
-                  <div className="mb-8 inline-flex items-center gap-2 bg-slate-800/50 border border-slate-700 rounded-full px-4 py-2">
+                  <div className="mb-8 inline-flex items-center gap-2 badge-soft px-4 py-2">
                     <span className="text-green-400 font-bold">✓</span>
                     <span className="text-sm text-gray-300">Made for the Next Generation of Cricketers</span>
                   </div>
@@ -622,7 +685,7 @@ export default function LandingPage() {
                         whileTap={{ scale: 0.95 }}
                         className="w-full sm:w-auto"
                       >
-                        <Link to="/register" className="w-full sm:w-auto px-6 sm:px-8 py-2 sm:py-3 bg-[image:var(--primary-gradient)] hover:opacity-90 text-white font-bold text-xs sm:text-sm rounded transition text-center shadow-lg hover:shadow-xl relative overflow-hidden group block">
+                        <Link to="/register" className="w-full sm:w-auto btn-primary text-xs sm:text-sm px-6 sm:px-8 py-2 sm:py-3 text-center relative overflow-hidden group block">
                           <span className="relative z-10">{t.registerBtn}</span>
                           <div className="absolute inset-0 bg-white opacity-0 group-hover:opacity-10 transition-opacity duration-300"></div>
                         </Link>
@@ -632,7 +695,7 @@ export default function LandingPage() {
                       onClick={() => setShowDemoModal(true)}
                       whileHover={{ scale: 1.05 }}
                       whileTap={{ scale: 0.95 }}
-                      className="w-full sm:w-auto px-6 sm:px-8 py-2 sm:py-3 border-2 border-purple-500 text-purple-400 hover:bg-purple-500/10 font-bold text-xs sm:text-sm rounded transition flex items-center justify-center gap-2 group"
+                      className="w-full sm:w-auto btn-outline text-xs sm:text-sm px-6 sm:px-8 py-2 sm:py-3 flex items-center justify-center gap-2 group"
                     >
                       <Play className="w-4 h-4" />
                       {t.watchDemo}
@@ -863,7 +926,7 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="text-center mt-8">
-            <Link to="/features-detail" className="px-6 py-2 border-2 border-purple-500 text-purple-400 hover:bg-purple-500/10 font-bold rounded transition inline-block">
+            <Link to="/features-detail" className="btn-outline px-6 py-2 inline-block">
               Read More →
             </Link>
           </div>
@@ -1094,21 +1157,52 @@ export default function LandingPage() {
         </div>
       </section>
 
-            {/* Pricing Section */}
-      <section id="pricing" className="py-20 px-4 bg-slate-900">
-        <div className="max-w-4xl mx-auto text-center">
-          <h2 className="text-4xl md:text-5xl font-black text-white mb-6">
-            Honest pricing for real coaches
-          </h2>
-          <p className="text-xl text-gray-300 mb-12">
-            Pay only for what you use. No subscriptions, no commitments. Exactly as it should be for amateur coaches
-          </p>
-          
-          <div className="bg-slate-800/50 border border-slate-600 rounded-lg p-12">
-            <p className="text-gray-300 text-lg">
-              Simple, transparent pricing designed for coaches with real budgets
+      {/* Pricing Section */}
+      <section id="pricing" className="py-20 px-4 bg-slate-900 relative">
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-500/60 to-transparent"></div>
+        <div className="max-w-6xl mx-auto">
+          <div className="text-center mb-12">
+            <h2 className="text-4xl md:text-5xl font-black text-white mb-4 font-display">
+              Honest pricing for real coaches
+            </h2>
+            <p className="text-lg text-gray-300">
+              Pay only for what you use. No recurring monthly billing. Choose your duration at checkout.
             </p>
+            <div className="mt-4 inline-flex items-center gap-2 badge-soft px-3 py-1 text-xs">
+              INR only • Fixed duration: 90d / 180d / 365d
+            </div>
           </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {pricingTiers.map((tier) => (
+              <div
+                key={tier.name}
+                className={`app-card p-6 ${tier.highlight ? 'ring-1 ring-blue-500/50 shadow-xl shadow-blue-500/10' : ''}`}
+              >
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div>
+                    <h3 className="text-xl font-bold text-white">{tier.name}</h3>
+                    <p className="text-sm text-gray-400">{tier.audience}</p>
+                  </div>
+                  {tier.highlight && (
+                    <span className="badge-soft px-2 py-1 text-[10px] text-emerald-300">Starter</span>
+                  )}
+                </div>
+                <div className="text-2xl font-black text-white mb-2 font-display">{tier.price}</div>
+                <p className="text-sm text-gray-400 mb-6">{tier.note}</p>
+                <Link
+                  to="/register"
+                  className={`${tier.highlight ? 'btn-primary' : 'btn-outline'} w-full text-center text-sm`}
+                >
+                  {tier.cta}
+                </Link>
+              </div>
+            ))}
+          </div>
+
+          <p className="text-center text-sm text-gray-400 mt-8">
+            All plans are pay-as-you-go and billed in INR. Upgrade or extend at any time.
+          </p>
         </div>
       </section>
 
@@ -1143,7 +1237,7 @@ export default function LandingPage() {
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
               >
-                <Link to="/register" className="px-8 py-3 bg-[image:var(--primary-gradient)] hover:opacity-90 text-white font-bold rounded transition shadow-lg hover:shadow-xl block">
+                <Link to="/register" className="btn-primary px-8 py-3 block">
                   {t.joinNow}
                 </Link>
               </motion.div>
@@ -1152,7 +1246,7 @@ export default function LandingPage() {
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <Link to="/login" className="px-8 py-3 border-2 border-purple-500 text-purple-400 hover:bg-purple-500/10 font-bold rounded transition block text-center">
+              <Link to="/login" className="btn-outline px-8 py-3 block text-center">
                 {t.signIn}
               </Link>
             </motion.div>
@@ -1371,7 +1465,7 @@ export default function LandingPage() {
             ))}
           </div>
           <div className="text-center mt-8">
-            <a href="#faq" onClick={(e) => { e.preventDefault(); document.getElementById('faq')?.scrollIntoView({ behavior: 'smooth' }); }} className="px-6 py-2 border-2 border-purple-500 text-purple-400 hover:bg-purple-500/10 font-bold rounded transition inline-block cursor-pointer">
+            <a href="#faq" onClick={(e) => { e.preventDefault(); document.getElementById('faq')?.scrollIntoView({ behavior: 'smooth' }); }} className="btn-outline px-6 py-2 inline-block cursor-pointer">
               View All FAQs ↑
             </a>
           </div>
@@ -1392,7 +1486,7 @@ export default function LandingPage() {
                 required
                 className="flex-1 px-4 py-2 bg-slate-800 text-white rounded border border-slate-600 focus:outline-none focus:border-purple-500 transition text-sm"
               />
-              <button type="submit" className="w-full sm:w-auto px-5 py-2 bg-[image:var(--primary-gradient)] hover:opacity-90 text-white font-bold rounded transition text-sm">
+              <button type="submit" className="w-full sm:w-auto btn-primary px-5 py-2 text-sm">
                 Subscribe
               </button>
             </form>
@@ -1497,13 +1591,16 @@ export default function LandingPage() {
             <div className="bg-[image:var(--primary-gradient)] p-4 rounded-t-lg flex justify-between items-center">
               <div>
                 <h3 className="text-white font-bold">PitchVision Assistant</h3>
-                <p className="text-blue-100 text-xs">Always here to help 🤖</p>
+                <p className="text-blue-100 text-xs flex items-center gap-1">
+                  Always here to help
+                  <Bot className="w-3 h-3" aria-hidden="true" />
+                </p>
               </div>
               <button
                 onClick={() => setShowChat(false)}
                 className="text-white hover:bg-white/20 rounded-full w-8 h-8 flex items-center justify-center transition"
               >
-                ✕
+                <X className="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
 
@@ -1523,7 +1620,11 @@ export default function LandingPage() {
                         : 'bg-slate-700 text-gray-100 rounded-bl-none'
                     }`}
                   >
-                    <p className="text-sm">{msg.text}</p>
+                    <p className="text-sm flex items-center gap-1">
+                      <span>{msg.text}</span>
+                      {msg.icon === 'wave' && <Hand className="w-3.5 h-3.5 text-blue-200" aria-hidden="true" />}
+                      {msg.icon === 'smile' && <Smile className="w-3.5 h-3.5 text-amber-200" aria-hidden="true" />}
+                    </p>
                   </div>
                 </motion.div>
               ))}
@@ -1541,7 +1642,7 @@ export default function LandingPage() {
               />
               <button
                 onClick={handleSendMessage}
-                className="bg-[image:var(--primary-gradient)] hover:opacity-90 text-white rounded px-4 py-2 transition font-semibold text-sm"
+                className="btn-primary px-4 py-2 text-sm"
               >
                 Send
               </button>

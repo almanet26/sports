@@ -78,7 +78,14 @@ export default function CoachReviewsPage() {
           {[0,5,4,3].map(n => (
             <button key={n} onClick={() => setFilter(n)}
               className={`px-4 py-1.5 rounded-xl text-sm font-medium transition-all ${filter === n ? 'bg-gradient-to-r from-yellow-400 to-orange-500 text-white' : theme === 'dark' ? 'text-white/60 hover:text-white' : 'text-gray-600 hover:text-gray-900'}`}>
-              {n === 0 ? 'All' : `${n} ★`}
+              {n === 0 ? (
+                'All'
+              ) : (
+                <span className="inline-flex items-center gap-1">
+                  {n}
+                  <i className="fas fa-star text-yellow-300 text-xs" aria-hidden="true" />
+                </span>
+              )}
             </button>
           ))}
         </div>

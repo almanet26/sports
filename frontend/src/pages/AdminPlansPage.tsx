@@ -144,7 +144,10 @@ export default function AdminPlansPage() {
             toast.ok ? 'bg-green-600' : 'bg-red-600'
           }`}
         >
-          {toast.ok ? '✓' : '✗'} {toast.msg}
+          <span className="inline-flex items-center gap-2">
+            <i className={`fas ${toast.ok ? 'fa-check' : 'fa-times'}`} aria-hidden="true" />
+            {toast.msg}
+          </span>
         </motion.div>
       )}
 

@@ -109,7 +109,7 @@ export default function CoachAvailabilityPage() {
                           ? 'bg-gradient-to-r from-purple-500 to-pink-600 text-white shadow-lg shadow-purple-500/20'
                           : theme === 'dark' ? 'bg-white/5 hover:bg-white/10 text-white/30' : 'bg-gray-100 hover:bg-gray-200 text-gray-400'
                       }`}>
-                      {active ? '✓' : ''}
+                      {active ? <i className="fas fa-check" aria-hidden="true" /> : ''}
                     </button>
                   );
                 })}

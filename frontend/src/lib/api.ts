@@ -57,12 +57,12 @@ api.interceptors.request.use(
     
     // Only warn about missing token for protected routes
     if (!token && !isPublicRoute) {
-      console.warn(`⚠️ [API] No token found for ${config.method?.toUpperCase()} ${config.url}`);
+      console.warn(`[API WARNING] No token found for ${config.method?.toUpperCase()} ${config.url}`);
     }
     
     // Log requests in development
     if (import.meta.env.DEV) {
-      console.log(`🚀 [API] ${config.method?.toUpperCase()} ${config.url} ${token && !isPublicRoute ? '(with token)' : isPublicRoute ? '(public)' : '(NO TOKEN)'}`);
+      console.log(`[API] ${config.method?.toUpperCase()} ${config.url} ${token && !isPublicRoute ? '(with token)' : isPublicRoute ? '(public)' : '(NO TOKEN)'}`);
     }
     
     return config;
@@ -77,7 +77,7 @@ api.interceptors.response.use(
   (response) => {
     // Log responses in development
     if (import.meta.env.DEV) {
-      console.log(`✅ [API] ${response.status} ${response.config.url}`);
+      console.log(`[API RESPONSE] ${response.status} ${response.config.url}`);
     }
     return response;
   },
@@ -89,7 +89,7 @@ api.interceptors.response.use(
     if (import.meta.env.DEV) {
       const url = originalRequest?.url || 'unknown';
       const status = error.response?.status || 'no response';
-      console.error(`❌ [API] ${status} ${url}`);
+      console.error(`[API ERROR] ${status} ${url}`);
       console.error('Error details:', {
         message: error.message,
         response: error.response?.data,

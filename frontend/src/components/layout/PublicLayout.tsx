@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate } from "react-router-dom";
 import { motion } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import ToastHost from "../ui/ToastHost";
+import logoImage from "/logo.webp";
 
 export const PublicLayout: React.FC = () => {
   const { isAuthenticated, user, logout } = useAuthStore();
@@ -14,7 +15,7 @@ export const PublicLayout: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#070A14] via-[#0A0F1C] to-[#0D1117] relative overflow-hidden">
+    <div className="min-h-screen app-shell relative overflow-hidden">
       <ToastHost />
       {/* Background decorations */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
@@ -31,16 +32,14 @@ export const PublicLayout: React.FC = () => {
       </div>
 
       {/* Header */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b glass border-white/10">
+      <header className="fixed top-0 left-0 right-0 z-50 app-header">
         <div className="px-4 mx-auto max-w-7xl sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             {/* Logo */}
             <Link to="/" className="flex items-center gap-3">
-              <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-r from-blue-500 to-purple-600">
-                <i className="text-white fas fa-cricket-bat-ball"></i>
-              </div>
+              <img src={logoImage} alt="PitchVision" className="w-10 h-10 rounded-xl object-contain" />
               <div className="hidden sm:block">
-                <span className="text-lg font-bold text-white">SportVision</span>
+                <span className="text-lg font-bold text-white">PitchVision</span>
                 <p className="text-xs text-white/50">AI Analytics</p>
               </div>
             </Link>
@@ -84,7 +83,7 @@ export const PublicLayout: React.FC = () => {
                   <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
                     <Link
                       to="/register"
-                      className="px-4 py-2 text-sm font-medium text-white transition-all rounded-xl bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700"
+                      className="btn-primary text-sm"
                     >
                       Register
                     </Link>
