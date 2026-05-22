@@ -100,4 +100,68 @@ describe('VideoUploader', () => {
     expect(statusCalls).toContain('Upload complete — processing started!');
     expect(progressCalls).toContain(100);
   });
+
+  it('calls onFailure with quota message and still refreshes quota on 429', async () => {
+    const err = Object.assign(new Error('Request failed with status code 429'), {
+      response: { status: 429, data: { detail: 'monthly limit reached' } },
+    });
+    vi.mocked(storageApi.getUploadUrl).mockRejectedValue(err);
+
+    const axiosModule = await import('axios');
+    const onFailure = vi.fn();
+
+    await runVideoUploadFlow({
+      file: new File([''], 'test.mp4', { type: 'video/mp4' }),
+      analysisType: 'BATTING',
+      storageApi,
+      axiosClient: axiosModule.default,
+      refreshQuota: refreshQuotaMock,
+      setStage: vi.fn(),
+      setStatusMessage: vi.fn(),
+      setUploadProgress: vi.fn(),
+      setSubmissionId: vi.fn(),
+      onFailure,
+    });
+
+    expect(onFailure).toHaveBeenCalledWith(
+      'Monthly quota reached - upgrade your plan to continue.',
+      'monthly limit reached',
+    );
+    expect(refreshQuotaMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('calls onCancel and not onFailure when the upload is cancelled mid-flight', async () => {
+    const axiosModule = await import('axios');
+    const cancelErr = new Error('Upload cancelled by user');
+    vi.mocked(axiosModule.default.put).mockRejectedValue(cancelErr);
+    vi.mocked(axiosModule.default.isCancel).mockReturnValue(true);
+    vi.mocked(storageApi.getUploadUrl).mockResolvedValue({
+      data: {
+        signed_url: 'https://storage.example/upload',
+        blob_name: 'match.mp4',
+        submission_id: 'sub-1',
+      },
+    } as never);
+
+    const onCancel = vi.fn();
+    const onFailure = vi.fn();
+
+    await runVideoUploadFlow({
+      file: new File([''], 'test.mp4', { type: 'video/mp4' }),
+      analysisType: 'BATTING',
+      storageApi,
+      axiosClient: axiosModule.default,
+      refreshQuota: refreshQuotaMock,
+      setStage: vi.fn(),
+      setStatusMessage: vi.fn(),
+      setUploadProgress: vi.fn(),
+      setSubmissionId: vi.fn(),
+      onCancel,
+      onFailure,
+    });
+
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(refreshQuotaMock).not.toHaveBeenCalled();
+  });
 });
