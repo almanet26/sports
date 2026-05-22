@@ -25,6 +25,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { cn, formatFileSize } from "../../lib/utils";
+import { isUploadingStage, runVideoUploadFlow } from "./videoUploadFlow";
 
 // Types
 interface VideoUploaderProps {
@@ -35,7 +36,7 @@ interface VideoUploaderProps {
   className?: string;
 }
 
-type UploadStage =
+export type UploadStage =
   | "idle"        // waiting for file selection
   | "requesting"  // fetching signed URL
   | "uploading"   // PUTting to GCS
@@ -148,85 +149,30 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
   // the main upload pipeline 
   const handleUpload = async () => {
     if (!file) return;
+    cancelRef.current = axios.CancelToken.source();
+    const source = cancelRef.current;
 
-    try {
-      // Step 1: Get signed URL from backend 
-      setStage("requesting");
-      setStatusMessage(STAGE_LABELS.requesting);
-      setUploadProgress(0);
-
-      const { data: urlData } = await storageApi.getUploadUrl(
-        file.name,
-        file.type,
-        analysisType,
-      );
-
-      const { signed_url, submission_id } = urlData;
-      setSubmissionId(submission_id);
-
-      // Step 2: PUT file to GCS via signed URL 
-      setStage("uploading");
-      setStatusMessage(STAGE_LABELS.uploading);
-
-      const source = axios.CancelToken.source();
-      cancelRef.current = source;
-
-      await axios.put(signed_url, file, {
-        headers: { "Content-Type": file.type },
-        cancelToken: source.token,
-        // axios progress callback
-        onUploadProgress: (evt) => {
-          if (evt.total) {
-            const pct = Math.round((evt.loaded * 100) / evt.total);
-            setUploadProgress(pct);
-            setStatusMessage(`Uploading to cloud: ${pct}%`);
-          }
-        },
-      });
-
-      cancelRef.current = null;
-
-      // Step 3: Confirm upload with backend 
-      setStage("confirming");
-      setStatusMessage(STAGE_LABELS.confirming);
-      setUploadProgress(100);
-
-      await storageApi.confirmUpload(submission_id);
-
-      // Step 4: Queue background ML processing 
-      setStage("queuing");
-      setStatusMessage(STAGE_LABELS.queuing);
-
-      await storageApi.startProcessing(submission_id);
-      await refreshQuota();
-
-      // Done 
-      setStage("done");
-      setStatusMessage(STAGE_LABELS.done);
-      onUploadComplete?.(submission_id);
-    } catch (err) {
-      // Distinguish user-cancelled from real errors
-      if (axios.isCancel(err)) {
+    await runVideoUploadFlow({
+      file,
+      analysisType,
+      storageApi,
+      axiosClient: axios,
+      refreshQuota,
+      setStage,
+      setStatusMessage,
+      setUploadProgress,
+      setSubmissionId,
+      onUploadComplete,
+      onCancel: () => {
         reset();
-        return;
-      }
+      },
+      onFailure: (message, detail) => {
+        fail(message, detail);
+      },
+    });
 
-      const axiosErr = err as AxiosError<{ detail?: string }>;
-      const status = axiosErr.response?.status;
-      const detail =
-        axiosErr.response?.data?.detail || axiosErr.message || "Unknown error";
-
-      if (status === 429) {
-        fail("Monthly quota reached - upgrade your plan to continue.", detail);
-        await refreshQuota();
-      } else if (status === 403 || status === 400) {
-        // Signed URL expired or invalid
-        fail("Upload link expired — please try again.", detail);
-      } else if (status === 503) {
-        fail("Cloud storage is not configured on this server.", detail);
-      } else {
-        fail("Something went wrong. Please try again.", detail);
-      }
+    if (source) {
+      cancelRef.current = null;
     }
   };
 
@@ -238,7 +184,7 @@ export const VideoUploader: React.FC<VideoUploaderProps> = ({
         ? "bg-emerald-500"
         : "bg-sky-500";
 
-  const showProgress = isUploading || stage === "done";
+  const showProgress = isUploadingStage(stage) || stage === "done";
 
   // render 
   return (
