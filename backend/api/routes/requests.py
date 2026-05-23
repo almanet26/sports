@@ -16,7 +16,7 @@ from database.config import get_db
 from database.models.user import User
 from database.models.video import MatchRequest, UserVote, Video
 from schemas.video import MatchRequestCreate, MatchRequestResponse, MatchRequestListResponse
-from utils.auth import get_current_user, require_role
+from utils.auth import get_current_user, get_optional_user, require_role
 
 router = APIRouter(prefix="/requests", tags=["requests"])
 logger = logging.getLogger(__name__)
@@ -149,37 +149,26 @@ def list_requests(
     per_page: int = Query(20, ge=1, le=100),
     status_filter: Optional[str] = Query(None, description="Filter by status: pending, approved, completed, rejected"),
     db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_optional_user),
 ):
     """
     List all match requests sorted by vote count (popularity).
-    
-    **Access:** Open to all users.
+
+    **Access:** Open to all users. Authenticated users also receive their own vote state.
     """
     offset = (page - 1) * per_page
-    
+
     query = db.query(MatchRequest)
-    
+
     if status_filter:
         query = query.filter(MatchRequest.status == status_filter)
-    
+
     total = query.count()
     requests = query.order_by(MatchRequest.vote_count.desc(), MatchRequest.created_at.desc())\
                     .offset(offset).limit(per_page).all()
-    
+
     return MatchRequestListResponse(
-        requests=[MatchRequestResponse(
-            id=r.id,
-            match_title=r.match_title,
-            youtube_url=r.youtube_url,
-            match_date=r.match_date,
-            teams=r.teams,
-            venue=r.venue,
-            description=r.description,
-            vote_count=r.vote_count,
-            status=r.status,
-            requested_by=r.requested_by,
-            created_at=r.created_at,
-        ) for r in requests],
+        requests=[build_match_request_response(r, current_user.id if current_user else None, db) for r in requests],
         total=total,
         page=page,
         per_page=per_page,
@@ -217,21 +206,24 @@ def vote_for_request(
     ).first()
     
     if existing_vote:
-        # User is changing their vote
         old_vote_type = existing_vote.vote_type
-        
+
         if old_vote_type == vote_request.vote_type:
-            # Same vote - no change
-            pass
-        else:
-            # Change vote type
+            # Same vote clicked again — toggle off (remove the vote)
             if old_vote_type == "up":
-                match_request.upvotes -= 1
+                match_request.upvotes = max(0, match_request.upvotes - 1)
+            else:
+                match_request.downvotes = max(0, match_request.downvotes - 1)
+            match_request.vote_count = max(0, match_request.vote_count - 1)
+            db.delete(existing_vote)
+        else:
+            # Switching vote direction
+            if old_vote_type == "up":
+                match_request.upvotes = max(0, match_request.upvotes - 1)
                 match_request.downvotes += 1
             else:
-                match_request.downvotes -= 1
+                match_request.downvotes = max(0, match_request.downvotes - 1)
                 match_request.upvotes += 1
-            
             existing_vote.vote_type = vote_request.vote_type
     else:
         # New vote

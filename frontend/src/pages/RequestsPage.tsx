@@ -73,44 +73,42 @@ export default function RequestsPage() {
   };
 
   const handleVote = async (requestId: string, voteType: 'up' | 'down') => {
+    // Optimistic update before the API call
+    setRequests((prev) =>
+      prev.map((req) => {
+        if (req.id !== requestId) return req;
+
+        const wasUpvoted = req.user_vote === 'up';
+        const wasDownvoted = req.user_vote === 'down';
+        let upvotes = req.upvotes;
+        let downvotes = req.downvotes;
+        let newVote: 'up' | 'down' | null;
+
+        if (voteType === 'up') {
+          if (wasUpvoted) { upvotes--; newVote = null; }
+          else { upvotes++; if (wasDownvoted) downvotes--; newVote = 'up'; }
+        } else {
+          if (wasDownvoted) { downvotes--; newVote = null; }
+          else { downvotes++; if (wasUpvoted) upvotes--; newVote = 'down'; }
+        }
+
+        return { ...req, upvotes, downvotes, user_vote: newVote };
+      })
+    );
+
     try {
-      await requestsApi.vote(requestId, voteType);
-      // Optimistically update the UI
+      const res = await requestsApi.vote(requestId, voteType);
+      // Reconcile with server truth
       setRequests((prev) =>
-        prev.map((req) => {
-          if (req.id !== requestId) return req;
-
-          const wasUpvoted = req.user_vote === 'up';
-          const wasDownvoted = req.user_vote === 'down';
-
-          let upvotes = req.upvotes;
-          let downvotes = req.downvotes;
-          let newVote: 'up' | 'down' | null = voteType;
-
-          // Toggle logic
-          if (voteType === 'up') {
-            if (wasUpvoted) {
-              upvotes--;
-              newVote = null;
-            } else {
-              upvotes++;
-              if (wasDownvoted) downvotes--;
-            }
-          } else {
-            if (wasDownvoted) {
-              downvotes--;
-              newVote = null;
-            } else {
-              downvotes++;
-              if (wasUpvoted) upvotes--;
-            }
-          }
-
-          return { ...req, upvotes, downvotes, user_vote: newVote };
-        })
+        prev.map((req) =>
+          req.id === requestId
+            ? { ...req, upvotes: res.data.upvotes, downvotes: res.data.downvotes, user_vote: res.data.user_vote ?? null }
+            : req
+        )
       );
     } catch (error) {
       console.error('Failed to vote:', error);
+      fetchRequests(); // revert on error
     }
   };
 
@@ -299,35 +297,53 @@ export default function RequestsPage() {
               className="glass rounded-2xl border border-white/20 p-5 hover:border-white/30 transition-all"
             >
               <div className="flex items-start gap-4">
-                {/* Vote Buttons */}
-                <div className="flex flex-col items-center gap-1">
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleVote(request.id, 'up')}
-                    className={`p-2 rounded-lg transition-all ${
-                      request.user_vote === 'up'
-                        ? 'bg-green-500/20 text-green-400'
-                        : 'text-white/40 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <i className="fas fa-thumbs-up text-lg"></i>
-                  </motion.button>
-                  <span className="text-lg font-semibold text-white">
-                    {(request.upvotes || 0) - (request.downvotes || 0)}
-                  </span>
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.9 }}
-                    onClick={() => handleVote(request.id, 'down')}
-                    className={`p-2 rounded-lg transition-all ${
-                      request.user_vote === 'down'
-                        ? 'bg-red-500/20 text-red-400'
-                        : 'text-white/40 hover:bg-white/10 hover:text-white'
-                    }`}
-                  >
-                    <i className="fas fa-thumbs-down text-lg"></i>
-                  </motion.button>
+                {/* Vote Buttons — only active for pending requests */}
+                <div className="flex flex-col items-center gap-1 min-w-[2.5rem]">
+                  {request.status === 'pending' ? (
+                    <>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleVote(request.id, 'up')}
+                        className={`p-2 rounded-lg transition-all ${
+                          request.user_vote === 'up'
+                            ? 'bg-orange-500/20 text-orange-400'
+                            : 'text-white/40 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <i className="fas fa-arrow-up text-lg"></i>
+                      </motion.button>
+                      <span className={`text-sm font-bold ${
+                        (request.upvotes || 0) - (request.downvotes || 0) > 0
+                          ? 'text-orange-400'
+                          : (request.upvotes || 0) - (request.downvotes || 0) < 0
+                          ? 'text-blue-400'
+                          : 'text-white/60'
+                      }`}>
+                        {(request.upvotes || 0) - (request.downvotes || 0)}
+                      </span>
+                      <motion.button
+                        whileHover={{ scale: 1.1 }}
+                        whileTap={{ scale: 0.9 }}
+                        onClick={() => handleVote(request.id, 'down')}
+                        className={`p-2 rounded-lg transition-all ${
+                          request.user_vote === 'down'
+                            ? 'bg-blue-500/20 text-blue-400'
+                            : 'text-white/40 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <i className="fas fa-arrow-down text-lg"></i>
+                      </motion.button>
+                    </>
+                  ) : (
+                    <div className="flex flex-col items-center gap-1 pt-1">
+                      <i className="fas fa-arrow-up text-white/20 text-lg"></i>
+                      <span className="text-sm font-bold text-white/30">
+                        {(request.upvotes || 0) - (request.downvotes || 0)}
+                      </span>
+                      <i className="fas fa-arrow-down text-white/20 text-lg"></i>
+                    </div>
+                  )}
                 </div>
 
                 {/* Request Content */}
@@ -361,7 +377,7 @@ export default function RequestsPage() {
                     </span>
                     <span>•</span>
                     <span>
-                      <i className="fas fa-thumbs-up mr-1"></i>
+                      <i className="fas fa-arrow-up mr-1"></i>
                       {request.upvotes || 0} upvotes
                     </span>
                   </div>
