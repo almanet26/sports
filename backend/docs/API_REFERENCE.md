@@ -242,7 +242,7 @@ backend/
 
 ## 👥 User Roles & Permissions Matrix (Updated)
 
-| Capability | PLAYER (Free) | COACH (Premium) | ADMIN |
+| Capability | PLAYER | COACH | ADMIN |
 |------------|:-------------:|:---------------:|:-----:|
 | Browse public library | ✅ | ✅ | ✅ |
 | Filter highlights | ✅ | ✅ | ✅ |
@@ -290,8 +290,8 @@ cp .env.example .env
 ### 2. Database
 
 ```bash
-# SQLAlchemy auto-create (dev mode)
-python -c "from database.config import Base, engine; from database.models import *; Base.metadata.create_all(bind=engine)"
+# Run Alembic migrations
+alembic upgrade head
 ```
 
 ### 3. Start Server
@@ -340,16 +340,27 @@ id: UUID
 email: str (unique)
 password_hash: str
 name: str
-role: str  # PLAYER, COACH, ADMIN
+role: str  # PLAYER, COACH, ADMIN  ← account type, not subscription tier
 phone: str (optional)
 team: str (optional)
-subscription_plan: str  # BASIC, PREMIUM, COACH
 coach_status: str  # pending, approved, rejected
 coach_document_url: str (optional)
-stripe_customer_id: str (optional)
 is_active: bool
 created_at: datetime
 updated_at: datetime
+```
+
+Subscription tier is **not** stored on the User. It is resolved at runtime from the `Subscription` table (`plan_key` → `PlanConfig`). Active plan examples: `free`, `basic`, `platinum`, `coach_free`, `coach_starter`, `coach_pro`, `academy`.
+
+### Subscription
+```python
+id: UUID
+user_id: UUID (FK → User)
+plan_key: str   # e.g. "basic", "coach_starter", "academy"
+role: str       # mirrors plan_key; used for fast gate checks
+status: str     # "active" | "expired" | "cancelled"
+started_at: datetime
+expires_at: datetime
 ```
 
 ### Video

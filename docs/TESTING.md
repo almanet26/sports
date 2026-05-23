@@ -49,7 +49,7 @@ Comprehensive testing strategy for backend and frontend.
 
 ```bash
 cd backend
-pip install pytest pytest-cov pytest-asyncio
+pip install -r requirements-test.txt
 pytest --version
 ```
 
@@ -58,14 +58,14 @@ pytest --version
 ```
 backend/tests/
 ├── __init__.py
-├── conftest.py              # Shared fixtures
-├── test_ocr_logic.py        # OCR engine tests
-├── test_event_detection.py  # Event detection tests
-├── test_auth.py             # Authentication tests
-├── test_videos.py           # Video upload/processing tests
-├── test_batting.py          # Batting analysis tests
-└── data/                    # Test fixtures & sample data
-    └── sample_videos/
+├── conftest.py                 # Shared fixtures: in-memory SQLite, plan seeding, user helpers
+├── test_ocr_logic.py           # OCR engine state machine and event detection
+├── test_event_detection.py     # Score delta and wicket detection logic
+├── test_gates.py               # Subscription feature gates and access control
+├── test_mocked_services.py     # External service integrations (GCS, Cloud Tasks) with mocks
+├── test_atomic_increment.py    # Monthly usage quota increment/decrement
+├── test_predeploy_audit.py     # Pre-deploy smoke tests: env vars, DB connectivity
+└── data/                       # Test fixtures and sample data
 ```
 
 ### Example Test: OCR Logic
@@ -265,47 +265,53 @@ pytest --cov=. --cov-report=html
 
 ## 3. Backend Integration Tests
 
-### Setup Database for Testing
+### Test Database Strategy
 
-**File: `tests/conftest.py`**
+The test suite uses an **in-memory SQLite database** (never touches production). Tables are created once per session; plan config rows are seeded once; user/subscription/usage data is rolled back after each test function.
+
+**File: `tests/conftest.py`** (abridged — see source for full fixtures)
 
 ```python
 import pytest
-from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
-from main import app, get_db
 from database.config import Base
+from database.models.user import User
+from database.models.subscription import Subscription
+from database.models.plan_config import PlanConfig
+from database.models.monthly_usage import MonthlyUsage
 
-# Use in-memory SQLite for tests
-SQLALCHEMY_DATABASE_URL = "sqlite:///./test.db"
+TEST_ENGINE = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_ENGINE)
 
-@pytest.fixture(scope="function")
-def db():
-    """Create test database."""
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
-    Base.metadata.create_all(bind=engine)
-    
-    SessionLocal = sessionmaker(bind=engine)
-    db = SessionLocal()
-    
-    yield db
-    
+@pytest.fixture(scope="session", autouse=True)
+def _create_tables():
+    Base.metadata.create_all(TEST_ENGINE)
+    yield
+    Base.metadata.drop_all(TEST_ENGINE)
+
+@pytest.fixture(scope="session")
+def _seed_plans(_create_tables):
+    """Seed all plan_config rows (free, basic, platinum, coach_free, coach_starter, coach_pro, academy)."""
+    db = TestingSessionLocal()
+    # ... inserts PlanConfig rows matching production values ...
+    db.commit()
     db.close()
-    Base.metadata.drop_all(bind=engine)
 
 @pytest.fixture
-def client(db):
-    """Create test client with test database."""
-    def override_get_db():
-        yield db
-    
-    app.dependency_overrides[get_db] = override_get_db
-    
-    yield TestClient(app)
-    
-    app.dependency_overrides.clear()
+def db(_seed_plans):
+    """Fresh session per test; rolls back user/subscription/usage data after each test."""
+    session = TestingSessionLocal()
+    yield session
+    session.rollback()
+    session.query(MonthlyUsage).delete()
+    session.query(Subscription).delete()
+    session.query(User).delete()
+    session.commit()
+    session.close()
 ```
+
+**Named user fixtures** (`free_user`, `basic_player_user`, `platinum_user`, `coach_free_user`, `coach_starter_user`, `admin_user`) are defined in `conftest.py` and can be composed directly in test functions.
 
 ### Integration Test Example
 
@@ -606,7 +612,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-python@v2
         with:
-          python-version: 3.10
+          python-version: "3.11"
       
       - run: pip install -r backend/requirements.txt
       - run: cd backend && pytest --cov
@@ -617,7 +623,7 @@ jobs:
       - uses: actions/checkout@v2
       - uses: actions/setup-node@v2
         with:
-          node-version: 18
+          node-version: "20"
       
       - run: cd frontend && npm install
       - run: cd frontend && npm test -- --coverage

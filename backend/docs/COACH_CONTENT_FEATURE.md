@@ -75,31 +75,11 @@ The "My Content" feature allows coaches to upload and manage their educational c
 
 ## Database Migration
 
-Run the following to create the coach_content table:
+Schema changes are managed via Alembic. After adding the model, run:
 
 ```bash
-# The table will be created automatically on server startup
-python main.py
-```
-
-Or manually create with:
-
-```sql
-CREATE TABLE coach_content (
-    id SERIAL PRIMARY KEY,
-    coach_id INTEGER REFERENCES users(id),
-    title VARCHAR(255) NOT NULL,
-    description TEXT,
-    content_type VARCHAR(20) NOT NULL,
-    article_content TEXT,
-    file_url VARCHAR(500),
-    thumbnail_url VARCHAR(500),
-    tags VARCHAR(500),
-    views INTEGER DEFAULT 0,
-    likes INTEGER DEFAULT 0,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
+cd backend
+alembic upgrade head
 ```
 
 ## API Examples
@@ -148,7 +128,7 @@ curl http://localhost:8000/api/v1/coach/content \
 
 ## Testing
 
-1. Start backend: `python main.py`
+1. Start backend: `uvicorn main:app --reload`
 2. Start frontend: `npm run dev`
 3. Login as a coach
 4. Navigate to `/coach/content`

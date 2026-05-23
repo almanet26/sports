@@ -33,10 +33,10 @@ python -m venv venv
 # source venv/bin/activate            # Mac/Linux
 
 pip install -r requirements.txt
-pip install pytest pytest-cov black flake8   # Dev tools
+pip install -r requirements-test.txt   # pytest, pytest-cov, pytest-asyncio
 cp .env.example .env
 # Edit .env with local PostgreSQL URL
-python migrate_db.py
+alembic upgrade head
 uvicorn main:app --reload
 ```
 

@@ -45,6 +45,10 @@ sports/
 │   │       ├── match.py
 │   │       └── notification.py
 │   ├── config/
+│   │   ├── cors.json         # GCS CORS policy (Vercel + localhost origins)
+│   │   ├── gcs-cors.json     # Applied to GCS bucket via gcloud storage
+│   │   ├── feature_map.py
+│   │   └── gcs_config.py
 │   ├── database/
 │   │   ├── crud/
 │   │   └── models/
@@ -56,6 +60,8 @@ sports/
 │   ├── utils/
 │   ├── Dockerfile
 │   ├── Dockerfile.worker
+│   ├── .gcloudignore         # Excludes venv, __pycache__, tests from build context
+│   ├── cloudbuild.yaml       # GCP Cloud Build pipeline (build → push → deploy)
 │   ├── cloudrun.yaml
 │   ├── requirements.txt
 │   └── main.py
@@ -66,8 +72,6 @@ sports/
 │   ├── package.json
 │   └── vite.config.ts
 ├── docs/
-├── storage/
-├── cloudbuild.yaml
 └── package.json
 ```
 
@@ -365,10 +369,25 @@ VITE_BACKEND_PORT=8001
 
 ## Architecture
 
-- **Frontend**: React 18 + Vite (SSPA, deployed on Vercel)
+- **Frontend**: React 19 + Vite (SSPA, deployed on Vercel)
 - **Backend**: FastAPI + SQLAlchemy async ORM (deployed on GCP Cloud Run)
 - **Database**: PostgreSQL 15 on Supabase
 - **Storage**: GCP Cloud Storage (videos, reports, artifacts)
 - **Task Queue**: GCP Cloud Tasks (async video processing)
 - **Secrets**: GCP Secret Manager
 - **CI/CD**: GCP Cloud Build (Docker builds → Cloud Run deployment)
+
+## GCP Deployment
+
+The Cloud Build pipeline lives entirely inside `backend/`. The build context is the `backend/` directory, so the Dockerfile and `.gcloudignore` resolve correctly.
+
+```bash
+gcloud builds submit backend/ \
+  --config=backend/cloudbuild.yaml \
+  --project=sports-ai-489110 \
+  --substitutions=COMMIT_SHA=$(git rev-parse --short HEAD)
+```
+
+The pipeline authenticates Docker, builds the image with layer-cache, pushes both `$COMMIT_SHA` and `latest` tags to Artifact Registry, then deploys to the `sports-backend` Cloud Run service in `asia-south1`. All sensitive values (DATABASE_URL, JWT_SECRET_KEY, API keys) are injected at deploy time from GCP Secret Manager via `--update-secrets`.
+
+Frontend is deployed separately on Vercel — point its `VITE_API_URL` env var to the Cloud Run service URL.

@@ -39,10 +39,13 @@ graph TD
 
 ## 3. Database Schema Layout Context
 **PostgreSQL** acts as the singular source of truth.
-*   `Users Table:` Stores profiles, hashed passwords, and roles (`admin`, `free`, `premium`, `coach`).
-*   `Videos Table:` Tracks uploaded file paths, status (`processing`, `failed`, `completed`), and types (raw match vs player practice clip).
+*   `Users Table:` Stores profiles, hashed passwords, and account roles (`PLAYER`, `COACH`, `ADMIN`). Subscription tier is tracked separately via the `Subscription` table and `PlanConfig` rows, not as a column on the user.
+*   `Subscription Table:` Links a user to their active plan (e.g. `free`, `basic`, `platinum`, `coach_free`, `coach_starter`, `coach_pro`, `academy`) with start/expiry timestamps. Plans are fixed-duration (90/180/365 days), not recurring.
+*   `PlanConfig Table:` Defines per-plan quota limits (`max_biomech_per_month`, `max_ocr_hours_per_month`, `max_submissions_per_month`, `max_players_in_dashboard`). Seeded once at startup.
+*   `MonthlyUsage Table:` Tracks real-time usage counters per user per month; compared against `PlanConfig` limits by the feature gate layer.
+*   `Videos Table:` Tracks uploaded file paths, status (`processing`, `failed`, `completed`), and visibility (`public`, `private`).
 *   `Highlights/Events Table:` Relational pointers connecting a parent video with specific timestamp clips, tracking whether it's a '4', '6', or 'Wicket'.
-*   `Submissions Table:` Enables student-to-coach tracking where Premium users upload clips explicitly tied to coach review workflows.
+*   `Submissions Table:` Enables player-to-coach video review workflows with statuses (`PENDING`, `PROCESSING`, `DRAFT_REVIEW`, `PUBLISHED`, `REJECTED`).
 
 ---
 

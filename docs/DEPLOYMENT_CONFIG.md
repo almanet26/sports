@@ -39,18 +39,21 @@ gcloud tasks queues create video-processing --location=asia-south1
 ```
 
 ## 3. Automated CI/CD (Cloud Build)
-We use `cloudbuild.yaml` in the root directory to handle containerization and deployment automatically.
+`cloudbuild.yaml` and `.gcloudignore` live inside `backend/`. The build context is `backend/` — do **not** submit from the repo root, as the Dockerfile paths and `.gcloudignore` exclusions (venv, __pycache__, tests) are relative to that directory.
 
 **Triggering a Deployment:**
 ```bash
-gcloud builds submit .   --config=cloudbuild.yaml   --project=sports-ai-489110   --substitutions=COMMIT_SHA=$(git rev-parse --short HEAD)
+gcloud builds submit backend/ \
+  --config=backend/cloudbuild.yaml \
+  --project=sports-ai-489110 \
+  --substitutions=COMMIT_SHA=$(git rev-parse --short HEAD)
 ```
 
 **What the pipeline does:**
-1.  Authenticates Docker to GCP's Artifact Registry.
-2.  Builds the `backend/Dockerfile`, combining the Python API and FFmpeg/MediaPipe system dependencies.
-3.  Tags and pushes the container heavily utilizing cache layers to reduce build time.
-4.  Deploys logic directly to the `sports-backend` Cloud Run service instance.
+1.  Authenticates Docker to GCP's Artifact Registry (`asia-south1-docker.pkg.dev`).
+2.  Builds the `Dockerfile` inside `backend/`, combining the Python API, FFmpeg, and MediaPipe dependencies. Uses `--cache-from` to reuse layers from the previous `latest` image.
+3.  Pushes both `$COMMIT_SHA` and `latest` tags to Artifact Registry.
+4.  Deploys to the `sports-backend` Cloud Run service in `asia-south1`, injecting non-sensitive env vars via `--set-env-vars` and pulling secrets (DATABASE_URL, JWT_SECRET_KEY, API keys) from Secret Manager via `--update-secrets`.
 
 ## 4. Frontend Deployment (Vercel)
 The React/Vite instance relies on Vercel for global Edge delivery.
