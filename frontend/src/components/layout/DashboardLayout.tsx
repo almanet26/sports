@@ -23,7 +23,7 @@ const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
     { to: "/player", icon: "fas fa-home", label: "Dashboard" },
     { to: "/player/profile", icon: "fas fa-user-edit", label: "Profile" },
-    { to: "/stats", icon: "fas fa-chart-bar", label: "My Performance" },
+    { to: "/player/:id", icon: "fas fa-chart-bar", label: "My Performance" },
     { to: "/player/videos", icon: "fas fa-video", label: "My Videos" },
     { to: "/player/bowling", icon: "fas fa-bowling-ball", label: "Bowling" },
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
@@ -216,15 +216,17 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
 
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-            {navItems.map((item, index) => (
+            {navItems.map((item, index) => {
+              const target = item.to.includes(':id') ? item.to.replace(':id', user?.id || '') : item.to;
+              return (
               <motion.div
-                key={item.to}
+                key={target}
                 initial={{ opacity: 0, x: -20 }}
                 animate={{ opacity: 1, x: 0 }}
                 transition={{ delay: index * 0.1 }}
               >
                 <NavLink
-                  to={item.to}
+                  to={target}
                   end={item.label === "Dashboard"}
                   onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
@@ -262,7 +264,8 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                   )}
                 </NavLink>
               </motion.div>
-            ))}
+              );
+            })}
           </nav>
 
           {/* Theme Toggle */}
