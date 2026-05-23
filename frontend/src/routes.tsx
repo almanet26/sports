@@ -47,6 +47,7 @@ import CoachMyPlayersPage from './pages/CoachMyPlayersPage';
 import CoachMessagesPage from './pages/CoachMessagesPage';
 import CoachContentPage from './pages/CoachContentPage';
 import CoachSettingsPage from './pages/CoachSettingsPage';
+import CoachProfilePage from './pages/CoachProfilePage';
 import AdminAuditLogPage from './pages/AdminAuditLogPage';
 import BillingPage from './pages/BillingPage';
 import ChatPage, { CoachChatPage } from './pages/ChatPage';
@@ -177,6 +178,25 @@ function DashboardRedirect() {
   return <Navigate to={targetPath} replace />;
 }
 
+function SettingsRedirect() {
+  const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+
+  if (!isAuthenticated || !user) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user.role === 'PLAYER') {
+    return <Navigate to="/player/settings" replace />;
+  }
+
+  if (user.role === 'COACH') {
+    return <Navigate to="/coach/settings" replace />;
+  }
+
+  return <ProfilePage />;
+}
+
 // App Router
 export default function AppRouter() {
   return (
@@ -207,7 +227,7 @@ export default function AppRouter() {
             <Route path="/library" element={<HighlightsPage />} />
             <Route path="/video/:videoId" element={<VideoDetailPage />} />
             <Route path="/requests" element={<RequestsPage />} />
-            <Route path="/settings" element={<ProfilePage />} />
+            <Route path="/settings" element={<SettingsRedirect />} />
             <Route path="/stats" element={<StatsPage />} />
             <Route path="/matches" element={<MatchesPage />} />
             <Route path="/notifications" element={<NotificationsPage />} />
@@ -245,6 +265,7 @@ export default function AppRouter() {
             <Route element={<CoachStatusGuard />}>
               <Route element={<DashboardLayout />}>
                 <Route path="/coach" element={<CoachDashboard />} />
+                <Route path="/coach/profile" element={<CoachProfilePage />} />
                 <Route path="/coach/upload" element={<UploadPage />} />
                 <Route path="/coach/player/:id" element={<PlayerPerformance />} />
                 <Route path="/coach/players" element={<CoachMyPlayersPage />} />
