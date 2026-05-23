@@ -255,53 +255,42 @@ gcloud run services update sports-api \
 
 ## 4. Cloud Build
 
-### Setup CI/CD Pipeline
+### Pipeline Location
 
-**File: `cloudbuild.yaml`**
-```yaml
-steps:
-  # Step 1: Build Docker image
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'build'
-      - '-t'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sports/backend:$SHORT_SHA'
-      - '-f'
-      - 'Dockerfile'
-      - './backend'
+`cloudbuild.yaml` and `.gcloudignore` live in `backend/`. The build context must be the `backend/` directory — submitting from the repo root will fail because the Dockerfile path and `.gcloudignore` exclusions are relative to `backend/`.
 
-  # Step 2: Push to Artifact Registry
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'us-central1-docker.pkg.dev/$PROJECT_ID/sports/backend:$SHORT_SHA'
+### Key substitutions (defined in `backend/cloudbuild.yaml`)
 
-  # Step 3: Deploy to Cloud Run
-  - name: 'gcr.io/cloud-builders/gke-deploy'
-    args:
-      - 'run'
-      - '--filename=.'
-      - '--image=us-central1-docker.pkg.dev/$PROJECT_ID/sports/backend:$SHORT_SHA'
-      - '--location=us-central1'
+| Variable | Value |
+|---|---|
+| `_REGION` | `asia-south1` |
+| `_PROJECT` | `sports-ai-489110` |
+| `_SERVICE` | `sports-backend` |
+| `_IMAGE` | `asia-south1-docker.pkg.dev/sports-ai-489110/sports-backend/api` |
+| `_GCS_BUCKET` | `sports-ai-storage` |
+| `_FRONTEND_URL` | `https://sports-teal-two.vercel.app` |
 
-images:
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/sports/backend:$SHORT_SHA'
-  - 'us-central1-docker.pkg.dev/$PROJECT_ID/sports/backend:latest'
-```
+### Pipeline Steps
+
+1. **Auth** — authenticates Docker to `asia-south1-docker.pkg.dev`
+2. **Build** — builds `Dockerfile` with `--cache-from` the previous `latest` image
+3. **Push** — pushes `$COMMIT_SHA` and `latest` tags to Artifact Registry
+4. **Deploy** — deploys to Cloud Run with `--memory=4Gi`, `--cpu=2`, `--max-instances=3`; injects non-sensitive env vars via `--set-env-vars` and pulls secrets (DATABASE_URL, JWT_SECRET_KEY, GEMINI_API_KEY_1, YOUTUBE_COOKIES_B64, YOUTUBE_PO_TOKEN) from Secret Manager
 
 ### Trigger Build
 
 ```bash
-# Manual trigger
-gcloud builds submit \
-  --config=cloudbuild.yaml \
-  --substitutions SHORT_SHA=abc123
+# Manual trigger — build context is backend/
+gcloud builds submit backend/ \
+  --config=backend/cloudbuild.yaml \
+  --project=sports-ai-489110 \
+  --substitutions=COMMIT_SHA=$(git rev-parse --short HEAD)
 
 # View build status
-gcloud builds log abc123 --stream
-
-# List recent builds
 gcloud builds list --limit 10
+
+# Stream logs for a specific build
+gcloud builds log BUILD_ID --stream
 ```
 
 ---
@@ -505,4 +494,4 @@ gcloud alpha monitoring policies create \
 
 ---
 
-**Last Updated:** March 16, 2026
+**Last Updated:** May 22, 2026

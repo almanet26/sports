@@ -12,9 +12,9 @@ Complete step-by-step guide to get the entire application running locally.
 
 ### Windows
 - **Git:** https://git-scm.com/download/win
-- **Python 3.10+:** https://www.python.org/downloads/
-- **Node.js 18+:** https://nodejs.org/
-- **PostgreSQL 12+:** https://www.postgresql.org/download/windows/
+- **Python 3.11:** https://www.python.org/downloads/
+- **Node.js 20 LTS:** https://nodejs.org/
+- **PostgreSQL 15:** https://www.postgresql.org/download/windows/
 - **FFmpeg:** https://ffmpeg.org/download.html (add to PATH)
 
 ```powershell
@@ -29,13 +29,13 @@ ffmpeg -version
 ### Mac
 ```bash
 # Using Homebrew
-brew install python@3.10 node postgresql ffmpeg git
+brew install python@3.11 node@20 postgresql@15 ffmpeg git
 ```
 
 ### Linux (Ubuntu/Debian)
 ```bash
 sudo apt update
-sudo apt install python3.10 python3-pip nodejs postgresql postgresql-contrib ffmpeg git
+sudo apt install python3.11 python3-pip nodejs postgresql postgresql-contrib ffmpeg git
 ```
 
 ---
@@ -119,7 +119,7 @@ CREATE DATABASE sports_dev;
 **Run Migrations:**
 ```bash
 cd backend
-python -c "from database.config import Base, engine; from database.models import *; Base.metadata.create_all(bind=engine)"
+alembic upgrade head
 ```
 
 **Verify Tables Created:**
@@ -180,7 +180,7 @@ npm run dev
 
 **Expected Output:**
 ```
-  VITE v4.x.x  ready in xxx ms
+  VITE v7.x.x  ready in xxx ms
 
   ➜  Local:   http://localhost:5173/
   ➜  press h to show help
@@ -349,13 +349,13 @@ SELECT * FROM users LIMIT 5;  # View data
 # Drop all data
 dropdb -U postgres sports_dev
 createdb -U postgres sports_dev
-python -c "from database.config import Base, engine; from database.models import *; Base.metadata.create_all(bind=engine)"
+cd backend && alembic upgrade head
 ```
 
 ### 10.3 Seed Test Data
 ```bash
 cd backend
-python database/seed_users.py
+python scripts/seed_roles.py
 ```
 
 ---
@@ -409,4 +409,4 @@ cd backend && pytest --watch
 
 ---
 
-**Last Updated:** March 16, 2026
+**Last Updated:** May 22, 2026

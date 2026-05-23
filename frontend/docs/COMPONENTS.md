@@ -20,35 +20,51 @@ Guide to React components, state management, and UI structure.
 
 ```
 frontend/src/
-├── pages/          # Full-page components (route-based)
-│   ├── Home.tsx
-│   ├── BattingAnalysis.tsx
-│   ├── BowlingAnalysis.tsx
-│   ├── Dashboard.tsx
+├── pages/              # Full-page route components
+│   ├── LandingPage.tsx
+│   ├── LoginPage.tsx
+│   ├── RegisterPage.tsx
+│   ├── PlayerDashboard.tsx
 │   ├── CoachDashboard.tsx
-|   ├── AdminDashboard.tsx
+│   ├── AdminDashboard.tsx
+│   ├── BattingAnalysisPage.tsx
+│   ├── BowlingAnalysisPage.tsx
+│   ├── UploadPage.tsx
+│   ├── VideoDetailPage.tsx
+│   ├── BillingPage.tsx
+│   ├── SubscriptionPage.tsx
 │   └── ...
 │
-├── components/     # Reusable UI components
-│   ├── VideoPlayer.tsx
-│   ├── UploadForm.tsx
-│   ├── EventList.tsx
-│   ├── AnalysisReport.tsx
-│   ├── Navigation.tsx
+├── components/         # Reusable UI components
+│   ├── features/       # Feature-specific components
+│   ├── gates/          # Subscription gate components (FeatureGate, QuotaGate, UpgradePrompt)
+│   ├── layout/         # Layout wrappers and navigation
+│   ├── ui/             # Generic UI primitives (buttons, modals, cards)
 │   └── ...
 │
-├── lib/           # Utility functions and API clients
-│   ├── api.ts     # API calls
-│   └── utils.ts   # Helper functions
+├── lib/                # API clients and utilities
+│   ├── api.ts          # Axios instance with auth interceptors
+│   ├── matchesApi.ts   # Match-specific API calls
+│   └── utils.ts        # Helper functions
 │
-├── store/         # Zustand state management
-│   ├── authStore.ts
-│   └── themeStore.ts
+├── store/              # Zustand stores
+│   ├── authStore.ts    # Authentication state (user, tokens, login/logout)
+│   ├── themeStore.ts   # UI theme (dark/light)
+│   └── toastStore.ts   # Toast notification queue
 │
-├── utils/         # TypeScript interfaces
-│   └── auth.ts
+├── stores/             # Additional Zustand stores
+│   └── authStore.ts    # (subscription-aware auth variant)
 │
-└── routes.tsx        # Root component
+├── services/           # Service layer abstractions
+│
+├── types/              # TypeScript type definitions
+│   ├── plans.ts        # Subscription plan types
+│   └── subscriptionPlans.ts
+│
+├── utils/              # Utility helpers
+│
+├── routes.tsx          # Application route definitions
+└── main.tsx            # React entry point
 ```
 
 ---
@@ -199,50 +215,42 @@ if (user) {
 
 ---
 
-### Upload Store
+### Toast Store
 
 ```tsx
-// store/uploadStore.ts
-interface UploadState {
-  currentUpload: UploadProgress | null;
-  uploadHistory: UploadResult[];
-  
-  startUpload: (videoId: string, fileName: string) => void;
-  updateProgress: (percentage: number) => void;
-  completeUpload: (result: UploadResult) => void;
-  clearHistory: () => void;
+// store/toastStore.ts — manages the global notification queue
+import { create } from 'zustand';
+
+interface Toast {
+  id: string;
+  message: string;
+  type: 'success' | 'error' | 'info';
 }
 
-export const useUploadStore = create<UploadState>((set) => ({
-  currentUpload: null,
-  uploadHistory: [],
-  
-  startUpload: (videoId, fileName) => {
-    set({
-      currentUpload: { videoId, fileName, progress: 0 },
-    });
-  },
-  
-  updateProgress: (percentage) => {
+interface ToastState {
+  toasts: Toast[];
+  addToast: (message: string, type?: Toast['type']) => void;
+  removeToast: (id: string) => void;
+}
+
+export const useToastStore = create<ToastState>((set) => ({
+  toasts: [],
+  addToast: (message, type = 'info') =>
     set((state) => ({
-      currentUpload: state.currentUpload 
-        ? { ...state.currentUpload, progress: percentage }
-        : null,
-    }));
-  },
-  
-  completeUpload: (result) => {
-    set((state) => ({
-      currentUpload: null,
-      uploadHistory: [result, ...state.uploadHistory],
-    }));
-  },
-  
-  clearHistory: () => {
-    set({ uploadHistory: [] });
-  },
+      toasts: [...state.toasts, { id: crypto.randomUUID(), message, type }],
+    })),
+  removeToast: (id) =>
+    set((state) => ({ toasts: state.toasts.filter((t) => t.id !== id) })),
 }));
 ```
+
+### Subscription Gates (`components/gates/`)
+
+Subscription-aware components that guard features behind plan checks. Used throughout player and coach pages.
+
+- **`FeatureGate`** — wraps a feature; renders an `UpgradePrompt` if the user's plan doesn't include it
+- **`QuotaGate`** — checks remaining usage quota (biomech analyses, OCR hours, submissions) before allowing an action
+- **`UpgradePrompt`** — inline CTA that links to `BillingPage` with the required plan pre-selected
 
 ---
 
