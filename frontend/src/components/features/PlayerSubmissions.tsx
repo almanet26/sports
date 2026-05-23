@@ -538,7 +538,7 @@ export default function PlayerSubmissions() {
                   >
                     {/* Header */}
                     <div className="flex items-start justify-between mb-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className={`font-medium text-sm truncate ${dark ? 'text-white' : 'text-gray-800'}`}>
                           {sub.original_filename}
                         </p>
@@ -609,7 +609,7 @@ export default function PlayerSubmissions() {
                     }`}
                   >
                     <div className="flex items-start justify-between mb-3">
-                      <div>
+                      <div className="min-w-0">
                         <p className={`font-medium text-sm ${dark ? 'text-white' : 'text-gray-800'}`}>
                           {sub.coach_name || 'Unknown coach'}
                         </p>

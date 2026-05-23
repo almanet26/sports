@@ -86,6 +86,7 @@ function initializeAuthOnce() {
 initializeAuthOnce();
 import PlayerProfilePage from './pages/PlayerProfilePage';
 import BrowseContentPage from './pages/BrowseContentPage';
+import PlayerGamification from './pages/PlayerGamification';
 
 // Protected Route - Requires authentication
 function ProtectedRoute() {
@@ -224,6 +225,7 @@ export default function AppRouter() {
               <Route path="/player/profile/edit" element={<PlayerProfilePage />} />
               <Route path="/player/videos" element={<PlayerVideosPage />} />
               <Route path="/player/:id" element={<PlayerPerformance />} />
+              <Route path="/player/gamification" element={<PlayerGamification />} />
               <Route path="/player/bowling" element={<BowlingAnalysisPage />} />
               <Route path="/player/batting" element={<BattingAnalysisPage />} />
               <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />

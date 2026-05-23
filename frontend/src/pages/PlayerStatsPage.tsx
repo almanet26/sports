@@ -90,7 +90,7 @@ export default function PlayerStatsPage() {
             <p className="mt-1 text-sm text-white/60">Upload matches to see stats</p>
           </div>
           <Link
-            to="/library"
+            to="/player/submissions"
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-400/30 bg-cyan-400/10 px-4 py-2 text-sm font-medium text-cyan-300 transition hover:bg-cyan-400/15 hover:text-cyan-200"
           >
             <i className="fas fa-cloud-upload-alt text-xs"></i>
