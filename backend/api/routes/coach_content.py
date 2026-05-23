@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, status
+from fastapi.responses import FileResponse, RedirectResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from database.config import get_db
 from database.models import CoachContent, User
 from database.models.coach_content import ContentType
-from utils.auth import get_current_user
+from utils.auth import get_current_user, get_optional_user
 from pydantic import BaseModel, Field, validator
-from datetime import datetime
+from datetime import datetime, timedelta
+from urllib.parse import urlparse, unquote
+from pathlib import Path
+import mimetypes
+import logging
 import os
 import uuid
 import shutil
@@ -15,6 +20,7 @@ from google.cloud import storage as gcs
 
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
 USE_GCS = bool(GCS_BUCKET_NAME)
+logger = logging.getLogger(__name__)
 
 
 def _upload_to_gcs(file: UploadFile, blob_path: str) -> tuple[str, int]:
@@ -81,6 +87,107 @@ def _upload_file(file: UploadFile, blob_path: str) -> tuple[str, int]:
             return _upload_to_local(file, blob_path)
     else:
         return _upload_to_local(file, blob_path)
+
+
+def _sign_gcs_media_url(url: Optional[str]) -> Optional[str]:
+    """Return a temporary signed URL for GCS media so browsers can play it directly."""
+    if not url or not url.startswith("https://storage.googleapis.com/"):
+        return url
+
+    try:
+        parsed = urlparse(url)
+        bucket_and_blob = parsed.path.lstrip("/").split("/", 1)
+        if len(bucket_and_blob) != 2:
+            return url
+
+        bucket_name, blob_path = bucket_and_blob
+        blob_path = unquote(blob_path)
+
+        client = gcs.Client()
+        blob = client.bucket(bucket_name).blob(blob_path)
+        return blob.generate_signed_url(
+            version="v4",
+            expiration=timedelta(minutes=60),
+            method="GET",
+        )
+    except Exception as exc:
+        logger.warning("Failed to sign coach content media URL: %s", exc)
+        return url
+
+
+def _hydrate_content_media_urls(content: CoachContent) -> CoachContent:
+    content.file_url = _sign_gcs_media_url(content.file_url)
+    content.thumbnail_url = _sign_gcs_media_url(content.thumbnail_url)
+    return content
+
+
+def _resolve_local_media_path(url: Optional[str]) -> Optional[Path]:
+    if not url:
+        return None
+
+    normalized = url
+    if normalized.startswith("http://") or normalized.startswith("https://"):
+        return None
+
+    candidates = []
+    # /static/... URLs are served from the storage/ directory on disk
+    if normalized.startswith("/static/"):
+        candidates.append(Path("storage") / normalized[len("/static/"):])
+    if normalized.startswith("/storage/"):
+        candidates.append(Path(normalized.lstrip("/")))
+    if normalized.startswith("static/"):
+        candidates.append(Path("storage") / normalized[len("static/"):])
+    if normalized.startswith("storage/"):
+        candidates.append(Path(normalized))
+
+    filename = Path(normalized).name
+    if filename:
+        candidates.append(Path("storage") / "coach_content" / filename)
+
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+
+    base = Path("storage") / "coach_content"
+    if base.exists() and filename:
+        for match in base.rglob(filename):
+            if match.is_file():
+                return match
+
+    return None
+
+
+def _guess_media_type(url: Optional[str], fallback: str) -> str:
+    candidate = url or fallback
+    guessed, _ = mimetypes.guess_type(candidate)
+    return guessed or "application/octet-stream"
+
+
+def _media_response_for_content(
+    content: CoachContent,
+    url: Optional[str],
+    fallback_name: str,
+    media_type: Optional[str] = None,
+):
+    media_url = url or ""
+    if media_url.startswith("http://") or media_url.startswith("https://"):
+        return RedirectResponse(url=media_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+
+    local_path = _resolve_local_media_path(media_url)
+    if not local_path:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Media file not found")
+
+    return FileResponse(
+        path=str(local_path),
+        media_type=media_type or content.mime_type or "application/octet-stream",
+        filename=fallback_name or local_path.name,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "no-cache, no-store, must-revalidate",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
 
 router = APIRouter()
 
@@ -203,8 +310,8 @@ def create_content(
     db.add(content_record)
     db.commit()
     db.refresh(content_record)
-    
-    return content_record
+
+    return _hydrate_content_media_urls(content_record)
 
 
 @router.get("/content", response_model=List[ContentResponse])
@@ -224,37 +331,37 @@ def get_my_content(
         CoachContent.coach_id == current_user.id
     ).order_by(CoachContent.created_at.desc()).all()
     
-    return contents
+    return [_hydrate_content_media_urls(content) for content in contents]
 
 
 @router.get("/content/public", response_model=List[ContentResponse])
 def get_all_public_content(
-    current_user: User = Depends(get_current_user),
+    current_user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db)
 ):
     """Get all accessible content for the current user"""
-    
+
     # Get all public content
     public_contents = db.query(CoachContent).filter(
         CoachContent.is_public == True
     ).all()
-    
+
     # If user is a coach, also include their own private content
-    if current_user.role == "COACH":
+    if current_user and current_user.role == "COACH":
         own_private = db.query(CoachContent).filter(
             CoachContent.coach_id == current_user.id,
             CoachContent.is_public == False
         ).all()
-        
+
         # Combine and remove duplicates
         all_contents = list({c.id: c for c in (public_contents + own_private)}.values())
     else:
         all_contents = public_contents
-    
+
     # Sort by created_at descending
     all_contents.sort(key=lambda x: x.created_at, reverse=True)
-    
-    return all_contents
+
+    return [_hydrate_content_media_urls(content) for content in all_contents]
 
 
 @router.get("/content/{content_id}", response_model=ContentResponse)
@@ -284,7 +391,44 @@ def get_content(
     content.views += 1
     db.commit()
     
-    return content
+    return _hydrate_content_media_urls(content)
+
+
+@router.get("/content/{content_id}/media")
+def get_content_media(
+    content_id: str,
+    current_user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Return a playable media response for coach content videos/images."""
+    content = db.query(CoachContent).filter(CoachContent.id == content_id).first()
+
+    if not content:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    if not content.is_public and (not current_user or current_user.id != content.coach_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This content is private. Only the coach can view it.")
+
+    return _media_response_for_content(content, content.file_url, content.file_name or content.id, content.mime_type)
+
+
+@router.get("/content/{content_id}/thumbnail")
+def get_content_thumbnail(
+    content_id: str,
+    current_user: Optional[User] = Depends(get_optional_user),
+    db: Session = Depends(get_db),
+):
+    """Return a playable response for coach content thumbnails."""
+    content = db.query(CoachContent).filter(CoachContent.id == content_id).first()
+
+    if not content:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    if not content.is_public and (not current_user or current_user.id != content.coach_id):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="This content is private. Only the coach can view it.")
+
+    thumbnail_type = _guess_media_type(content.thumbnail_url, f"{content.file_name or content.id}_thumbnail")
+    return _media_response_for_content(content, content.thumbnail_url, f"{content.file_name or content.id}_thumbnail", thumbnail_type)
 
 
 @router.put("/content/{content_id}", response_model=ContentResponse)
@@ -344,8 +488,8 @@ def update_content(
     content.updated_at = datetime.utcnow()
     db.commit()
     db.refresh(content)
-    
-    return content
+
+    return _hydrate_content_media_urls(content)
 
 
 @router.delete("/content/{content_id}", response_model=DeleteResponse)
@@ -408,4 +552,4 @@ def get_coach_content(
         CoachContent.coach_id == coach_id
     ).order_by(CoachContent.created_at.desc()).all()
     
-    return contents
+    return [_hydrate_content_media_urls(content) for content in contents]

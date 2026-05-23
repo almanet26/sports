@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useThemeStore } from '../store/themeStore';
-import { api, resolveMediaUrl } from '../lib/api';
+import { api, coachContentMediaUrl, coachContentThumbnailUrl } from '../lib/api';
 
 interface ContentItem {
   id: string;
@@ -170,9 +170,9 @@ export default function CoachContentPage() {
                 {/* Thumbnail */}
                 <div className={`h-40 bg-gradient-to-r ${meta.color} relative`}>
                   {item.thumbnail_url ? (
-                    <img src={resolveMediaUrl(item.thumbnail_url)} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={coachContentThumbnailUrl(item.id)} alt={item.title} className="w-full h-full object-cover" />
                   ) : item.content_type === 'image' && item.file_url ? (
-                    <img src={resolveMediaUrl(item.file_url)} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={coachContentMediaUrl(item.id)} alt={item.title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="flex items-center justify-center h-full">
                       <i className={`${meta.icon} text-5xl text-white/50`}></i>
@@ -198,7 +198,7 @@ export default function CoachContentPage() {
                   </div>
                   <div className="flex gap-2">
                     {item.file_url && (
-                      <a href={resolveMediaUrl(item.file_url)} target="_blank" rel="noopener noreferrer"
+                      <a href={coachContentMediaUrl(item.id)} target="_blank" rel="noopener noreferrer"
                         className={`flex-1 py-1.5 rounded-lg text-xs font-medium border text-center transition-all ${theme === 'dark' ? 'glass border-white/10 hover:border-blue-500/40 hover:text-blue-400' : 'bg-white border-gray-200 hover:border-blue-400 hover:text-blue-500'}`}>
                         <i className="fas fa-eye mr-1"></i>View
                       </a>
@@ -221,15 +221,15 @@ export default function CoachContentPage() {
             <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}
               onClick={e => e.stopPropagation()}
-              className={`relative w-full max-w-md rounded-3xl border p-6 ${theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-gray-200 shadow-2xl text-gray-900'}`}>
-              <div className="flex items-center justify-between mb-5">
+              className={`relative w-full max-w-md max-h-[90vh] flex flex-col rounded-3xl border ${theme === 'dark' ? 'glass border-white/20 text-white' : 'bg-white border-gray-200 shadow-2xl text-gray-900'}`}>
+              <div className="flex items-center justify-between p-6 pb-4 shrink-0">
                 <h2 className="text-lg font-bold">Upload Content</h2>
                 <button onClick={() => setShowModal(false)} disabled={uploading}
                   className={`w-8 h-8 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}>
                   <i className="fas fa-times text-sm"></i>
                 </button>
               </div>
-              <div className="space-y-3">
+              <div className="overflow-y-auto px-6 space-y-3">
                 <div>
                   <label className={`block text-xs mb-1 ${sub}`}>Content Type</label>
                   <div className="grid grid-cols-3 gap-2">
@@ -322,7 +322,7 @@ export default function CoachContentPage() {
                   </div>
                 )}
               </div>
-              <div className="flex gap-3 mt-5">
+              <div className="flex gap-3 p-6 pt-4 shrink-0">
                 <button onClick={() => setShowModal(false)} disabled={uploading}
                   className={`flex-1 py-2.5 rounded-xl border text-sm font-medium disabled:opacity-50 ${theme === 'dark' ? 'glass border-white/20 hover:bg-white/10' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>
                   Cancel
