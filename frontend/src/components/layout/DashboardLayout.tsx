@@ -16,6 +16,12 @@ interface NavItem {
   label: string;
 }
 
+function getSettingsPath(role?: string) {
+  if (role === 'PLAYER') return '/player/settings';
+  if (role === 'COACH') return '/coach/settings';
+  return '/settings';
+}
+
 console.log("DashboardLayout rendered");
 
 // Role-specific dashboard items
@@ -36,11 +42,11 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
     { to: "/matches", icon: "fas fa-calendar", label: "Matches" },
     { to: "/notifications", icon: "fas fa-bell", label: "Notifications" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+    { to: getSettingsPath('PLAYER'), icon: "fas fa-cog", label: "Settings" },
   ],
   COACH: [
     { to: '/coach', icon: 'fas fa-home', label: 'Dashboard' },
-    { to: '/settings', icon: 'fas fa-user-circle', label: 'My Profile' },
+    { to: '/coach/profile', icon: 'fas fa-user-circle', label: 'My Profile' },
     { to: '/coach/players', icon: 'fas fa-users', label: 'My Players' },
     { to: '/coach/submissions', icon: 'fas fa-inbox', label: 'Video Reviews' },
     { to: '/coach/sessions', icon: 'fas fa-calendar-alt', label: 'Sessions' },
@@ -53,7 +59,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: '/coach/earnings', icon: 'fas fa-wallet', label: 'Earnings' },
     { to: '/coach/subscription', icon: 'fas fa-crown', label: 'Subscription' },
     { to: '/coach/content', icon: 'fas fa-photo-video', label: 'My Content' },
-    { to: '/coach/settings', icon: 'fas fa-cog', label: 'Settings' },
+    { to: getSettingsPath('COACH'), icon: 'fas fa-cog', label: 'Settings' },
   ],
   ADMIN: [
     { to: "/admin", icon: "fas fa-home", label: "Dashboard" },
@@ -63,7 +69,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/admin/plans", icon: "fas fa-tags", label: "Plans" },
     { to: "/library", icon: "fas fa-video", label: "Library" },
     { to: "/requests", icon: "fas fa-comment-dots", label: "Requests" },
-    { to: "/settings", icon: "fas fa-cog", label: "Settings" },
+    { to: getSettingsPath('ADMIN'), icon: "fas fa-cog", label: "Settings" },
   ],
 };
 
