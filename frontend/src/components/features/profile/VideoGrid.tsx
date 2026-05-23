@@ -5,6 +5,9 @@ import type { ChangeEvent } from "react";
 import { Link } from "react-router-dom";
 import type { PlayerVideoItem } from "../../../services/playerVideos";
 import { api } from "../../../lib/api";
+import { useSubscriptionStore } from "../../../store/authStore";
+import type { Tier } from "../../../types/subscriptionPlans";
+import { formatFileSize } from "../../../lib/utils";
 
 interface Props {
   videos: PlayerVideoItem[];
@@ -19,8 +22,16 @@ interface Props {
 
 const ACCEPTED_TYPES = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/x-m4v"];
 const FREE_UPLOAD_LIMIT = 5;
-const MAX_FILE_SIZE_MB = 50;
-const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+const UPLOAD_LIMITS: Record<Tier, number> = {
+  free: 10 * 1024 * 1024,
+  coach_free: 10 * 1024 * 1024,
+  basic: 50 * 1024 * 1024,
+  platinum: 100 * 1024 * 1024,
+  coach_starter: 50 * 1024 * 1024,
+  coach_pro: 100 * 1024 * 1024,
+  academy: 150 * 1024 * 1024,
+};
 
 function formatDate(value: string) {
   if (!value) return "Recently added";
@@ -47,6 +58,7 @@ export default function VideoGrid({
   onError,
 }: Props) {
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier) as Tier;
   const sortedVideos = useMemo(
     () => [...videos].sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime()),
     [videos],
@@ -126,8 +138,9 @@ export default function VideoGrid({
       onError("Please choose an MP4, MOV, AVI, or M4V video.");
       return;
     }
-    if (file.size > MAX_FILE_SIZE) {
-      onError("File size should be less than 50MB.");
+    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.free;
+    if (file.size > maxBytes) {
+      onError(`File size should be less than ${formatFileSize(maxBytes)}.`);
       return;
     }
 

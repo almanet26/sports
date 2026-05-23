@@ -6,6 +6,9 @@ import { api } from "../lib/api";
 import { useNavigate } from "react-router-dom";
 import { deletePlayerVideo, getPlayerVideos, type PlayerVideoItem, uploadPlayerVideo } from "../services/playerVideos";
 import { useAuthStore } from "../store/authStore";
+import { useSubscriptionStore } from "../store/authStore";
+import type { Tier } from "../types/subscriptionPlans";
+import { formatFileSize } from "../lib/utils";
 
 type SortMode = "latest" | "oldest" | "az";
 type FilterMode = "all" | "submitted" | "not_submitted";
@@ -207,8 +210,20 @@ export default function PlayerVideosPage() {
       setToast({ msg: "Please choose an MP4, MOV, AVI, or M4V video.", type: "error" });
       return;
     }
-    if (file.size > MAX_FILE_SIZE) {
-      setToast({ msg: "File size should be less than 50MB.", type: "error" });
+
+    const subscriptionTier = useSubscriptionStore.getState().subscriptionTier as Tier;
+    const UPLOAD_LIMITS: Record<Tier, number> = {
+      free: 10 * 1024 * 1024,
+      coach_free: 10 * 1024 * 1024,
+      basic: 50 * 1024 * 1024,
+      platinum: 100 * 1024 * 1024,
+      coach_starter: 50 * 1024 * 1024,
+      coach_pro: 100 * 1024 * 1024,
+      academy: 150 * 1024 * 1024,
+    };
+    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.free;
+    if (file.size > maxBytes) {
+      setToast({ msg: `File size should be less than ${formatFileSize(maxBytes)}.`, type: "error" });
       return;
     }
 

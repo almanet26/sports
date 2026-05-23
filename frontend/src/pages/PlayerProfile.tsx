@@ -31,6 +31,10 @@ const FREE_UPLOAD_LIMIT = 5;
 const MAX_FILE_SIZE_MB = 50;
 const MAX_UPLOAD_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
 
+import { useSubscriptionStore } from "../store/authStore";
+import type { Tier } from "../types/subscriptionPlans";
+import { formatFileSize } from "../lib/utils";
+
 const DEFAULT_SNAPSHOT = [
   { label: "Current Form", value: "Building", detail: "More match data unlocks stronger insight.", accent: "from-emerald-500 to-teal-500" },
   { label: "Match Readiness", value: "Pending", detail: "Complete your profile for better tracking.", accent: "from-blue-500 to-cyan-500" },
@@ -470,8 +474,19 @@ export default function PlayerProfile() {
       setToast({ msg: "Free users can upload only 5 videos per month.", type: "error" });
       return;
     }
-    if (file.size > MAX_UPLOAD_BYTES) {
-      setToast({ msg: "File size should be less than 50MB.", type: "error" });
+    const subscriptionTier = useSubscriptionStore.getState().subscriptionTier as Tier;
+    const UPLOAD_LIMITS: Record<Tier, number> = {
+      free: 10 * 1024 * 1024,
+      coach_free: 10 * 1024 * 1024,
+      basic: 50 * 1024 * 1024,
+      platinum: 100 * 1024 * 1024,
+      coach_starter: 50 * 1024 * 1024,
+      coach_pro: 100 * 1024 * 1024,
+      academy: 150 * 1024 * 1024,
+    };
+    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.free;
+    if (file.size > maxBytes) {
+      setToast({ msg: `File size should be less than ${formatFileSize(maxBytes)}.`, type: "error" });
       return;
     }
     setIsUploading(true);
