@@ -3,7 +3,7 @@ import type { PlanConfig } from '../types/subscriptionPlans';
 import { useToastStore } from '../store/toastStore';
 
 // Base URL from environment or default
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+export const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 /**
  * Resolve a media URL for display in the browser.
@@ -29,6 +29,14 @@ export function resolveMediaUrl(path: string | null | undefined): string {
     ? path.replace('/storage/', '/static/')
     : path;
   return `${API_BASE_URL}${normalizedPath.startsWith('/') ? '' : '/'}${normalizedPath}`;
+}
+
+export function coachContentMediaUrl(contentId: string): string {
+  return `${API_BASE_URL}/api/v1/coach/content/${contentId}/media`;
+}
+
+export function coachContentThumbnailUrl(contentId: string): string {
+  return `${API_BASE_URL}/api/v1/coach/content/${contentId}/thumbnail`;
 }
 
 // Create axios instance

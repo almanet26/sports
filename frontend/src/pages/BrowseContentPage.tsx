@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useThemeStore } from '../store/themeStore';
-import { api, resolveMediaUrl } from '../lib/api';
+import { api, coachContentMediaUrl, coachContentThumbnailUrl } from '../lib/api';
 
 interface ContentItem {
   id: string;
@@ -11,6 +11,7 @@ interface ContentItem {
   content_type: 'article' | 'video' | 'image';
   article_body?: string;
   file_url?: string;
+  mime_type?: string;
   thumbnail_url?: string;
   tags?: string;
   is_public?: boolean;
@@ -31,6 +32,7 @@ export default function BrowseContentPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'article' | 'video' | 'image'>('all');
   const [selectedItem, setSelectedItem] = useState<ContentItem | null>(null);
+  const [videoError, setVideoError] = useState(false);
 
   const glass = theme === 'dark' ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg';
   const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200';
@@ -57,6 +59,7 @@ export default function BrowseContentPage() {
   };
 
   const handleView = async (item: ContentItem) => {
+    setVideoError(false);
     setSelectedItem(item);
     // Increment view count
     try {
@@ -131,9 +134,9 @@ export default function BrowseContentPage() {
                 {/* Thumbnail */}
                 <div className={`h-40 bg-gradient-to-r ${meta.color} relative`}>
                   {item.thumbnail_url ? (
-                    <img src={resolveMediaUrl(item.thumbnail_url)} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={coachContentThumbnailUrl(item.id)} alt={item.title} className="w-full h-full object-cover" />
                   ) : item.content_type === 'image' && item.file_url ? (
-                    <img src={resolveMediaUrl(item.file_url)} alt={item.title} className="w-full h-full object-cover" />
+                    <img src={coachContentMediaUrl(item.id)} alt={item.title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="flex items-center justify-center h-full">
                       <i className={`${meta.icon} text-5xl text-white/50`}></i>
@@ -197,13 +200,33 @@ export default function BrowseContentPage() {
             )}
 
             {selectedItem.content_type === 'video' && selectedItem.file_url && (
-              <video controls className="w-full rounded-xl mb-4">
-                <source src={resolveMediaUrl(selectedItem.file_url)} />
-              </video>
+              videoError ? (
+                <div className={`w-full rounded-xl mb-4 flex flex-col items-center justify-center gap-2 py-10 ${theme === 'dark' ? 'bg-white/5' : 'bg-gray-100'}`}>
+                  <i className="fas fa-exclamation-triangle text-yellow-400 text-3xl"></i>
+                  <p className={`text-sm font-medium ${sub}`}>Video file unavailable</p>
+                  <p className={`text-xs ${sub}`}>The coach may need to re-upload this content.</p>
+                </div>
+              ) : (
+                <video
+                  key={selectedItem.id}
+                  controls
+                  autoPlay
+                  playsInline
+                  preload="metadata"
+                  className="w-full rounded-xl mb-4 bg-black"
+                  onError={() => setVideoError(true)}
+                >
+                  <source
+                    src={coachContentMediaUrl(selectedItem.id)}
+                    type={selectedItem.mime_type || 'video/mp4'}
+                  />
+                  Your browser does not support the video tag.
+                </video>
+              )
             )}
 
             {selectedItem.content_type === 'image' && selectedItem.file_url && (
-              <img src={resolveMediaUrl(selectedItem.file_url)} alt={selectedItem.title} className="w-full rounded-xl mb-4" />
+              <img src={coachContentMediaUrl(selectedItem.id)} alt={selectedItem.title} className="w-full rounded-xl mb-4" />
             )}
 
             <div className={`flex items-center gap-4 pt-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'}`}>

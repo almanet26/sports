@@ -73,6 +73,7 @@ async def register(
     role: str = Form(...),          # PLAYER | COACH
     phone: str = Form(None),
     team: str = Form(None),
+    coach_document: UploadFile | None = File(None),
     db: Session = Depends(get_db),
 ):
     role = role.upper()

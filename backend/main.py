@@ -1,4 +1,5 @@
 from services.subscription_expiry import register_expiry_endpoint
+from dotenv import load_dotenv
 from api.routes.coach_content import router as coach_content_router
 from api.routes.academy import router as academy_router
 from api.routes.coach_inbox import router as coach_inbox_router
@@ -34,7 +35,6 @@ from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
 from pathlib import Path
 from sqlalchemy import text
-from dotenv import load_dotenv
 from database.crud import bowling
 from database.config import SessionLocal, engine, Base
 
@@ -52,6 +52,8 @@ from database.models.coach_content import CoachContent
 from database.models.coach_session import CoachTrainingSession
 from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
+
+load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger(__name__)
