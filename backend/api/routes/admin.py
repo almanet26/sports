@@ -6,13 +6,14 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, func
 from typing import Optional, List
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 import uuid
 
 from database.config import get_db
 from database.models.user import User
 from database.models.plan_config import PlanConfig
+from database.models.subscription import Subscription
 from utils.auth import get_current_user
 from pydantic import BaseModel, ConfigDict
 
@@ -30,6 +31,9 @@ class UserSummaryResponse(BaseModel):
     is_active: bool
     created_at: Optional[datetime]
     last_login: Optional[datetime]
+    subscription_plan_key: Optional[str] = None
+    subscription_status: str = 'inactive'
+    subscription_expires_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -128,8 +132,30 @@ def list_users(
     total = query.count()
     users = query.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
 
+    # Enrich each user with active subscription data
+    user_summaries = []
+    for u in users:
+        # Get active subscription (status='active' and expires_at > now)
+        active_sub = db.query(Subscription).filter(
+            Subscription.user_id == u.id,
+            Subscription.status == 'active',
+            Subscription.expires_at > func.now()
+        ).order_by(Subscription.expires_at.desc()).first()
+
+        user_data = UserSummaryResponse.model_validate(u).model_dump()
+        if active_sub:
+            user_data['subscription_plan_key'] = active_sub.plan_key
+            user_data['subscription_status'] = active_sub.status
+            user_data['subscription_expires_at'] = active_sub.expires_at
+        else:
+            user_data['subscription_status'] = 'inactive'
+            user_data['subscription_plan_key'] = None
+            user_data['subscription_expires_at'] = None
+
+        user_summaries.append(UserSummaryResponse.model_validate(user_data))
+
     return UserListPageResponse(
-        users=[UserSummaryResponse.model_validate(u) for u in users],
+        users=user_summaries,
         total=total,
         page=page,
         per_page=per_page,

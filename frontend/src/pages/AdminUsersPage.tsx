@@ -12,9 +12,8 @@ interface UserRow {
   is_active: boolean;
   created_at: string | null;
   last_login: string | null;
-  subscription_tier: string;
-  subscription_status: string;
   subscription_plan_key: string | null;
+  subscription_status: string;
   subscription_expires_at: string | null;
 }
 
@@ -41,6 +40,14 @@ const statusBadge: Record<string, string> = {
   past_due: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
   inactive: 'bg-white/10 text-white/40 border-white/20',
 };
+
+function formatPlanKey(key: string | null): string {
+  if (!key) return '—';
+  return key
+    .split('_')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ');
+}
 
 function fmt(d: string | null) {
   if (!d) return '—';
@@ -411,9 +418,6 @@ export default function AdminUsersPage() {
   const [savingSub, setSavingSub]     = useState(false);
   const [subError, setSubError]       = useState<string | null>(null);
 
-  // Impersonation banner
-  const [impersonating, setImpersonating] = useState<{ name: string; token: string } | null>(null);
-
   // Toast
   const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
 
@@ -483,33 +487,6 @@ export default function AdminUsersPage() {
     }
   }
 
-  async function handleImpersonate(user: UserRow) {
-    try {
-      const { data } = await adminApi.impersonateUser(user.id);
-      sessionStorage.setItem('impersonation_token', data.access_token);
-      sessionStorage.setItem('impersonation_target', JSON.stringify(data.target_user));
-      setImpersonating({ name: data.target_user.name, token: data.access_token });
-      // Redirect to their dashboard
-      const path = data.target_user.role === 'COACH' ? '/coach' : '/player';
-      navigate(path);
-    } catch (err: unknown) {
-      const detail =
-        typeof err === 'object' && err !== null &&
-        'response' in err &&
-        typeof (err as { response?: { data?: { detail?: unknown } } }).response?.data?.detail === 'string'
-          ? (err as { response: { data: { detail: string } } }).response.data.detail
-          : undefined;
-      showToast(typeof detail === 'string' ? detail : 'Impersonation failed', false);
-    }
-  }
-
-  function exitImpersonation() {
-    sessionStorage.removeItem('impersonation_token');
-    sessionStorage.removeItem('impersonation_target');
-    setImpersonating(null);
-    navigate('/admin/users');
-  }
-
   const th = theme === 'dark';
 
   return (
@@ -538,16 +515,6 @@ export default function AdminUsersPage() {
             {toast.msg}
           </span>
         </motion.div>
-      )}
-
-      {/* Impersonation banner */}
-      {impersonating && (
-        <div className="fixed top-0 left-0 right-0 z-50 bg-amber-500 text-black px-6 py-2 flex items-center justify-between text-sm font-medium">
-          <span><i className="fas fa-user-secret mr-2"></i>Impersonating <strong>{impersonating.name}</strong></span>
-          <button onClick={exitImpersonation} className="px-3 py-1 bg-black/20 hover:bg-black/30 rounded-lg transition-all">
-            Exit Impersonation
-          </button>
-        </div>
       )}
 
       {/* Header */}
@@ -714,9 +681,11 @@ export default function AdminUsersPage() {
                       {user.role}
                     </span>
 
-                    {/* Plan / status */}
+                    {/* Plan + status */}
                     <div className="flex flex-col gap-1">
-                      <span className={`text-xs ${th ? 'text-white/60' : 'text-gray-600'}`}>{user.subscription_tier}</span>
+                      <span className={`text-xs ${th ? 'text-white/60' : 'text-gray-600'}`}>
+                        {formatPlanKey(user.subscription_plan_key)}
+                      </span>
                       <span className={`text-xs px-2 py-0.5 rounded-full border w-fit ${statusBadge[user.subscription_status] ?? statusBadge.inactive}`}>
                         {user.subscription_status}
                       </span>
@@ -736,14 +705,12 @@ export default function AdminUsersPage() {
                       >
                         <i className="fas fa-edit mr-1"></i>Edit Sub
                       </button>
-                      {user.role !== 'ADMIN' && (
-                        <button
-                          onClick={() => handleImpersonate(user)}
-                          className="text-xs px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 transition-all"
-                        >
-                          <i className="fas fa-user-secret mr-1"></i>Impersonate
-                        </button>
-                      )}
+                      <button
+                        onClick={() => setSelectedUserId(user.id)}
+                        className="text-xs px-3 py-1.5 rounded-lg bg-green-500/20 hover:bg-green-500/30 text-green-400 border border-green-500/30 transition-all"
+                      >
+                        <i className="fas fa-eye mr-1"></i>Audit
+                      </button>
                     </div>
                   </div>
                 </motion.div>

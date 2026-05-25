@@ -756,8 +756,6 @@ export const adminApi = {
     status: string;
     expires_at?: string;
   }) => api.patch(`/admin/users/${userId}/subscription`, data),
-  impersonateUser: (userId: string) =>
-    api.post(`/admin/users/${userId}/impersonate`),
 
   // Audit log
   getAuditLog: (page = 1, perPage = 50) =>
