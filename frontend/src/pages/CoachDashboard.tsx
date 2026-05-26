@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useThemeStore } from "../store/themeStore";
 import { api, notificationsApi, type NotificationItem } from "../lib/api";
 import { useAuthStore } from "../store/authStore";
@@ -22,14 +22,13 @@ interface DashboardData {
 
 export default function CoachDashboard() {
   const { theme } = useThemeStore();
-  const user = useAuthStore(s => s.user);
+  const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [bellOpen, setBellOpen] = useState(false);
   const bellRef = useRef<HTMLDivElement>(null);
-  const athletesSectionRef = useRef<HTMLDivElement>(null);
 
   const glass = theme === 'dark' ? 'glass border-white/20' : 'bg-white/70 backdrop-blur-xl border-slate-200/60 shadow-lg';
   const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-white/60 border-slate-200/50';
@@ -56,19 +55,23 @@ export default function CoachDashboard() {
   }, []);
 
   const handleMarkRead = async (id: string) => {
-    await api.put(`/notifications/${id}/read`);
     setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
     setUnreadCount(prev => Math.max(0, prev - 1));
+    await notificationsApi.markRead(id).catch(() => {});
   };
 
   const handleMarkAllRead = async () => {
-    await api.put('/notifications/mark-all-read');
     setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
     setUnreadCount(0);
+    await notificationsApi.markAllRead().catch(() => {});
   };
 
+  const scrollToAthletes = useCallback(() => {
+    document.getElementById('coach-athletes-section')?.scrollIntoView({ behavior: 'smooth' });
+  }, []);
+
   const stats = data ? [
-    { title: "My Athletes", value: String(data.stats.total_athletes), icon: "fas fa-running", color: "from-blue-500 to-cyan-500", change: "Players accepted", onClick: () => athletesSectionRef.current?.scrollIntoView({ behavior: "smooth" }) },
+    { title: "My Athletes", value: String(data.stats.total_athletes), icon: "fas fa-running", color: "from-blue-500 to-cyan-500", change: "Players accepted", onClick: scrollToAthletes },
     { title: "Training Sessions", value: String(data.stats.total_sessions), icon: "fas fa-dumbbell", color: "from-green-500 to-emerald-500", change: "Total scheduled" },
     { title: "Avg Completion", value: `${data.stats.avg_improvement}%`, icon: "fas fa-chart-line", color: "from-purple-500 to-pink-500", change: "Reports published" },
     { title: "Active Plans", value: String(data.stats.active_plans), icon: "fas fa-clipboard-list", color: "from-orange-500 to-red-500", change: "Training plans" },
@@ -336,7 +339,7 @@ export default function CoachDashboard() {
         </motion.div>
 
         {/* My Athletes */}
-        <motion.div ref={athletesSectionRef} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
+        <motion.div id="coach-athletes-section" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}
           className={`rounded-3xl p-6 border ${glass}`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
@@ -431,6 +434,14 @@ export default function CoachDashboard() {
                   {!n.is_read && <div className="w-2 h-2 rounded-full bg-blue-400 flex-shrink-0 mt-1"></div>}
                 </div>
               ))}
+            </div>
+            <div className={`px-4 py-2.5 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-100'}`}>
+              <button
+                onMouseDown={() => { setBellOpen(false); navigate('/notifications'); }}
+                className="flex items-center justify-center gap-1.5 w-full text-xs text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              >
+                View all notifications <i className="fas fa-arrow-right text-[10px]"></i>
+              </button>
             </div>
           </motion.div>
         )}
