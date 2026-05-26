@@ -4,7 +4,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore } from "../../store/themeStore";
 import { getStoredPlayerProfileSummary } from "../../services/playerProfile";
-import { resolveMediaUrl } from "../../lib/api";
+import { resolveMediaUrl, notificationsApi } from "../../lib/api";
+import { useToastStore } from "../../store/toastStore";
 import ToastHost from "../ui/ToastHost";
 import logoImage from '/logo.webp';
 
@@ -59,6 +60,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: '/coach/earnings', icon: 'fas fa-wallet', label: 'Earnings' },
     { to: '/coach/subscription', icon: 'fas fa-crown', label: 'Subscription' },
     { to: '/coach/content', icon: 'fas fa-photo-video', label: 'My Content' },
+    { to: '/notifications', icon: 'fas fa-bell', label: 'Notifications' },
     { to: getSettingsPath('COACH'), icon: 'fas fa-cog', label: 'Settings' },
   ],
   ADMIN: [
@@ -83,6 +85,38 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [playerProfile, setPlayerProfile] = React.useState(() => getStoredPlayerProfileSummary());
+
+  // Notification polling — seed on first fetch, toast on new arrivals
+  const seenNotifIds = React.useRef<Set<string>>(new Set());
+  const notifInitialized = React.useRef(false);
+
+  React.useEffect(() => {
+    if (!user?.id) return;
+    seenNotifIds.current.clear();
+    notifInitialized.current = false;
+
+    const poll = async () => {
+      try {
+        const { data } = await notificationsApi.getAll();
+        if (!notifInitialized.current) {
+          data.notifications.forEach((n: { id: string }) => seenNotifIds.current.add(n.id));
+          notifInitialized.current = true;
+          return;
+        }
+        data.notifications
+          .filter((n: { id: string }) => !seenNotifIds.current.has(n.id))
+          .forEach((n: { id: string; title: string; type: string }) => {
+            seenNotifIds.current.add(n.id);
+            const variant = ['submission', 'review', 'report'].includes(n.type) ? 'success' : 'info';
+            useToastStore.getState().pushToast(n.title, variant, 5000);
+          });
+      } catch { /* ignore polling errors */ }
+    };
+
+    poll();
+    const intervalId = setInterval(poll, 30_000);
+    return () => clearInterval(intervalId);
+  }, [user?.id]);
 
   React.useEffect(() => {
     const refresh = () => setPlayerProfile(getStoredPlayerProfileSummary());
