@@ -159,7 +159,7 @@ export default function CoachMessagesPage() {
         <p className={`mt-1 text-sm ${sub}`}>Chat with your athletes</p>
       </motion.div>
 
-      <div className={`rounded-3xl border overflow-hidden flex h-[600px] ${glass}`}>
+      <div className={`rounded-3xl border overflow-hidden flex h-[600px] min-h-0 ${glass}`}>
         {/* Sidebar */}
         <div className={`w-72 flex-shrink-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'} flex flex-col`}>
           <div className={`p-3 border-b ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'}`}>
@@ -179,7 +179,7 @@ export default function CoachMessagesPage() {
               )}
             </div>
           </div>
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto min-h-0">
             {showNewMessage ? (
               <div className="p-3">
                 <p className="text-sm font-semibold mb-3">Select Player</p>
@@ -242,7 +242,7 @@ export default function CoachMessagesPage() {
         </div>
 
         {/* Chat */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-h-0">
           {(selectedConversation || selectedPlayer) ? (
             <>
               <div className={`flex items-center gap-3 p-4 border-b ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'}`}>
@@ -259,7 +259,7 @@ export default function CoachMessagesPage() {
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
+              <div className="flex-1 overflow-y-auto p-4 space-y-3 min-h-0">
                 {messages.length === 0 ? (
                   <div className="flex items-center justify-center h-full">
                     <p className={`text-sm ${sub}`}>No messages yet. Start the conversation!</p>
