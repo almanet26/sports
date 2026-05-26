@@ -21,6 +21,7 @@ export default function CoachSessionsPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<TrainingSession | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
   const [form, setForm] = useState({ topic: '', description: '', prerequisites: '', session_date: '', session_time: '', duration_minutes: '60', session_type: 'virtual' as 'virtual' | 'in_person' });
 
   const glass = theme === 'dark' ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg';
@@ -29,25 +30,32 @@ export default function CoachSessionsPage() {
   const inputCls = `w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none transition-all ${theme === 'dark' ? 'glass border-white/10 text-white focus:border-blue-500' : 'bg-white border-gray-300 focus:border-blue-400'}`;
 
   useEffect(() => {
-    api.get('/sessions').then((r: {data: {sessions: TrainingSession[]}}) => setSessions(r.data.sessions)).catch(() => setSessions([])).finally(() => setLoading(false));
+    api.get('/sessions/').then((r: {data: {sessions: TrainingSession[]}}) => setSessions(r.data.sessions)).catch(() => setSessions([])).finally(() => setLoading(false));
   }, []);
 
-  const openCreate = () => { setEditing(null); setForm({ topic: '', description: '', prerequisites: '', session_date: '', session_time: '', duration_minutes: '60', session_type: 'virtual' }); setShowModal(true); };
-  const openEdit = (s: TrainingSession) => { setEditing(s); setForm({ topic: s.topic, description: s.description || '', prerequisites: s.prerequisites || '', session_date: s.session_date, session_time: s.session_time, duration_minutes: s.duration_minutes, session_type: s.session_type as 'virtual' | 'in_person' }); setShowModal(true); };
+  const openCreate = () => { setEditing(null); setFormError(''); setForm({ topic: '', description: '', prerequisites: '', session_date: '', session_time: '', duration_minutes: '60', session_type: 'virtual' }); setShowModal(true); };
+  const openEdit = (s: TrainingSession) => { setEditing(s); setFormError(''); setForm({ topic: s.topic, description: s.description || '', prerequisites: s.prerequisites || '', session_date: s.session_date, session_time: s.session_time, duration_minutes: s.duration_minutes, session_type: s.session_type as 'virtual' | 'in_person' }); setShowModal(true); };
 
   const handleSave = async () => {
-    if (!form.topic || !form.session_date || !form.session_time) return;
+    if (!form.topic || !form.session_date || !form.session_time) {
+      setFormError('Topic, date, and time are required.');
+      return;
+    }
+    setFormError('');
     setSaving(true);
     try {
       if (editing) {
         const r = await api.put(`/sessions/${editing.id}`, form);
         setSessions((prev: TrainingSession[]) => prev.map((s: TrainingSession) => s.id === editing.id ? r.data : s));
       } else {
-        const r = await api.post('/sessions', form);
+        const r = await api.post('/sessions/', form);
         setSessions((prev: TrainingSession[]) => [r.data, ...prev]);
       }
       setShowModal(false);
-    } catch { alert('Failed to save session.'); }
+    } catch (err: unknown) {
+      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      setFormError(detail || 'Failed to save session. Please try again.');
+    }
     finally { setSaving(false); }
   };
 
@@ -144,6 +152,11 @@ export default function CoachSessionsPage() {
                   </div>
                 </div>
               </div>
+              {formError && (
+                <p className="mt-3 text-xs text-red-400 flex items-center gap-1.5">
+                  <i className="fas fa-exclamation-circle"></i>{formError}
+                </p>
+              )}
               <div className="flex gap-3 mt-5">
                 <button onClick={() => setShowModal(false)} className={`flex-1 py-2.5 rounded-xl border text-sm font-medium ${theme === 'dark' ? 'glass border-white/20 hover:bg-white/10' : 'bg-gray-50 border-gray-200 hover:bg-gray-100'}`}>Cancel</button>
                 <button onClick={handleSave} disabled={saving} className="flex-1 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 flex items-center justify-center gap-2">
