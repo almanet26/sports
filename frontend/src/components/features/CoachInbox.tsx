@@ -7,7 +7,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useThemeStore } from '../../store/themeStore';
 import { useSubscriptionStore } from '../../stores/authStore';
-import { submissionsApi, storageApi, resolveMediaUrl, type SubmissionSummary } from '../../lib/api';
+import { submissionsApi, resolveMediaUrl, type SubmissionSummary } from '../../lib/api';
 
 const STATUS_CONFIG: Record<string, { label: string; color: string; icon: string; bg: string }> = {
   PENDING: { label: 'Pending', color: 'text-yellow-400', icon: 'fas fa-clock', bg: 'bg-yellow-500/10' },
@@ -49,7 +49,7 @@ export default function CoachInbox() {
     setAnalyzing(id);
     setError('');
     try {
-      await storageApi.startProcessing(id);
+      await submissionsApi.analyze(id);
       await refreshQuota();
       await fetchInbox();
     } catch (err: unknown) {
@@ -86,7 +86,7 @@ export default function CoachInbox() {
       {/* Filter tabs */}
       <div className="flex gap-2 flex-wrap">
         {[
-          { key: undefined, label: 'Active (Pending & Drafts)', icon: 'fas fa-filter' },
+          { key: undefined, label: 'Active', icon: 'fas fa-filter' },
           { key: 'PENDING', label: 'Pending', icon: 'fas fa-clock' },
           { key: 'DRAFT_REVIEW', label: 'Drafts', icon: 'fas fa-edit' },
           { key: 'PUBLISHED', label: 'Published', icon: 'fas fa-check-circle' },
@@ -176,7 +176,7 @@ export default function CoachInbox() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex gap-2">
-                          {sub.status === 'PENDING' && (
+                          {(sub.status === 'PENDING' || sub.status === 'PROCESSING') && (
                             <motion.button
                               whileHover={{ scale: 1.05 }}
                               whileTap={{ scale: 0.95 }}
@@ -186,6 +186,8 @@ export default function CoachInbox() {
                             >
                               {analyzing === sub.id ? (
                                 <><i className="fas fa-spinner fa-spin mr-1"></i>Running…</>
+                              ) : sub.status === 'PROCESSING' ? (
+                                <><i className="fas fa-redo mr-1"></i>Retry AI</>
                               ) : (
                                 <><i className="fas fa-robot mr-1"></i>Run AI</>
                               )}

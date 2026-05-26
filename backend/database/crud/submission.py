@@ -77,6 +77,7 @@ def list_submissions_for_coach(
         q = q.filter(
             VideoSubmission.status.in_([
                 SubmissionStatus.PENDING,
+                SubmissionStatus.PROCESSING,
                 SubmissionStatus.DRAFT_REVIEW,
             ])
         )

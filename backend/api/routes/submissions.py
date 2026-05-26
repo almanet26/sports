@@ -1118,7 +1118,8 @@ def coach_run_analysis(
 ):
     """
     Coach triggers AI analysis.
-    PENDING → PROCESSING → DRAFT_REVIEW
+    PENDING or PROCESSING → PROCESSING → DRAFT_REVIEW
+    PROCESSING is allowed so coaches can retry stuck submissions.
     """
     if current_user.role not in ("COACH", "ADMIN"):
         raise HTTPException(status_code=403, detail="Only coaches can run analysis.")
@@ -1128,10 +1129,10 @@ def coach_run_analysis(
         raise HTTPException(status_code=404, detail="Submission not found.")
     if sub.coach_id != current_user.id and current_user.role != "ADMIN":
         raise HTTPException(status_code=403, detail="Not your submission to analyze.")
-    if sub.status != SubmissionStatus.PENDING:
+    if sub.status not in (SubmissionStatus.PENDING, SubmissionStatus.PROCESSING):
         raise HTTPException(
             status_code=409,
-            detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING submissions can be analyzed.",
+            detail=f"Cannot analyze — current status is {sub.status.value}. Only PENDING or PROCESSING submissions can be analyzed.",
         )
 
     _require_analysis_libs()
@@ -1328,13 +1329,24 @@ def coach_publish(
             # Fallback: generate simple text-only PDF
             pdf_bytes = _simple_pdf(edited_text, sub.analysis_type)
 
-        # Save PDF
+        # Save PDF — upload to GCS if available, otherwise serve via static files
         report_filename = f"submission_report_{sub.id}.pdf"
         report_path = REPORTS_DIR / report_filename
-        with open(report_path, "wb") as f:
-            f.write(pdf_bytes)
 
-        pdf_report_url = f"/static/reports/{report_filename}"
+        if _gcs_bucket_upload:
+            try:
+                blob = _gcs_bucket_upload.blob(f"reports/{report_filename}")
+                blob.upload_from_string(pdf_bytes, content_type="application/pdf")
+                pdf_report_url = f"gs://{_GCS_BUCKET_NAME}/reports/{report_filename}"
+            except Exception as gcs_err:
+                logger.warning("GCS PDF upload failed, falling back to local: %s", gcs_err)
+                with open(report_path, "wb") as f:
+                    f.write(pdf_bytes)
+                pdf_report_url = f"/static/reports/{report_filename}"
+        else:
+            with open(report_path, "wb") as f:
+                f.write(pdf_bytes)
+            pdf_report_url = f"/static/reports/{report_filename}"
 
         publish_submission(
             db,
