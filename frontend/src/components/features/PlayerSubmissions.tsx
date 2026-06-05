@@ -13,6 +13,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   submissionsApi,
   resolveMediaUrl,
+  reportDownloadUrl,
   type SubmissionSummary,
   type CoachListItem,
   type PlayerSubmissionItem,
@@ -563,7 +564,7 @@ export default function PlayerSubmissions() {
                       <motion.a
                         whileHover={{ scale: 1.02 }}
                         whileTap={{ scale: 0.98 }}
-                        href={resolveMediaUrl(sub.pdf_report_url)}
+                        href={reportDownloadUrl(sub.pdf_report_url)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="mt-4 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition-all"
