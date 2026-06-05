@@ -159,7 +159,7 @@ export default function CoachMessagesPage() {
         <p className={`mt-1 text-sm ${sub}`}>Chat with your athletes</p>
       </motion.div>
 
-      <div className={`rounded-3xl border overflow-hidden flex h-[600px] min-h-0 ${glass}`}>
+      <div className={`rounded-3xl border overflow-hidden flex min-h-0 ${glass}`} style={{ height: 'calc(100vh - 220px)', minHeight: '500px' }}>
         {/* Sidebar */}
         <div className={`w-72 flex-shrink-0 border-r ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'} flex flex-col`}>
           <div className={`p-3 border-b ${theme === 'dark' ? 'border-white/10' : 'border-gray-200'}`}>

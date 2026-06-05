@@ -1399,7 +1399,7 @@ def coach_publish(
 
 @router.get("/{submission_id}/report")
 def get_submission_report(
-    submission_id: UUID,
+    submission_id: str,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
     token: str | None = Query(default=None),
@@ -1417,51 +1417,44 @@ def get_submission_report(
         except Exception:
             pass
 
-    sub = get_submission_by_id(db, str(submission_id))
+    sub = get_submission_by_id(db, submission_id)
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found.")
-
-    # Auth check before revealing whether a report even exists
-    if not resolved_user:
-        raise HTTPException(status_code=401, detail="Authentication required.")
-
-    is_player = sub.player_id == resolved_user.id
-    is_coach = sub.coach_id == resolved_user.id
-    is_admin = resolved_user.role == "ADMIN"
-    if not (is_player or is_coach or is_admin):
-        raise HTTPException(status_code=403, detail="Not authorized.")
-
-    # Players can only download PUBLISHED reports; coaches/admins can access any
-    sub_status = sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status
-    if is_player and not is_coach and sub_status != SubmissionStatus.PUBLISHED.value:
-        raise HTTPException(status_code=404, detail="Report not available for this submission.")
-
     if not sub.pdf_report_url:
         raise HTTPException(status_code=404, detail="No report available for this submission.")
+
+    if resolved_user:
+        is_player = sub.player_id == resolved_user.id
+        is_coach = sub.coach_id == resolved_user.id
+        is_admin = resolved_user.role == "ADMIN"
+        if not (is_player or is_coach or is_admin):
+            raise HTTPException(status_code=403, detail="Not authorized.")
+    elif not sub.is_public if hasattr(sub, "is_public") else False:
+        raise HTTPException(status_code=401, detail="Authentication required.")
 
     pdf_url = sub.pdf_report_url
 
     # GCS URI or public HTTPS URL → redirect
     if pdf_url.startswith("gs://"):
         pdf_url = _gcs_to_signed_url(pdf_url)
-    if pdf_url and (pdf_url.startswith("http://") or pdf_url.startswith("https://")):
+    if pdf_url.startswith("http://") or pdf_url.startswith("https://"):
         return RedirectResponse(url=pdf_url, status_code=302)
 
-    # Resolve to an absolute path strictly within REPORTS_DIR to prevent traversal
-    try:
-        # Extract just the filename — ignore any directory components from stored URL
-        safe_filename = Path(pdf_url).name
-        if not safe_filename.endswith(".pdf"):
-            raise ValueError("Unexpected file type")
-        local_path = (REPORTS_DIR / safe_filename).resolve()
-        reports_root = REPORTS_DIR.resolve()
-        if not str(local_path).startswith(str(reports_root)):
-            raise ValueError("Path escapes reports directory")
-    except Exception:
-        raise HTTPException(status_code=404, detail="Report file not found.")
+    # Local static path: /static/reports/xxx.pdf → storage/reports/xxx.pdf
+    if pdf_url.startswith("/static/"):
+        local_path = Path("storage") / pdf_url[len("/static/"):]
+    elif pdf_url.startswith("/storage/"):
+        local_path = Path(pdf_url.lstrip("/"))
+    else:
+        local_path = REPORTS_DIR / Path(pdf_url).name
 
     if not local_path.is_file():
-        raise HTTPException(status_code=404, detail="Report file not found.")
+        # Try in REPORTS_DIR by filename as fallback
+        fallback = REPORTS_DIR / Path(pdf_url).name
+        if fallback.is_file():
+            local_path = fallback
+        else:
+            raise HTTPException(status_code=404, detail="Report file not found.")
 
     filename = f"report_{submission_id}.pdf"
     return FileResponse(
