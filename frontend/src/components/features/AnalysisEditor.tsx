@@ -52,6 +52,8 @@ export default function AnalysisEditor() {
   const [publishing, setPublishing] = useState(false);
   const [publishError, setPublishError] = useState('');
   const [publishSuccess, setPublishSuccess] = useState(false);
+  const [videoError, setVideoError] = useState(false);
+  const [keyFrameError, setKeyFrameError] = useState(false);
   const [drawMode, setDrawMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [draftPoints, setDraftPoints] = useState<Point[]>([]);
@@ -355,21 +357,26 @@ export default function AnalysisEditor() {
               </h2>
             </div>
             <div ref={reviewVideoRef} className="aspect-video bg-black relative overflow-hidden">
-              {submission.annotated_video_url ? (
+              {videoError ? (
+                <div className="flex flex-col items-center justify-center h-full gap-2 text-white/50">
+                  <i className="fas fa-exclamation-triangle text-yellow-400 text-3xl"></i>
+                  <p className="text-sm">Video file unavailable</p>
+                </div>
+              ) : submission.annotated_video_url ? (
                 <video
                   ref={reviewPlayerRef}
                   controls
-                  crossOrigin="anonymous"
                   className="w-full h-full relative z-10"
                   src={resolveMediaUrl(submission.annotated_video_url)}
+                  onError={() => setVideoError(true)}
                 />
               ) : (
                 <video
                   ref={reviewPlayerRef}
                   controls
-                  crossOrigin="anonymous"
                   className="w-full h-full relative z-10"
                   src={resolveMediaUrl(submission.video_url)}
+                  onError={() => setVideoError(true)}
                 />
               )}
 
@@ -459,11 +466,19 @@ export default function AnalysisEditor() {
                   <i className="fas fa-camera mr-2 text-amber-400"></i>Key Frame
                 </h2>
               </div>
-              <img
-                src={resolveMediaUrl(submission.key_frame_url)}
-                alt="Key frame"
-                className="w-full"
-              />
+              {keyFrameError ? (
+                <div className={`flex flex-col items-center justify-center py-10 gap-2 ${dark ? 'text-white/40' : 'text-gray-400'}`}>
+                  <i className="fas fa-image text-2xl"></i>
+                  <p className="text-sm">Key frame unavailable</p>
+                </div>
+              ) : (
+                <img
+                  src={resolveMediaUrl(submission.key_frame_url)}
+                  alt="Key frame"
+                  className="w-full"
+                  onError={() => setKeyFrameError(true)}
+                />
+              )}
             </div>
           )}
 

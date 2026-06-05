@@ -67,6 +67,7 @@ except Exception as _gcs_err:
     _GCS_LIB_AVAILABLE = False
     _GCS_IMPORT_ERROR = str(_gcs_err)
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, Depends, Query
+from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -95,7 +96,7 @@ from schemas.submission import (
 )
 from dependencies.feature_gate import require_feature
 from dependencies.quota_gate import quota_check, increment_usage_atomic
-from utils.auth import get_current_user
+from utils.auth import get_current_user, get_optional_user
 
 # Engine imports
 try:
@@ -311,6 +312,24 @@ def _is_specific_youtube_link(url: str) -> bool:
 
 
 #  HELPERS
+def _resolve_video_url_for_client(video_url: str | None) -> str | None:
+    """Convert any stored video_url to a browser-playable URL.
+    - /static/... paths are returned as-is (handled by resolveMediaUrl on client)
+    - gs:// URIs are converted to public GCS HTTPS URLs
+    - Raw GCS blob names (no leading / or scheme) are converted to public GCS HTTPS URLs
+    """
+    if not video_url:
+        return video_url
+    if video_url.startswith(("/", "http://", "https://")):
+        return video_url
+    if video_url.startswith("gs://"):
+        return _gcs_to_signed_url(video_url)
+    # Raw GCS blob name (e.g. "raw_videos/xxx.mp4")
+    if _GCS_BUCKET_NAME:
+        return f"https://storage.googleapis.com/{_GCS_BUCKET_NAME}/{video_url}"
+    return video_url
+
+
 def _gcs_to_signed_url(gs_uri: str | None) -> str | None:
     """
     Convert a ``gs://bucket/blob`` URI into a publicly accessible HTTPS URL.
@@ -340,7 +359,7 @@ def _to_summary(sub: VideoSubmission) -> SubmissionSummary:
         created_at=sub.created_at,
         analyzed_at=sub.analyzed_at,
         published_at=sub.published_at,
-        pdf_report_url=_gcs_to_signed_url(sub.pdf_report_url),
+        pdf_report_url=f"/api/v1/submissions/{sub.id}/report" if sub.pdf_report_url else None,
     )
 
 
@@ -362,7 +381,7 @@ def _to_detail(sub: VideoSubmission) -> SubmissionDetail:
         original_filename=sub.original_filename,
         analysis_type=sub.analysis_type,
         status=sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status,
-        video_url=sub.video_url,
+        video_url=_resolve_video_url_for_client(sub.video_url),
         raw_biometrics=sub.raw_biometrics,
         phase_info=sub.phase_info,
         annotated_video_url=_gcs_to_signed_url(sub.annotated_video_url),
@@ -371,7 +390,7 @@ def _to_detail(sub: VideoSubmission) -> SubmissionDetail:
         coach_final_text=sub.coach_final_text,
         detected_flaws=flaws,
         drill_recommendations=drills,
-        pdf_report_url=_gcs_to_signed_url(sub.pdf_report_url),
+        pdf_report_url=f"/api/v1/submissions/{sub.id}/report" if sub.pdf_report_url else None,
         created_at=sub.created_at,
         analyzed_at=sub.analyzed_at,
         published_at=sub.published_at,
@@ -1376,6 +1395,74 @@ def coach_publish(
         error_msg = f"Publish failed: {type(e).__name__}: {str(e)}"
         logger.exception("PUBLISH ERROR — %s", error_msg)
         raise HTTPException(status_code=500, detail=error_msg)
+
+
+@router.get("/{submission_id}/report")
+def get_submission_report(
+    submission_id: str,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_user),
+    token: str | None = Query(default=None),
+):
+    """Serve the published PDF report for a submission."""
+    # Allow token to be passed as query param (for <a href> download links)
+    resolved_user = current_user
+    if not resolved_user and token:
+        try:
+            from utils.auth import verify_access_token
+            payload = verify_access_token(token)
+            email = payload.get("sub")
+            if email:
+                resolved_user = db.query(User).filter(User.email == email).first()
+        except Exception:
+            pass
+
+    sub = get_submission_by_id(db, submission_id)
+    if not sub:
+        raise HTTPException(status_code=404, detail="Submission not found.")
+    if not sub.pdf_report_url:
+        raise HTTPException(status_code=404, detail="No report available for this submission.")
+
+    if resolved_user:
+        is_player = sub.player_id == resolved_user.id
+        is_coach = sub.coach_id == resolved_user.id
+        is_admin = resolved_user.role == "ADMIN"
+        if not (is_player or is_coach or is_admin):
+            raise HTTPException(status_code=403, detail="Not authorized.")
+    elif not sub.is_public if hasattr(sub, "is_public") else False:
+        raise HTTPException(status_code=401, detail="Authentication required.")
+
+    pdf_url = sub.pdf_report_url
+
+    # GCS URI or public HTTPS URL → redirect
+    if pdf_url.startswith("gs://"):
+        pdf_url = _gcs_to_signed_url(pdf_url)
+    if pdf_url.startswith("http://") or pdf_url.startswith("https://"):
+        return RedirectResponse(url=pdf_url, status_code=302)
+
+    # Local static path: /static/reports/xxx.pdf → storage/reports/xxx.pdf
+    if pdf_url.startswith("/static/"):
+        local_path = Path("storage") / pdf_url[len("/static/"):]
+    elif pdf_url.startswith("/storage/"):
+        local_path = Path(pdf_url.lstrip("/"))
+    else:
+        local_path = REPORTS_DIR / Path(pdf_url).name
+
+    if not local_path.is_file():
+        # Try in REPORTS_DIR by filename as fallback
+        fallback = REPORTS_DIR / Path(pdf_url).name
+        if fallback.is_file():
+            local_path = fallback
+        else:
+            raise HTTPException(status_code=404, detail="Report file not found.")
+
+    filename = f"report_{submission_id}.pdf"
+    return FileResponse(
+        path=str(local_path),
+        media_type="application/pdf",
+        filename=filename,
+        headers={"Content-Disposition": f'inline; filename="{filename}"'},
+    )
 
 
 #  DETAIL: Get single submission
