@@ -8,7 +8,6 @@ from sqlalchemy import or_, func
 from typing import Optional, List
 from datetime import datetime, timedelta
 import logging
-import uuid
 
 from database.config import get_db
 from database.models.user import User
@@ -378,3 +377,62 @@ def update_plan(
     db.refresh(plan)
     logger.info(f"Plan {plan_key} updated by admin {current_user.email}")
     return PlanConfigResponse.model_validate(plan)
+
+
+class SubscriptionOverrideRequest(BaseModel):
+    plan_key: str
+    status: str = "active"
+    expires_at: Optional[str] = None  # ISO date string, defaults to 1 year from now
+
+
+@router.patch("/users/{user_id}/subscription")
+def override_user_subscription(
+    user_id: str,
+    data: SubscriptionOverrideRequest,
+    current_user: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Override a user's subscription plan."""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == data.plan_key).first()
+    if not plan:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Plan '{data.plan_key}' not found")
+
+    expires = (
+        datetime.fromisoformat(data.expires_at)
+        if data.expires_at
+        else datetime.utcnow() + timedelta(days=365)
+    )
+
+    # Expire all existing active subscriptions for this user
+    db.query(Subscription).filter(
+        Subscription.user_id == user_id,
+        Subscription.status == "active",
+    ).update({"status": "expired"})
+
+    # Create new subscription (id is auto-increment Integer, let DB assign it)
+    new_sub = Subscription(
+        user_id=user_id,
+        plan_key=data.plan_key,
+        role=plan.role,
+        status=data.status,
+        started_at=datetime.utcnow(),
+        expires_at=expires,
+    )
+    db.add(new_sub)
+    db.commit()
+
+    logger.info(
+        "Admin %s overrode subscription for user %s → plan=%s expires=%s",
+        current_user.email, user_id, data.plan_key, expires.isoformat(),
+    )
+    return {
+        "user_id": user_id,
+        "plan_key": data.plan_key,
+        "role": plan.role,
+        "status": data.status,
+        "expires_at": expires.isoformat(),
+    }

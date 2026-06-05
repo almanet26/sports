@@ -15,8 +15,6 @@ type FilterMode = "all" | "submitted" | "not_submitted";
 
 const ACCEPTED_TYPES = ["video/mp4", "video/quicktime", "video/x-msvideo", "video/x-m4v"];
 const FREE_UPLOAD_LIMIT = 5;
-const MAX_FILE_SIZE_MB = 50;
-const MAX_FILE_SIZE = MAX_FILE_SIZE_MB * 1024 * 1024;
 
 function formatDate(value: string) {
   if (!value) return "Recently added";
