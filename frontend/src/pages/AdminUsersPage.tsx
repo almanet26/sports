@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { adminApi, api, resolveMediaUrl } from '../lib/api';
+import { adminApi, api, resolveMediaUrl, reportDownloadUrl } from '../lib/api';
 import { useThemeStore } from '../store/themeStore';
 
 interface UserRow {
@@ -314,7 +314,7 @@ function ProfileModal({ userId, onClose, theme }: { userId: string; onClose: () 
                               <div className="flex items-center gap-2">
                                 <span className={`text-xs px-2 py-0.5 rounded-full border ${statusColor(s.status)}`}>{s.status}</span>
                                 {s.pdf_report_url && (
-                                  <a href={s.pdf_report_url} target="_blank" rel="noopener noreferrer"
+                                  <a href={reportDownloadUrl(s.pdf_report_url)} target="_blank" rel="noopener noreferrer"
                                     className="text-xs text-blue-400 hover:text-blue-300">
                                     <i className="fas fa-file-pdf"></i>
                                   </a>

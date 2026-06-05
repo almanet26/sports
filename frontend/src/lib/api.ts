@@ -31,6 +31,14 @@ export function resolveMediaUrl(path: string | null | undefined): string {
   return `${API_BASE_URL}${normalizedPath.startsWith('/') ? '' : '/'}${normalizedPath}`;
 }
 
+/** Build an authenticated download URL for a report path by appending the JWT token. */
+export function reportDownloadUrl(path: string | null | undefined): string {
+  if (!path) return '';
+  const base = resolveMediaUrl(path);
+  const token = localStorage.getItem('access_token');
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
 export function coachContentMediaUrl(contentId: string): string {
   return `${API_BASE_URL}/api/v1/coach/content/${contentId}/media`;
 }

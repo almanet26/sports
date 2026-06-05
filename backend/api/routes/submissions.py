@@ -1429,7 +1429,7 @@ def get_submission_report(
         is_admin = resolved_user.role == "ADMIN"
         if not (is_player or is_coach or is_admin):
             raise HTTPException(status_code=403, detail="Not authorized.")
-    elif not sub.is_public if hasattr(sub, "is_public") else False:
+    else:
         raise HTTPException(status_code=401, detail="Authentication required.")
 
     pdf_url = sub.pdf_report_url
