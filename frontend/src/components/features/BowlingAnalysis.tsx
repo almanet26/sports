@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
-import { bowlingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, type SubmissionDetail } from "../../lib/api";
+import { bowlingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, reportDownloadUrl, type SubmissionDetail } from "../../lib/api";
 import { useSubscriptionStore } from "../../stores/authStore";
 import UpgradePrompt from "../gates/UpgradePrompt";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
@@ -395,7 +395,7 @@ const BowlingAnalysis: React.FC = () => {
                       )}
                       {h.report_url && (
                         <a
-                          href={resolveMediaUrl(h.report_url)}
+                          href={reportDownloadUrl(h.report_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-emerald-400 hover:underline flex items-center gap-0.5"

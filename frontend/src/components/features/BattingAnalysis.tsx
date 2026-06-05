@@ -1,5 +1,5 @@
 import React, { useCallback, useRef, useState, useEffect } from "react";
-import { battingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, type SubmissionDetail } from "../../lib/api";
+import { battingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, reportDownloadUrl, type SubmissionDetail } from "../../lib/api";
 import { useSubscriptionStore } from "../../stores/authStore";
 import UpgradePrompt from "../gates/UpgradePrompt";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
@@ -422,7 +422,7 @@ const BattingAnalysis: React.FC = () => {
                       )}
                       {h.report_url && (
                         <a
-                          href={resolveMediaUrl(h.report_url)}
+                          href={reportDownloadUrl(h.report_url)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-amber-400 hover:underline flex items-center gap-0.5"
@@ -781,7 +781,7 @@ const BattingAnalysis: React.FC = () => {
             {/* Report download */}
             {result.report_url && (
               <a
-                href={resolveMediaUrl(result.report_url)}
+                href={reportDownloadUrl(result.report_url)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="block"

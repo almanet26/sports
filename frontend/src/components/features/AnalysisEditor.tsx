@@ -72,6 +72,9 @@ export default function AnalysisEditor() {
   const fetchDetail = useCallback(async () => {
     if (!submissionId) return;
     setLoading(true);
+    // Reset media error states when loading a new submission
+    setVideoError(false);
+    setKeyFrameError(false);
     try {
       const { data } = await submissionsApi.getById(submissionId);
       setSubmission(data);

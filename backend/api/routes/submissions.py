@@ -487,7 +487,7 @@ def _build_player_progress(db: Session, player: User) -> dict:
                 "created_at": sub.created_at.isoformat() if sub.created_at else "",
                 "published_at": sub.published_at.isoformat() if sub.published_at else None,
                 "flaw_count": flaw_count,
-                "pdf_report_url": _gcs_to_signed_url(sub.pdf_report_url),
+                "pdf_report_url": f"/api/v1/submissions/{sub.id}/report" if sub.pdf_report_url else None,
             }
         )
 
@@ -1500,7 +1500,7 @@ def get_submission(
             original_filename=sub.original_filename,
             analysis_type=sub.analysis_type,
             status=sub.status.value if isinstance(sub.status, SubmissionStatus) else sub.status,
-            video_url=sub.video_url,
+            video_url=_resolve_video_url_for_client(sub.video_url),
             created_at=sub.created_at,
             analyzed_at=sub.analyzed_at,
             published_at=sub.published_at,
