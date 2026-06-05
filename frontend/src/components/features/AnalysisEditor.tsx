@@ -369,6 +369,7 @@ export default function AnalysisEditor() {
                 <video
                   ref={reviewPlayerRef}
                   controls
+                  crossOrigin="anonymous"
                   className="w-full h-full relative z-10"
                   src={resolveMediaUrl(submission.annotated_video_url)}
                   onError={() => setVideoError(true)}
@@ -377,6 +378,7 @@ export default function AnalysisEditor() {
                 <video
                   ref={reviewPlayerRef}
                   controls
+                  crossOrigin="anonymous"
                   className="w-full h-full relative z-10"
                   src={resolveMediaUrl(submission.video_url)}
                   onError={() => setVideoError(true)}

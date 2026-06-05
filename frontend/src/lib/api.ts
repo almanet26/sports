@@ -31,7 +31,9 @@ export function resolveMediaUrl(path: string | null | undefined): string {
   return `${API_BASE_URL}${normalizedPath.startsWith('/') ? '' : '/'}${normalizedPath}`;
 }
 
-/** Build an authenticated download URL for a report path by appending the JWT token. */
+/** Build an authenticated download URL for a report path by appending the JWT token.
+ *  Token is only appended for same-origin API paths to avoid leaking credentials
+ *  to third-party origins (e.g. storage.googleapis.com signed URLs). */
 export function reportDownloadUrl(path: string | null | undefined): string {
   if (!path) return '';
   const base = resolveMediaUrl(path);
@@ -39,9 +41,13 @@ export function reportDownloadUrl(path: string | null | undefined): string {
   if (!token) return base;
   try {
     const url = new URL(base);
-    url.searchParams.set('token', token);
+    // Only append token when the URL targets our own API origin
+    if (url.origin === window.location.origin || url.origin === API_BASE_URL.replace(/\/$/, '')) {
+      url.searchParams.set('token', token);
+    }
     return url.toString();
   } catch {
+    // Relative path — safe to append token
     const sep = base.includes('?') ? '&' : '?';
     return `${base}${sep}token=${encodeURIComponent(token)}`;
   }

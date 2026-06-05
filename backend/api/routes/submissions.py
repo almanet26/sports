@@ -487,7 +487,7 @@ def _build_player_progress(db: Session, player: User) -> dict:
                 "created_at": sub.created_at.isoformat() if sub.created_at else "",
                 "published_at": sub.published_at.isoformat() if sub.published_at else None,
                 "flaw_count": flaw_count,
-                "pdf_report_url": _gcs_to_signed_url(sub.pdf_report_url),
+                "pdf_report_url": f"/api/v1/submissions/{sub.id}/report" if sub.pdf_report_url else None,
             }
         )
 
@@ -1399,7 +1399,7 @@ def coach_publish(
 
 @router.get("/{submission_id}/report")
 def get_submission_report(
-    submission_id: str,
+    submission_id: UUID,
     db: Session = Depends(get_db),
     current_user: User | None = Depends(get_optional_user),
     token: str | None = Query(default=None),
@@ -1417,7 +1417,7 @@ def get_submission_report(
         except Exception:
             pass
 
-    sub = get_submission_by_id(db, submission_id)
+    sub = get_submission_by_id(db, str(submission_id))
     if not sub:
         raise HTTPException(status_code=404, detail="Submission not found.")
 
