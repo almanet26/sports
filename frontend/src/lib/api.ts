@@ -36,7 +36,15 @@ export function reportDownloadUrl(path: string | null | undefined): string {
   if (!path) return '';
   const base = resolveMediaUrl(path);
   const token = localStorage.getItem('access_token');
-  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+  if (!token) return base;
+  try {
+    const url = new URL(base);
+    url.searchParams.set('token', token);
+    return url.toString();
+  } catch {
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}token=${encodeURIComponent(token)}`;
+  }
 }
 
 export function coachContentMediaUrl(contentId: string): string {
