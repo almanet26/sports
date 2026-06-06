@@ -353,7 +353,25 @@ def read_root():
 @app.get("/api/v1/health", tags=["health"])
 def health_check():
     """Health check endpoint."""
-    return {"status": "ok", "service": "cricket-highlight-api"}
+    import os, re
+    gemini_keys_found = 0
+    gemini_keys_rejected = 0
+    for env_name in [f"GEMINI_API_KEY_{i}" for i in range(1, 6)] + ["GEMINI_API_KEY", "GOOGLE_GEMINI_API_KEY", "GOOGLE_API_KEY"]:
+        val = os.getenv(env_name)
+        if not val:
+            continue
+        key = val.strip()
+        if re.fullmatch(r"(AIza[A-Za-z0-9_-]{20,}|AQ\.[A-Za-z0-9_\-+/=]{20,})", key):
+            gemini_keys_found += 1
+        else:
+            gemini_keys_rejected += 1
+    return {
+        "status": "ok",
+        "service": "cricket-highlight-api",
+        "gemini_keys_loaded": gemini_keys_found,
+        "gemini_keys_rejected": gemini_keys_rejected,
+        "gemini_ready": gemini_keys_found > 0,
+    }
 
 
 @app.get("/api/v1/db-health", tags=["health"])
