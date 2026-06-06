@@ -72,6 +72,16 @@ spec:
                 secretKeyRef:
                   name: GEMINI_API_KEY_1
                   key: latest
+            - name: GEMINI_API_KEY_2
+              valueFrom:
+                secretKeyRef:
+                  name: GEMINI_API_KEY_2
+                  key: latest
+            - name: GEMINI_API_KEY_3
+              valueFrom:
+                secretKeyRef:
+                  name: GEMINI_API_KEY_3
+                  key: latest
             - name: YOUTUBE_COOKIES_B64
               valueFrom:
                 secretKeyRef:
