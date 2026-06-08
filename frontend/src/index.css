@@ -246,41 +246,86 @@ input:focus, select:focus, textarea:focus {
   outline: none;
 }
 
-/* Light theme text colors */
-.light-theme .text-white\/60 {
-  color: rgb(71 85 105) !important;
-}
+/* ================================================================
+   LIGHT THEME — comprehensive overrides for dark-mode Tailwind classes
+   ================================================================ */
 
-.light-theme .text-white\/70 {
-  color: rgb(51 65 85) !important;
-}
+/* --- Text: white-opacity series --- */
+.light-theme .text-white { color: rgb(15 23 42) !important; }
+.light-theme .text-white\/90 { color: rgb(15 23 42) !important; }
+.light-theme .text-white\/80 { color: rgb(30 41 59) !important; }
+.light-theme .text-white\/70 { color: rgb(51 65 85) !important; }
+.light-theme .text-white\/60 { color: rgb(71 85 105) !important; }
+.light-theme .text-white\/50 { color: rgb(100 116 139) !important; }
+.light-theme .text-white\/45 { color: rgb(112 128 150) !important; }
+.light-theme .text-white\/40 { color: rgb(148 163 184) !important; }
+.light-theme .text-white\/30 { color: rgb(148 163 184) !important; }
+.light-theme .text-white\/20 { color: rgb(203 213 225) !important; }
 
-.light-theme .text-white\/40 {
-  color: rgb(148 163 184) !important;
-}
+/* --- Placeholder text --- */
+.light-theme .placeholder-white\/30::placeholder { color: rgb(148 163 184) !important; }
+.light-theme .placeholder-white\/40::placeholder { color: rgb(148 163 184) !important; }
+.light-theme .placeholder-white\/50::placeholder { color: rgb(100 116 139) !important; }
 
-.light-theme .text-white\/50 {
-  color: rgb(100 116 139) !important;
-}
+/* --- Borders: white-opacity series --- */
+.light-theme .border-white\/5  { border-color: rgba(148, 163, 184, 0.15) !important; }
+.light-theme .border-white\/10 { border-color: rgba(148, 163, 184, 0.30) !important; }
+.light-theme .border-white\/20 { border-color: rgba(148, 163, 184, 0.40) !important; }
+.light-theme .border-white\/30 { border-color: rgba(148, 163, 184, 0.50) !important; }
 
-.light-theme .text-white {
-  color: rgb(15 23 42) !important;
-}
+/* --- Borders: zinc/slate dark --- */
+.light-theme .border-zinc-700,
+.light-theme .border-zinc-800,
+.light-theme .border-zinc-900 { border-color: rgb(226 232 240) !important; }
+.light-theme .border-slate-700,
+.light-theme .border-slate-800 { border-color: rgb(226 232 240) !important; }
+.light-theme .border-zinc-800\/50 { border-color: rgba(148, 163, 184, 0.25) !important; }
 
-/* Light theme borders */
-.light-theme .border-white\/10,
-.light-theme .border-white\/20 {
-  border-color: rgba(148, 163, 184, 0.3) !important;
-}
+/* --- Backgrounds: white-opacity series --- */
+.light-theme .bg-white\/5  { background-color: rgba(241, 245, 249, 0.50) !important; }
+.light-theme .bg-white\/10 { background-color: rgba(241, 245, 249, 0.80) !important; }
+.light-theme .bg-white\/20 { background-color: rgba(255, 255, 255, 0.90) !important; }
+.light-theme .bg-white\/30 { background-color: rgba(255, 255, 255, 0.95) !important; }
 
-/* Light theme backgrounds */
-.light-theme .bg-white\/10 {
-  background-color: rgba(241, 245, 249, 0.8) !important;
-}
+/* --- Backgrounds: black-opacity (used as subtle section tints, NOT overlays) --- */
+.light-theme .bg-black\/10 { background-color: rgba(241, 245, 249, 0.60) !important; }
+.light-theme .bg-black\/20 { background-color: rgba(226, 232, 240, 0.60) !important; }
+.light-theme .bg-black\/30 { background-color: rgba(203, 213, 225, 0.50) !important; }
 
-.light-theme .bg-white\/5 {
-  background-color: rgba(241, 245, 249, 0.5) !important;
-}
+/* --- Backgrounds: zinc dark solids --- */
+.light-theme .bg-zinc-900,
+.light-theme .bg-zinc-950  { background-color: rgb(248 250 252) !important; }
+.light-theme .bg-zinc-800  { background-color: rgb(241 245 249) !important; }
+.light-theme .bg-zinc-700  { background-color: rgb(226 232 240) !important; }
+
+/* --- Backgrounds: slate dark solids --- */
+.light-theme .bg-slate-900,
+.light-theme .bg-slate-950  { background-color: rgb(248 250 252) !important; }
+.light-theme .bg-slate-800  { background-color: rgb(241 245 249) !important; }
+.light-theme .bg-slate-950\/95,
+.light-theme .bg-slate-950\/70 { background-color: rgba(248, 250, 252, 0.95) !important; }
+
+/* --- Text on zinc/slate dark backgrounds --- */
+.light-theme .text-zinc-100,
+.light-theme .text-zinc-200,
+.light-theme .text-zinc-300 { color: rgb(30 41 59) !important; }
+.light-theme .text-zinc-400 { color: rgb(71 85 105) !important; }
+.light-theme .text-zinc-500 { color: rgb(100 116 139) !important; }
+
+/* --- bg-zinc/slate with opacity variants --- */
+.light-theme .bg-zinc-950\/60,
+.light-theme .bg-zinc-950\/70,
+.light-theme .bg-zinc-950\/95 { background-color: rgba(248, 250, 252, 0.95) !important; }
+.light-theme .bg-zinc-900\/60,
+.light-theme .bg-zinc-900\/70 { background-color: rgba(241, 245, 249, 0.85) !important; }
+.light-theme .bg-zinc-800\/50 { background-color: rgba(226, 232, 240, 0.70) !important; }
+.light-theme .bg-slate-950\/95,
+.light-theme .bg-slate-950\/70 { background-color: rgba(248, 250, 252, 0.95) !important; }
+
+/* --- Scrollbar in light mode --- */
+.light-theme ::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.05); }
+.light-theme ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.15); }
+.light-theme ::-webkit-scrollbar-thumb:hover { background: rgba(0, 0, 0, 0.25); }
 
 /* Animated gradient background */
 @keyframes gradient {
