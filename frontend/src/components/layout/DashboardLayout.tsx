@@ -23,8 +23,6 @@ function getSettingsPath(role?: string) {
   return '/settings';
 }
 
-console.log("DashboardLayout rendered");
-
 // Role-specific dashboard items
 const dashboardItems: Record<string, NavItem[]> = {
   PLAYER: [
@@ -192,16 +190,16 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
       </div>
 
       {/* Mobile Header */}
-      <header className="lg:hidden fixed top-0 left-0 right-0 z-50 glass border-b border-white/10">
+      <header className={`lg:hidden fixed top-0 left-0 right-0 z-50 border-b ${theme === 'dark' ? 'glass border-white/10' : 'bg-white/80 backdrop-blur-xl border-slate-200/60 shadow-sm'}`}>
         <div className="flex items-center justify-between p-4">
           <div className="flex items-center gap-3">
             <img src={logoImage} alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
-            <span className="font-bold text-xl text-white">PitchVision</span>
+            <span className={`font-bold text-xl ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>PitchVision</span>
           </div>
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="w-10 h-10 rounded-xl glass border border-white/20 flex items-center justify-center text-white hover:bg-white/10 transition-all"
+            className={`w-10 h-10 rounded-xl border flex items-center justify-center transition-all ${theme === 'dark' ? 'glass border-white/20 text-white hover:bg-white/10' : 'bg-slate-100 border-slate-200 text-slate-700 hover:bg-slate-200'}`}
           >
             <i className={`fas ${sidebarOpen ? 'fa-times' : 'fa-bars'}`}></i>
           </motion.button>
@@ -371,21 +369,21 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
               animate={{ x: 0 }}
               exit={{ x: -288 }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed top-0 left-0 z-40 h-screen w-72 glass border-r border-white/10 lg:hidden"
+              className={`fixed top-0 left-0 z-40 h-screen w-72 border-r lg:hidden ${theme === 'dark' ? 'glass border-white/10' : 'bg-white/90 backdrop-blur-xl border-slate-200/60 shadow-xl'}`}
             >
               <div className="h-full flex flex-col">
                 {/* Mobile Logo */}
-                <div className="flex items-center gap-3 p-6 border-b border-white/10">
+                <div className={`flex items-center gap-3 p-6 border-b ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
                   <img src={logoImage} alt="PitchVision" className="w-14 h-14 rounded-xl object-contain" />
                   <div>
-                    <span className="font-bold text-lg text-white">PitchVision</span>
-                    <p className="text-xs text-white/50">AI Analytics</p>
+                    <span className={`font-bold text-lg ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>PitchVision</span>
+                    <p className={`text-xs ${theme === 'dark' ? 'text-white/50' : 'text-slate-400'}`}>AI Analytics</p>
                   </div>
                 </div>
 
                 {/* User Info */}
-                <div className="p-4 border-b border-white/10">
-                  <div className="glass rounded-2xl p-4 border border-white/10">
+                <div className={`p-4 border-b ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
+                  <div className={`rounded-2xl p-4 border ${theme === 'dark' ? 'glass border-white/10' : 'bg-slate-50/80 border-slate-200/60'}`}>
                     <div className="flex items-center gap-3">
                       <div className="w-12 h-12 rounded-xl flex-shrink-0 overflow-hidden bg-gradient-to-r from-blue-400 to-purple-500 flex items-center justify-center text-white font-bold text-lg">
                         {sidebarAvatar
@@ -394,10 +392,10 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                         }
                       </div>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium text-white truncate">
+                        <p className={`text-sm font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-slate-800'}`}>
                           {sidebarName}
                         </p>
-                        <p className="text-xs text-white/45 truncate">
+                        <p className={`text-xs truncate ${theme === 'dark' ? 'text-white/45' : 'text-slate-400'}`}>
                           {user?.email || "No email available"}
                         </p>
                         <div className="mt-1">
@@ -417,19 +415,24 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                       end={item.label === "Dashboard"}
                       onClick={() => setSidebarOpen(false)}
                       className={({ isActive }) =>
-                        `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${isActive
-                          ? "bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border border-white/20"
-                          : "text-white/60 hover:text-white hover:bg-white/5"
+                        `flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 border ${theme === 'dark'
+                          ? isActive
+                            ? 'bg-gradient-to-r from-blue-500/20 to-purple-500/20 text-white border-white/20'
+                            : 'text-white/60 hover:text-white hover:bg-white/5 border-transparent'
+                          : isActive
+                            ? 'bg-gradient-to-r from-blue-500/10 to-purple-500/10 text-blue-600 border-blue-200'
+                            : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/70 border-transparent'
                         }`
                       }
                     >
                       {({ isActive }) => (
                         <>
-                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${isActive
-                            ? 'bg-gradient-to-r from-blue-500 to-purple-600'
-                            : 'bg-white/10'
-                            }`}>
-                            <i className={`${item.icon} text-sm ${isActive ? 'text-white' : 'text-white/60'}`}></i>
+                          <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${
+                            theme === 'dark'
+                              ? isActive ? 'bg-gradient-to-r from-blue-500 to-purple-600' : 'bg-white/10'
+                              : isActive ? 'bg-gradient-to-r from-blue-500 to-purple-600' : 'bg-slate-200/70'
+                          }`}>
+                            <i className={`${item.icon} text-sm ${isActive ? 'text-white' : theme === 'dark' ? 'text-white/60' : 'text-slate-500'}`}></i>
                           </div>
                           <span className="font-medium">{item.label}</span>
                         </>
@@ -439,16 +442,15 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 </nav>
 
                 {/* Theme Toggle */}
-                <div className="p-4 border-t border-white/10">
+                <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
                   <button
                     onClick={toggleTheme}
                     className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${theme === 'dark'
                         ? 'text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10'
-                        : 'text-gray-600 hover:text-blue-600 hover:bg-blue-500/10'
+                        : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/70'
                       }`}
                   >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'
-                      }`}>
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'bg-white/10' : 'bg-slate-200/70'}`}>
                       <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-sm`}></i>
                     </div>
                     <span className="font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
@@ -456,12 +458,12 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                 </div>
 
                 {/* Logout */}
-                <div className="p-4 border-t border-white/10">
+                <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
                   <button
                     onClick={handleLogout}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-white/60 hover:text-red-400 hover:bg-red-500/10 transition-all duration-300"
+                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${theme === 'dark' ? 'text-white/60 hover:text-red-400 hover:bg-red-500/10' : 'text-slate-600 hover:text-red-600 hover:bg-red-50/70'}`}
                   >
-                    <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center">
+                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'bg-white/10' : 'bg-slate-200/70'}`}>
                       <i className="fas fa-sign-out-alt text-sm"></i>
                     </div>
                     <span className="font-medium">Log out</span>
