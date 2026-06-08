@@ -544,6 +544,26 @@ def _build_player_progress(db: Session, player: User) -> dict:
     }
 
 
+def _upload_to_gcs_if_cloud(local_path: Path, blob_name: str) -> str:
+    """Upload a local file to GCS and return the blob name, or a /static/ URL for local dev."""
+    if _gcs_bucket_upload is not None:
+        try:
+            blob = _gcs_bucket_upload.blob(blob_name)
+            blob.upload_from_filename(str(local_path))
+            logger.info("Uploaded %s to GCS as %s", local_path.name, blob_name)
+            return blob_name  # stored as bare blob name; resolved to signed URL on read
+        except Exception as e:
+            logger.warning("GCS upload failed for %s: %s — falling back to local path", blob_name, e)
+    # Local dev fallback
+    static_prefix = str(local_path).replace("\\", "/")
+    for mount in ("storage/submission_videos/", "storage/temp_frames/"):
+        if mount in static_prefix:
+            rel = static_prefix.split(mount, 1)[1]
+            folder = "submission_videos" if "submission_videos" in mount else "temp_frames"
+            return f"/static/{folder}/{rel}"
+    return f"/static/{local_path.name}"
+
+
 def _save_key_frame(video_path: str, submission_id: str, frame_idx: int | None) -> str | None:
     """Extract a single frame from the video and save as JPEG."""
     if frame_idx is None:
@@ -556,7 +576,7 @@ def _save_key_frame(video_path: str, submission_id: str, frame_idx: int | None) 
         return None
     out_path = TEMP_FRAMES_DIR / f"{submission_id}.jpg"
     cv2.imwrite(str(out_path), frame)
-    return f"/static/temp_frames/{submission_id}.jpg"
+    return _upload_to_gcs_if_cloud(out_path, f"key_frames/{submission_id}.jpg")
 
 
 def _append_tutorial_links(ai_text: str, drills: list[dict]) -> str:
@@ -1526,7 +1546,7 @@ def _run_batting_analysis(
     annotated_filename = f"sub_{submission_id}_batting_annotated.mp4"
     final_annotated = ANNOTATED_DIR / annotated_filename
     shutil.move(annotated_video_path, final_annotated)
-    annotated_url = f"/static/submission_videos/{annotated_filename}"
+    annotated_url = _upload_to_gcs_if_cloud(final_annotated, f"annotated_videos/{annotated_filename}")
 
     # Save key frame (Impact)
     impact_frame = phase_info.get("impact")
@@ -1579,7 +1599,7 @@ def _run_bowling_analysis(
     annotated_filename = f"sub_{submission_id}_bowling_annotated.mp4"
     final_annotated = ANNOTATED_DIR / annotated_filename
     shutil.move(annotated_video_path, final_annotated)
-    annotated_url = f"/static/submission_videos/{annotated_filename}"
+    annotated_url = _upload_to_gcs_if_cloud(final_annotated, f"annotated_videos/{annotated_filename}")
 
     # Save key frame (first captured image or mid-point)
     key_frame_url = None
@@ -1589,7 +1609,7 @@ def _run_bowling_analysis(
         frame_path = TEMP_FRAMES_DIR / f"{submission_id}.jpg"
         img_bgr = cv2.cvtColor(img_arr, cv2.COLOR_RGB2BGR)
         cv2.imwrite(str(frame_path), img_bgr)
-        key_frame_url = f"/static/temp_frames/{submission_id}.jpg"
+        key_frame_url = _upload_to_gcs_if_cloud(frame_path, f"key_frames/{submission_id}.jpg")
 
     # AI feedback
     prompt = BOWLING_ANALYSIS_PROMPT.format(
