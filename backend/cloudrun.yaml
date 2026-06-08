@@ -42,7 +42,7 @@ spec:
             - name: ALLOWED_ORIGINS
               value: https://sports-teal-two.vercel.app
             - name: GEMINI_MODEL
-              value: gemini-2.5-flash
+              value: gemini-2.0-flash
             # Cloud Tasks
             - name: GCP_PROJECT
               value: sports-ai-489110
