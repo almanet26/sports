@@ -263,39 +263,51 @@ else:
 def _resolve_video_path(video_url: str) -> str:
     """
     Resolve video_url (which may be a GCS blob path or local path) to a local file path.
-    
+
     - If video_url starts with gs:// or is a GCS blob path, download it to temp storage
+    - If video_url is a full https://storage.googleapis.com/{bucket}/... URL, extract blob and download
     - If video_url is /static/submissions/, replace with storage/submissions/
     - Otherwise, assume it's already a valid local path
-    
+
     Returns the local file path for Gemini API upload.
     """
+    def _download_gcs_blob(blob_name: str) -> str:
+        logger.info("Downloading GCS video: %s", blob_name)
+        blob = _gcs_bucket_upload.blob(blob_name)
+        temp_filename = f"temp_{uuid.uuid4()}_{Path(blob_name).name}"
+        local_path = TEMP_FRAMES_DIR / temp_filename
+        with open(local_path, "wb") as f:
+            blob.download_to_file(f)
+        logger.info("Downloaded GCS video to %s", local_path)
+        return str(local_path)
+
     # Case 1: GCS blob path (e.g., "raw_videos/abc123_filename.mp4")
     if _gcs_bucket_upload and not video_url.startswith(("http://", "https://", "/", "gs://")):
         try:
-            logger.info("Downloading GCS video: %s", video_url)
-            blob = _gcs_bucket_upload.blob(video_url)
-            
-            # Download to temp storage
-            temp_filename = f"temp_{uuid.uuid4()}_{Path(video_url).name}"
-            local_path = TEMP_FRAMES_DIR / temp_filename  # Use temp frames dir for temporary videos
-            with open(local_path, "wb") as f:
-                blob.download_to_file(f)
-            
-            logger.info("Downloaded GCS video to %s", local_path)
-            return str(local_path)
+            return _download_gcs_blob(video_url)
         except Exception as e:
             logger.error("Failed to download GCS video %s: %s", video_url, e)
             raise HTTPException(status_code=500, detail=f"Failed to download video: {e}")
-    
-    # Case 2: Local /static/ path
+
+    # Case 2: Full public GCS URL — extract blob name and download via GCS client
+    # Gallery videos are stored as https://storage.googleapis.com/{bucket}/{blob}
+    _gcs_public_prefix = f"https://storage.googleapis.com/{_GCS_BUCKET_NAME}/"
+    if _gcs_bucket_upload and _GCS_BUCKET_NAME and video_url.startswith(_gcs_public_prefix):
+        blob_name = video_url[len(_gcs_public_prefix):]
+        try:
+            return _download_gcs_blob(blob_name)
+        except Exception as e:
+            logger.error("Failed to download GCS video %s: %s", blob_name, e)
+            raise HTTPException(status_code=500, detail=f"Failed to download video: {e}")
+
+    # Case 3: Local /static/ path
     if video_url.startswith("/static/submissions/"):
         video_file_path = video_url.replace("/static/submissions/", "storage/submissions/")
         if not os.path.isfile(video_file_path):
             raise HTTPException(status_code=404, detail="Video file not found on disk.")
         return video_file_path
-    
-    # Case 3: Assume already a valid local path
+
+    # Case 4: Assume already a valid local path
     if not os.path.isfile(video_url):
         raise HTTPException(status_code=404, detail=f"Video file not found: {video_url}")
     return video_url
