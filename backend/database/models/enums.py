@@ -7,13 +7,11 @@ USER_ROLE_VALUES = ("PLAYER", "COACH", "ADMIN")
 # Subscription tier — stored in subscriptions.role and plan_config.role.
 # users.role never holds one of these values.
 ROLE_VALUES = (
-    "free",
-    "coach_free",
-    "basic",
-    "platinum",
-    "coach_starter",
-    "coach_pro",
-    "academy",
+    "bronze",
+    "coach_basic",
+    "silver",
+    "gold",
+    "coach_platinum",
 )
 
 SUBSCRIPTION_STATUS_VALUES = (

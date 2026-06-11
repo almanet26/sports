@@ -77,7 +77,6 @@ class User(Base):
     # coach_connections = relationship("Connection", foreign_keys="Connection.coach_id", back_populates="coach")
     coach_contents = relationship("CoachContent", back_populates="coach")
     subscriptions = relationship("Subscription", back_populates="user", cascade="all, delete-orphan")
-    monthly_usages = relationship("MonthlyUsage", back_populates="user", cascade="all, delete-orphan")
     chat_messages = relationship("ChatHistory", back_populates="user", cascade="all, delete-orphan")
     player_profile = relationship("PlayerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
     coach_contents = relationship("CoachContent", back_populates="coach", cascade="all, delete-orphan")
