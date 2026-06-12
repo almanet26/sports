@@ -31,21 +31,19 @@ _FREE_EXPIRES_DAYS = 36500  # ~100 years — effectively never for the free tier
 
 
 def _seed_subscription(user_id: str, account_type: str, db: Session) -> Subscription:
-    """Insert the initial free (or academy for ADMIN) subscription row."""
+    """Insert the initial free subscription row (linked to the free Plan) on registration."""
+    from database.models.plan import Plan
+    from config.default_entitlements import FREE_PLAN_BY_ACCOUNT_TYPE
+
     now = datetime.now(timezone.utc)
-    if account_type == "ADMIN":
-        tier = "academy"
-        plan_key = "academy_365d"
-    elif account_type == "COACH":
-        tier = "coach_free"
-        plan_key = "coach_free"
-    else:
-        tier = "free"
-        plan_key = "free"
+    free_key = FREE_PLAN_BY_ACCOUNT_TYPE.get(account_type, "bronze")
+    plan = db.query(Plan).filter(Plan.key == free_key).first()
+
     sub = Subscription(
         user_id=user_id,
-        plan_key=plan_key,
-        role=tier,
+        plan_id=plan.id if plan else None,
+        plan_key=free_key,
+        role=free_key,
         status="active",
         started_at=now,
         expires_at=now + timedelta(days=_FREE_EXPIRES_DAYS),
@@ -320,11 +318,9 @@ def login(login_data: UserLogin, db: Session = Depends(get_db)):
     if sub:
         sub_role = sub.role
     elif user.role == "COACH":
-        sub_role = "coach_free"
-    elif user.role == "ADMIN":
-        sub_role = "academy"
+        sub_role = "coach_basic"
     else:
-        sub_role = "free"
+        sub_role = "bronze"
     sub_status = sub.status if sub else "inactive"
 
     user.last_login = datetime.now(timezone.utc)
@@ -393,7 +389,7 @@ def _build_profile_response(user: User, sub: Optional[Subscription]) -> dict:
         "last_login": user.last_login,
         "subscription_role": (
             sub.role if sub
-            else ("coach_free" if user.role == "COACH" else ("academy" if user.role == "ADMIN" else "free"))
+            else ("coach_basic" if user.role == "COACH" else "bronze")
         ),
         "subscription_status": sub.status if sub else "inactive",
         "subscription_expires_at": sub.expires_at if sub else None,
