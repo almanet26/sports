@@ -1,107 +1,103 @@
 """
-Monthly usage helpers used by both the API layer and the internal worker callback.
+Monthly feature-usage helpers shared by the API layer and the worker callback.
 
-All functions are synchronous to match the rest of the codebase's sync
-SQLAlchemy session usage (SessionLocal, not AsyncSession).
+Backed by the normalized feature_usage table (one row per user x feature x calendar month).  Synchronous to match the rest of the codebase's sync SQLAlchemy session usage.
 """
 
 from __future__ import annotations
-
 from datetime import date
-
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-
 from database.config import IS_SQLITE
-from database.models.monthly_usage import MonthlyUsage
+from database.models.feature import Feature
 
 
-def get_or_create_monthly_usage(user_id: str, db: Session) -> MonthlyUsage:
-    """
-    Fetch the monthly_usage row for (user_id, current year, current month).
-    Creates it atomically if it doesn't exist.
-
-    Uses INSERT … ON CONFLICT DO NOTHING so concurrent requests racing on the
-    same (user_id, year, month) don't trip the unique constraint.
-    """
+def _period_start() -> date:
     today = date.today()
-    year, month = today.year, today.month
+    return date(today.year, today.month, 1)
 
+
+def _feature_id(db: Session, feature_key: str) -> int | None:
+    row = db.query(Feature.id).filter(Feature.key == feature_key).first()
+    return row[0] if row else None
+
+
+def _ensure_row(db: Session, user_id: str, feature_id: int, period: date) -> None:
     if IS_SQLITE:
         db.execute(
             text(
-                "INSERT OR IGNORE INTO monthly_usage "
-                "(user_id, year, month, biomech_count, ocr_hours_used, submission_count) "
-                "VALUES (:uid, :y, :m, 0, 0, 0)"
+                "INSERT OR IGNORE INTO feature_usage (user_id, feature_id, period_start, used) "
+                "VALUES (:uid, :fid, :ps, 0)"
             ),
-            {"uid": user_id, "y": year, "m": month},
+            {"uid": user_id, "fid": feature_id, "ps": period},
         )
     else:
         db.execute(
             text(
-                "INSERT INTO monthly_usage "
-                "(user_id, year, month, biomech_count, ocr_hours_used, submission_count) "
-                "VALUES (:uid, :y, :m, 0, 0, 0) "
-                "ON CONFLICT (user_id, year, month) DO NOTHING"
+                "INSERT INTO feature_usage (user_id, feature_id, period_start, used) "
+                "VALUES (:uid, :fid, :ps, 0) "
+                "ON CONFLICT (user_id, feature_id, period_start) DO NOTHING"
             ),
-            {"uid": user_id, "y": year, "m": month},
+            {"uid": user_id, "fid": feature_id, "ps": period},
         )
     db.commit()
 
-    return (
-        db.query(MonthlyUsage)
-        .filter(
-            MonthlyUsage.user_id == user_id,
-            MonthlyUsage.year == year,
-            MonthlyUsage.month == month,
-        )
-        .first()
-    )
 
-
-def report_ocr_usage(user_id: str, actual_hours: float, db: Session) -> MonthlyUsage:
+def report_ocr_usage(user_id: str, actual_hours: float, db: Session) -> None:
     """
-    Reconciliation step called by the Cloud Tasks worker after an OCR job
-    completes.  Increments ocr_hours_used by actual_hours.
+    Reconcile OCR consumption after a job completes (or refund a reservation).
 
-    We reserved an estimated amount at dispatch time; this writes the ground
-    truth, so the delta can be positive (job ran long) or negative (job was
-    fast).  Negative deltas are intentionally allowed — the UPDATE uses
-    addition, so passing a negative value decrements the counter.
-
-    The row is guaranteed to exist by the time this is called (created at
-    dispatch), but we upsert defensively anyway.
+    Adds `actual_hours` (which may be negative for a refund) to the user's ocr_highlights usage for the current month, clamped at zero so refunds never drive the counter below 0.  No-op if the feature is not seeded.
     """
     if actual_hours == 0:
-        return get_or_create_monthly_usage(user_id, db)
+        return
 
-    get_or_create_monthly_usage(user_id, db)
+    feature_id = _feature_id(db, "ocr_highlights")
+    if feature_id is None:
+        return
 
-    today = date.today()
-    year, month = today.year, today.month
+    period = _period_start()
+    _ensure_row(db, user_id, feature_id, period)
 
+    clamp = "MAX(0, used + :hours)" if IS_SQLITE else "GREATEST(0, used + :hours)"
     db.execute(
         text(
-            "UPDATE monthly_usage "
-            "SET ocr_hours_used = GREATEST(0, ocr_hours_used + :hours) "
-            "WHERE user_id = :uid AND year = :y AND month = :m"
-        )
-        if not IS_SQLITE
-        else text(
-            "UPDATE monthly_usage "
-            "SET ocr_hours_used = MAX(0, ocr_hours_used + :hours) "
-            "WHERE user_id = :uid AND year = :y AND month = :m"
+            f"UPDATE feature_usage SET used = {clamp} "
+            f"WHERE user_id = :uid AND feature_id = :fid AND period_start = :ps"
         ),
-        {"hours": actual_hours, "uid": user_id, "y": year, "m": month},
+        {"hours": actual_hours, "uid": user_id, "fid": feature_id, "ps": period},
     )
     db.commit()
 
-    return (
-        db.query(MonthlyUsage)
-        .filter(
-            MonthlyUsage.user_id == user_id,
-            MonthlyUsage.year == year,
-            MonthlyUsage.month == month,
-        )
-        .first()
-    )
+
+def get_feature_used_since(user_id: str, feature_key: str, since: date, db: Session) -> float:
+    """
+    Total consumption of `feature_key` for `user_id` across all monthly periods on or after `since` (first-of-month).  Returns 0.0 if none / not seeded.
+    """
+    feature_id = _feature_id(db, feature_key)
+    if feature_id is None:
+        return 0.0
+    row = db.execute(
+        text(
+            "SELECT COALESCE(SUM(used), 0) FROM feature_usage "
+            "WHERE user_id = :uid AND feature_id = :fid AND period_start >= :since"
+        ),
+        {"uid": user_id, "fid": feature_id, "since": date(since.year, since.month, 1)},
+    ).first()
+    return float(row[0]) if row and row[0] is not None else 0.0
+
+
+def get_monthly_usage_map(user_id: str, db: Session) -> dict[str, float]:
+    """
+    Return {feature_key: used} for the user's current-month feature_usage rows. Used to assemble billing/usage snapshots.
+    """
+    period = _period_start()
+    rows = db.execute(
+        text(
+            "SELECT f.key, fu.used "
+            "FROM feature_usage fu JOIN features f ON f.id = fu.feature_id "
+            "WHERE fu.user_id = :uid AND fu.period_start = :ps"
+        ),
+        {"uid": user_id, "ps": period},
+    ).fetchall()
+    return {key: used for key, used in rows}
