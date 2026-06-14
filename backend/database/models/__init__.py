@@ -25,7 +25,7 @@ from database.models.coach_availability import CoachAvailability
 from database.models.coach_training_plan import CoachTrainingPlan
 from database.models.coach_content import CoachContent
 from database.models.chat_history import ChatHistory
-from database.models.monthly_usage import MonthlyUsage
+from database.models.feature_usage import FeatureUsage
 from database.models.player_profile import PlayerProfile
 from database.models.notification import Notification
 from database.models.player_stats import PlayerStats
@@ -36,7 +36,9 @@ from database.models.coach_content import CoachContent, ContentType
 from database.models.message import Message
 from database.models.coach_review import CoachReview
 from database.models.match import Match
-from database.models.plan_config import PlanConfig
+from database.models.plan import Plan
+from database.models.feature import Feature
+from database.models.plan_entitlement import PlanEntitlement
 from database.models.message import Message
 from database.models.transaction import Transaction, TransactionType, TransactionStatus
 from database.models.review import Review
@@ -88,14 +90,17 @@ __all__ = [
     # Coach Content
     "CoachContent",
     "ChatHistory",
-    "MonthlyUsage",
+    "FeatureUsage",
     "PlayerProfile",
     "Notification",
     "PlayerStats",
     "PlayerSubmission",
     "AdminAuditLog",
     "CoachShortlist",
-    "PlanConfig",
+    # Dynamic entitlement engine
+    "Plan",
+    "Feature",
+    "PlanEntitlement",
     # Messages
     "Message",
     # Transactions

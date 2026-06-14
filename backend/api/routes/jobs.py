@@ -26,7 +26,7 @@ _CT_LOCATION  = os.getenv("CLOUD_TASKS_LOCATION", "asia-south1")
 _WORKER_URL   = os.getenv("WORKER_URL", "")   # e.g. https://worker-xxxx.run.app
 
 # Roles that get expedited processing via the priority queue.
-_PRIORITY_ROLES = {"coach_pro", "academy"}
+_PRIORITY_ROLES = {"coach_platinum"}
 
 _CLOUD_TASKS_ENABLED = bool(_GCP_PROJECT and _WORKER_URL)
 

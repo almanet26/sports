@@ -67,39 +67,64 @@ This opens an interactive window where you can draw a rectangle over the scorebo
 
 ---
 
-## 🔐 Test Role Accounts (Monetization)
+## 🔐 Test Accounts & Credentials
 
-Use these seeded accounts for role and quota gate testing.
+Subscriptions run on the **dynamic entitlement engine** (5 plans:
+`bronze`/`silver`/`gold` for players, `coach_basic`/`coach_platinum` for
+coaches). Plans/features/entitlements are auto-seeded on app startup, so you can
+usually just register through the UI — every new account starts on the free plan
+for its account type (`bronze` for players, `coach_basic` for coaches).
 
-| Email | Role | Tier | Subscription Expires | Status |
-|-------|------|------|--------|--------|
-| player.free@test.com | PLAYER | free | 2126-04-05 | Active |
-| player.basic@test.com | PLAYER | basic | 2026-07-28 | Active |
-| player.platinum@test.com | PLAYER | platinum | 2027-04-29 | Active |
-| coach.free@test.com | COACH | coach_free | 2126-04-05 | Active |
-| coach.starter@test.com | COACH | coach_starter | 2026-07-28 | Active |
-| coach.pro@test.com | COACH | coach_pro | 2026-10-26 | Active |
-| coach.academy@test.com | COACH | academy | 2027-04-29 | Active |
-| admin@test.com | ADMIN | academy | 2027-04-29 | Active |
+### Quick login accounts — `database/seed_users.py`
 
-**Password**: Test@12345 (all accounts)
+Basic role accounts (no preset subscription; resolve to the free plan).
 
-### Regenerate Users and Fresh JWTs
+| Email | Role | Password |
+|-------|------|----------|
+| `admin@test.com` | ADMIN | `1234567890` |
+| `coach@test.com` | COACH | `1234567890` |
+| `player@test.com` | PLAYER | `1234567890` |
 
-Run this whenever you need fresh tokens printed in terminal:
+```bash
+cd backend
+python database/seed_users.py
+```
+
+> ADMIN accounts bypass every feature/quota gate and can open the Plan
+> Management panel (Admin → Plans) to create/edit plans, features and quotas.
+
+### One-account-per-tier (with active subscriptions) — `scripts/seed_roles.py`
+
+Use these to exercise each plan's gates and quotas. Each is created with an
+active subscription on its tier; the script prints fresh JWTs to the terminal.
+
+| Email | Role | Plan |
+|-------|------|------|
+| `bronze.test@sports.com` | PLAYER | bronze (free) |
+| `silver.test@sports.com` | PLAYER | silver (₹200/mo) |
+| `gold.test@sports.com` | PLAYER | gold (₹500/mo) |
+| `coach_basic.test@sports.com` | COACH | coach_basic (free) |
+| `coach_platinum.test@sports.com` | COACH | coach_platinum (₹1200/yr) |
+
+**Password:** `Test@12345` (all five accounts)
 
 ```bash
 cd backend
 python scripts/seed_roles.py
 ```
 
-If `plan_config` is missing or empty, run migrations first:
+`seed_roles.py` requires the plan catalog to exist. It is auto-seeded when the
+API starts; to seed it manually (e.g. before running the script standalone):
 
 ```bash
 cd backend
-alembic upgrade head
+python scripts/seed_entitlements.py   # upserts the 5 plans + feature catalog
 python scripts/seed_roles.py
 ```
+
+> The app also self-heals schema drift on startup (adds `subscriptions.plan_id`,
+> rebuilds a legacy `plans` table, seeds the catalog). For a clean production
+> migration instead, run `alembic upgrade a1d2e3f4c5b6`.
 
 ---
 

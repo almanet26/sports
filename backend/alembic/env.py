@@ -11,8 +11,10 @@ from alembic import context
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from database.config import DATABASE_URL, Base
-# Import all models to ensure they're registered with Base.metadata
-from database.models import user, video, submission, subscription, monthly_usage, plan_config, batting, bowling, player_stats
+# Import all models to ensure they're registered with Base.metadata.
+# Importing the package runs models/__init__.py which registers every model (including the dynamic entitlement engine: plan, feature, plan_entitlement, feature_usage).
+import database.models  # noqa: F401
+from database.models import user, video, submission, subscription, batting, bowling, player_stats  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

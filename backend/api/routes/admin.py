@@ -11,8 +11,9 @@ import logging
 
 from database.config import get_db
 from database.models.user import User
-from database.models.plan_config import PlanConfig
+from database.models.plan import Plan
 from database.models.subscription import Subscription
+from services import entitlement_service
 from utils.auth import get_current_user
 from pydantic import BaseModel, ConfigDict
 
@@ -73,29 +74,7 @@ class UserUpdateRequest(BaseModel):
     is_active: Optional[bool] = None
 
 
-class PlanConfigResponse(BaseModel):
-    plan_key: str
-    role: str
-    display_name: str
-    price_inr: int
-    duration_days: int
-    max_biomech_per_month: int
-    max_ocr_hours_per_month: float
-    max_submissions_per_month: int
-    max_players_in_dashboard: int
-
-    model_config = ConfigDict(from_attributes=True)
-
-
-class PlanConfigUpdate(BaseModel):
-    display_name: Optional[str] = None
-    price_inr: Optional[int] = None
-    duration_days: Optional[int] = None
-    max_biomech_per_month: Optional[int] = None
-    max_ocr_hours_per_month: Optional[float] = None
-    max_submissions_per_month: Optional[int] = None
-    max_players_in_dashboard: Optional[int] = None
-
+# Plan/feature/entitlement management lives in api/routes/admin_plans.py (the dynamic entitlement engine).  This module keeps user/coach admin only.
 
 # ── Dependency ────────────────────────────────────────────────────────────────
 
@@ -346,39 +325,6 @@ def verify_coach(
     return UserDetailResponse.model_validate(coach)
 
 
-@router.get("/plans", response_model=List[PlanConfigResponse])
-def list_plans(
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """List all subscription plans."""
-    plans = db.query(PlanConfig).order_by(PlanConfig.role, PlanConfig.price_inr).all()
-    return [PlanConfigResponse.model_validate(p) for p in plans]
-
-
-@router.patch("/plans/{plan_key}", response_model=PlanConfigResponse)
-def update_plan(
-    plan_key: str,
-    update_data: PlanConfigUpdate,
-    current_user: User = Depends(require_admin),
-    db: Session = Depends(get_db),
-):
-    """Update a subscription plan's configuration."""
-    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == plan_key).first()
-    if not plan:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Plan not found")
-
-    # Update only provided fields
-    update_dict = update_data.model_dump(exclude_unset=True)
-    for field, value in update_dict.items():
-        setattr(plan, field, value)
-
-    db.commit()
-    db.refresh(plan)
-    logger.info(f"Plan {plan_key} updated by admin {current_user.email}")
-    return PlanConfigResponse.model_validate(plan)
-
-
 class SubscriptionOverrideRequest(BaseModel):
     plan_key: str
     status: str = "active"
@@ -392,12 +338,12 @@ def override_user_subscription(
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Override a user's subscription plan."""
+    """Override a user's subscription by assigning them a plan directly."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    plan = db.query(PlanConfig).filter(PlanConfig.plan_key == data.plan_key).first()
+    plan = db.query(Plan).filter(Plan.key == data.plan_key).first()
     if not plan:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Plan '{data.plan_key}' not found")
 
@@ -413,17 +359,18 @@ def override_user_subscription(
         Subscription.status == "active",
     ).update({"status": "expired"})
 
-    # Create new subscription (id is auto-increment Integer, let DB assign it)
     new_sub = Subscription(
         user_id=user_id,
-        plan_key=data.plan_key,
-        role=plan.role,
+        plan_id=plan.id,
+        plan_key=plan.key,
+        role=plan.key,
         status=data.status,
         started_at=datetime.utcnow(),
         expires_at=expires,
     )
     db.add(new_sub)
     db.commit()
+    entitlement_service.invalidate_user(user_id)
 
     logger.info(
         "Admin %s overrode subscription for user %s → plan=%s expires=%s",
@@ -431,8 +378,8 @@ def override_user_subscription(
     )
     return {
         "user_id": user_id,
-        "plan_key": data.plan_key,
-        "role": plan.role,
+        "plan_key": plan.key,
+        "role": plan.key,
         "status": data.status,
         "expires_at": expires.isoformat(),
     }

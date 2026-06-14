@@ -4,8 +4,7 @@ Pre-deployment integration audit for CORS, feature gates, and quota controls.
 Run this against the local backend when needed:
     pytest backend/tests/test_predeploy_audit.py -q
 
-Live CORS checks talk to http://localhost:8000 by default. If the backend is not
-running, those tests skip cleanly.
+Live CORS checks talk to http://localhost:8000 by default. If the backend is not running, those tests skip cleanly.
 """
 
 from __future__ import annotations
@@ -17,11 +16,11 @@ import pytest
 import requests
 from fastapi import HTTPException
 
-from database.models.monthly_usage import MonthlyUsage
 from database.models.subscription import Subscription
 from database.models.user import User
 from dependencies.feature_gate import require_feature
 from dependencies.quota_gate import increment_usage_atomic, quota_check
+from tests.conftest import get_feature_usage
 
 
 BASE_URL = os.getenv("LOCAL_BASE_URL", "http://localhost:8000").rstrip("/")
@@ -64,10 +63,13 @@ def _make_user(role: str) -> User:
 
 
 def _add_active_subscription(db, user_id: str, tier: str) -> None:
+    from database.models.plan import Plan
     now = datetime.utcnow()
+    plan = db.query(Plan).filter(Plan.key == tier).first()
     db.add(
         Subscription(
             user_id=user_id,
+            plan_id=plan.id if plan else None,
             plan_key=tier,
             role=tier,
             status="active",
@@ -77,7 +79,7 @@ def _add_active_subscription(db, user_id: str, tier: str) -> None:
     )
 
 
-def _make_coach_user(db, tier: str = "coach_starter") -> User:
+def _make_coach_user(db, tier: str = "coach_platinum") -> User:
     user = _make_user("COACH")
     db.add(user)
     db.flush()
@@ -87,7 +89,7 @@ def _make_coach_user(db, tier: str = "coach_starter") -> User:
     return user
 
 
-def _make_player_user(db, tier: str = "free") -> User:
+def _make_player_user(db, tier: str = "bronze") -> User:
     user = _make_user("PLAYER")
     db.add(user)
     db.flush()
@@ -95,22 +97,6 @@ def _make_player_user(db, tier: str = "free") -> User:
     db.commit()
     db.refresh(user)
     return user
-
-
-def _seed_biomech_usage(db, user: User, count: int) -> MonthlyUsage:
-    today = datetime.utcnow().date()
-    usage = MonthlyUsage(
-        user_id=user.id,
-        year=today.year,
-        month=today.month,
-        biomech_count=count,
-        ocr_hours_used=0.0,
-        submission_count=0,
-    )
-    db.add(usage)
-    db.commit()
-    db.refresh(usage)
-    return usage
 
 
 def test_cors_accepts_matching_vercel_preview_origin():
@@ -137,6 +123,7 @@ def test_cors_rejects_non_matching_vercel_origin():
 
 
 def test_free_user_blocked_from_pdf_report(free_user, db):
+    # Bronze (free) does not grant pdf_report.
     gate = require_feature("pdf_report")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -144,12 +131,11 @@ def test_free_user_blocked_from_pdf_report(free_user, db):
 
     exc = exc_info.value
     assert exc.status_code == 403
-    assert exc.detail["error"] == "tier_required"
-    assert exc.detail["required"] == "platinum"
-    assert exc.detail["current"] == "free"
+    assert exc.detail["error"] == "feature_not_available"
 
 
-def test_player_tier_does_not_override_coach_only_account_type(platinum_user, db):
+def test_player_does_not_get_coach_only_feature(platinum_user, db):
+    # A player's plan never grants coach_submission_inbox → 403.
     gate = require_feature("coach_submission_inbox")
 
     with pytest.raises(HTTPException) as exc_info:
@@ -157,12 +143,11 @@ def test_player_tier_does_not_override_coach_only_account_type(platinum_user, db
 
     exc = exc_info.value
     assert exc.status_code == 403
-    assert exc.detail["error"] == "wrong_account_type"
-    assert "COACH account" in exc.detail["detail"]
+    assert exc.detail["error"] == "feature_not_available"
 
 
-def test_coach_starter_can_access_coach_only_gate(db):
-    coach = _make_coach_user(db, tier="coach_starter")
+def test_coach_basic_can_access_coach_only_gate(db):
+    coach = _make_coach_user(db, tier="coach_basic")
     gate = require_feature("coach_submission_inbox")
 
     result = gate(user=coach, db=db)
@@ -182,17 +167,7 @@ def test_biomech_quota_atomic_increment_then_429_for_free_tier(free_user, db):
     assert third is True
     assert fourth is False
 
-    usage = (
-        db.query(MonthlyUsage)
-        .filter(
-            MonthlyUsage.user_id == free_user.id,
-            MonthlyUsage.year == datetime.utcnow().year,
-            MonthlyUsage.month == datetime.utcnow().month,
-        )
-        .first()
-    )
-    assert usage is not None
-    assert usage.biomech_count == 3
+    assert get_feature_usage(db, free_user.id, "biomechanics_analysis") == 3
 
     gate = quota_check("biomechanics_analysis")
     with pytest.raises(HTTPException) as exc_info:
@@ -206,11 +181,8 @@ def test_biomech_quota_atomic_increment_then_429_for_free_tier(free_user, db):
 
 
 def test_quota_check_creates_row_when_missing(free_user, db):
-    db.query(MonthlyUsage).filter(MonthlyUsage.user_id == free_user.id).delete()
-    db.commit()
-
     gate = quota_check("biomechanics_analysis")
     result_user, result_usage = gate(user=free_user, db=db)
 
     assert result_user.id == free_user.id
-    assert result_usage.biomech_count == 0
+    assert result_usage.used == 0

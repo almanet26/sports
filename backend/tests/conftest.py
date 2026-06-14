@@ -1,17 +1,15 @@
 """
 Shared pytest fixtures for the backend test suite.
 
-Creates an in-memory SQLite database per session and tears it down after all
-tests. Each test function gets a fresh session with per-test user/subscription
-data rolled back after the test, while the session-scoped plan_config seed
-persists across all tests in the run.
+Creates an in-memory SQLite database per session and tears it down after all tests.  Each test function gets a fresh session with per-test user / subscription / usage data wiped after it runs, while the session-scoped entitlement catalog (plans, features, plan_entitlements) persists across the run.
 
-Plans seeded:
-  free          → max_biomech=3,  max_ocr=0,   max_submissions=0
-  basic         → max_biomech=10, max_ocr=0,   max_submissions=0
-  platinum      → max_biomech=50, max_ocr=0,   max_submissions=0
-  coach_free    → max_biomech=0,  max_ocr=0,   max_submissions=0
-  coach_starter → max_biomech=5,  max_ocr=5.0, max_submissions=50
+Baseline plans seeded (from config/default_entitlements.py via
+scripts.seed_entitlements.sync_entitlement_catalog):
+  bronze         → biomechanics_analysis=3,  player_submission=0
+  silver         → biomechanics_analysis=15, player_submission=5,  ai_chat, pdf_report, ad_free
+  gold           → biomechanics_analysis=50, player_submission=15, + pro_benchmarking, scouting_visibility, ...
+  coach_basic    → ocr_highlights=10, player_submission=5,  player_roster=5,  coach_submission_inbox
+  coach_platinum → ocr_highlights=50, player_submission=100, player_roster=25, + video_annotation, csv_export, ...
 """
 
 import sys
@@ -26,10 +24,13 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from database.config import Base
-from database.models.monthly_usage import MonthlyUsage  # noqa: F401
-from database.models.plan_config import PlanConfig  # noqa: F401
+import database.models  # noqa: F401  — registers every model with Base.metadata
+from database.models.feature_usage import FeatureUsage  # noqa: F401
+from database.models.plan import Plan  # noqa: F401
 from database.models.subscription import Subscription  # noqa: F401
 from database.models.user import User  # noqa: F401
+from scripts.seed_entitlements import sync_entitlement_catalog
+from services import entitlement_service
 
 # ---------------------------------------------------------------------------
 # Test engine — isolated in-memory SQLite, never touches production.
@@ -43,7 +44,7 @@ TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=TEST_
 
 
 # ---------------------------------------------------------------------------
-# Session-scoped: create tables once, seed plan_config once.
+# Session-scoped: create tables once, seed the entitlement catalog once.
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session", autouse=True)
@@ -55,97 +56,12 @@ def _create_tables():
 
 @pytest.fixture(scope="session")
 def _seed_plans(_create_tables):
-    """
-    Insert plan_config rows matching the production values in main.py
-    _ensure_plan_config().  Tests rely on the row that matters for their
-    scenario; unused columns (e.g. max_players for quota tests) mirror
-    production so no fixture drifts silently.
-    """
+    """Seed the baseline plans/features/entitlements (production values)."""
     db = TestingSessionLocal()
-    rows = [
-        PlanConfig(
-            plan_key="free",
-            role="free",
-            display_name="Free",
-            price_inr=0,
-            duration_days=36500,
-            max_biomech_per_month=3,
-            max_ocr_hours_per_month=0.0,
-            max_submissions_per_month=0,
-            max_players_in_dashboard=0,
-        ),
-        PlanConfig(
-            plan_key="coach_free",
-            role="coach_free",
-            display_name="Coach Free",
-            price_inr=0,
-            duration_days=36500,
-            max_biomech_per_month=0,
-            max_ocr_hours_per_month=0.0,
-            max_submissions_per_month=0,
-            max_players_in_dashboard=0,
-        ),
-        PlanConfig(
-            plan_key="basic",
-            role="basic",
-            display_name="Basic",
-            price_inr=499,
-            duration_days=90,
-            max_biomech_per_month=15,
-            max_ocr_hours_per_month=0.0,
-            max_submissions_per_month=5,
-            max_players_in_dashboard=0,
-        ),
-        PlanConfig(
-            plan_key="platinum",
-            role="platinum",
-            display_name="Platinum",
-            price_inr=1499,
-            duration_days=180,
-            max_biomech_per_month=50,
-            max_ocr_hours_per_month=0.0,
-            max_submissions_per_month=15,
-            max_players_in_dashboard=0,
-        ),
-        PlanConfig(
-            plan_key="coach_starter",
-            role="coach_starter",
-            display_name="Coach Starter",
-            price_inr=1999,
-            duration_days=90,
-            max_biomech_per_month=999,
-            max_ocr_hours_per_month=50.0,
-            max_submissions_per_month=150,
-            max_players_in_dashboard=10,
-        ),
-        PlanConfig(
-            plan_key="coach_pro",
-            role="coach_pro",
-            display_name="Coach Pro",
-            price_inr=4999,
-            duration_days=180,
-            max_biomech_per_month=999,
-            max_ocr_hours_per_month=150.0,
-            max_submissions_per_month=600,
-            max_players_in_dashboard=100,
-        ),
-        PlanConfig(
-            plan_key="academy",
-            role="academy",
-            display_name="Academy",
-            price_inr=14999,
-            duration_days=365,
-            max_biomech_per_month=999,
-            max_ocr_hours_per_month=500.0,
-            max_submissions_per_month=1500,
-            max_players_in_dashboard=-1,
-        ),
-    ]
-    for row in rows:
-        if not db.query(PlanConfig).filter_by(plan_key=row.plan_key).first():
-            db.add(row)
-    db.commit()
-    db.close()
+    try:
+        sync_entitlement_catalog(db)
+    finally:
+        db.close()
 
 
 # ---------------------------------------------------------------------------
@@ -155,32 +71,33 @@ def _seed_plans(_create_tables):
 @pytest.fixture
 def db(_seed_plans):
     """
-    Yields a database session. User/subscription/usage data written during a
-    test is wiped after it runs; plan_config rows survive (seeded once above).
+    Yields a database session. User/subscription/usage data written during a test is wiped afterward; the entitlement catalog persists. The entitlement cache is cleared before and after each test so stale per-user entries from a prior test never leak.
     """
+    entitlement_service.invalidate_all()
     session = TestingSessionLocal()
     yield session
     session.rollback()
-    session.query(MonthlyUsage).delete()
+    session.query(FeatureUsage).delete()
     session.query(Subscription).delete()
     session.query(User).delete()
     session.commit()
     session.close()
+    entitlement_service.invalidate_all()
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _make_user(account_type: str, sub_role: str) -> User:
+def _make_user(account_type: str, plan_key: str) -> User:
     """
-    account_type: "PLAYER", "COACH", or "ADMIN" (Gate 1/2 checks)
-    sub_role:     subscription tier ("free", "basic", "platinum", etc.)
+    account_type: "PLAYER", "COACH", or "ADMIN" (account-type gate).
+    plan_key:     subscription plan key ("bronze", "silver", "coach_platinum", …).
     """
     return User(
         id=str(uuid.uuid4()),
-        name=f"Test {account_type} ({sub_role})",
-        email=f"{account_type.lower()}_{sub_role}_{uuid.uuid4().hex[:6]}@test.invalid",
+        name=f"Test {account_type} ({plan_key})",
+        email=f"{account_type.lower()}_{plan_key}_{uuid.uuid4().hex[:6]}@test.invalid",
         password_hash="$2b$12$placeholder",
         role=account_type,
         subscription_plan="BASIC",
@@ -189,26 +106,76 @@ def _make_user(account_type: str, sub_role: str) -> User:
     )
 
 
-def _make_active_subscription(user_id: str, role: str) -> Subscription:
+def _make_active_subscription(db, user_id: str, plan_key: str) -> Subscription:
     now = datetime.now(timezone.utc)
+    plan = db.query(Plan).filter(Plan.key == plan_key).first()
     return Subscription(
         user_id=user_id,
-        plan_key=role,
-        role=role,
+        plan_id=plan.id if plan else None,
+        plan_key=plan_key,
+        role=plan_key,
         status="active",
         started_at=now - timedelta(days=1),
         expires_at=now + timedelta(days=89),
     )
 
 
-def _persist_user_with_sub(db, account_type: str, sub_role: str) -> User:
-    user = _make_user(account_type, sub_role)
+def _persist_user_with_sub(db, account_type: str, plan_key: str) -> User:
+    user = _make_user(account_type, plan_key)
     db.add(user)
     db.flush()
-    db.add(_make_active_subscription(user.id, sub_role))
+    db.add(_make_active_subscription(db, user.id, plan_key))
     db.commit()
     db.refresh(user)
+    entitlement_service.invalidate_user(user.id)
     return user
+
+
+def seed_feature_usage(db, user_id: str, feature_key: str, used: float):
+    """Create/replace this month's feature_usage row for a user × feature."""
+    from datetime import date
+    from database.models.feature import Feature
+
+    feature = db.query(Feature).filter(Feature.key == feature_key).first()
+    assert feature is not None, f"feature '{feature_key}' not seeded"
+    period = date.today().replace(day=1)
+    row = (
+        db.query(FeatureUsage)
+        .filter(
+            FeatureUsage.user_id == user_id,
+            FeatureUsage.feature_id == feature.id,
+            FeatureUsage.period_start == period,
+        )
+        .first()
+    )
+    if row is None:
+        row = FeatureUsage(user_id=user_id, feature_id=feature.id, period_start=period, used=used)
+        db.add(row)
+    else:
+        row.used = used
+    db.commit()
+    return row
+
+
+def get_feature_usage(db, user_id: str, feature_key: str) -> float:
+    """Return this month's recorded usage for a user × feature (0.0 if none)."""
+    from datetime import date
+    from database.models.feature import Feature
+
+    feature = db.query(Feature).filter(Feature.key == feature_key).first()
+    if feature is None:
+        return 0.0
+    period = date.today().replace(day=1)
+    row = (
+        db.query(FeatureUsage)
+        .filter(
+            FeatureUsage.user_id == user_id,
+            FeatureUsage.feature_id == feature.id,
+            FeatureUsage.period_start == period,
+        )
+        .first()
+    )
+    return float(row.used) if row else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -217,38 +184,70 @@ def _persist_user_with_sub(db, account_type: str, sub_role: str) -> User:
 
 @pytest.fixture
 def free_user(db):
-    """PLAYER account on the free tier."""
-    return _persist_user_with_sub(db, "PLAYER", "free")
+    """PLAYER account on the bronze (free) tier."""
+    return _persist_user_with_sub(db, "PLAYER", "bronze")
 
 
 @pytest.fixture
+def bronze_user(db):
+    """PLAYER account on the bronze (free) tier."""
+    return _persist_user_with_sub(db, "PLAYER", "bronze")
+
+
+@pytest.fixture
+def silver_user(db):
+    """PLAYER account on the silver tier."""
+    return _persist_user_with_sub(db, "PLAYER", "silver")
+
+
+@pytest.fixture
+def gold_user(db):
+    """PLAYER account on the gold tier."""
+    return _persist_user_with_sub(db, "PLAYER", "gold")
+
+
+# Legacy aliases kept so existing tests that reference old names don't break immediately.
+@pytest.fixture
 def basic_player_user(db):
-    """PLAYER account on the basic tier (satisfies ai_chat player requirement)."""
-    return _persist_user_with_sub(db, "PLAYER", "basic")
+    """PLAYER account on the silver tier (legacy alias for basic)."""
+    return _persist_user_with_sub(db, "PLAYER", "silver")
 
 
 @pytest.fixture
 def platinum_user(db):
-    """PLAYER account on the platinum tier."""
-    return _persist_user_with_sub(db, "PLAYER", "platinum")
+    """PLAYER account on the gold tier (legacy alias for platinum)."""
+    return _persist_user_with_sub(db, "PLAYER", "gold")
 
 
 @pytest.fixture
 def coach_free_user(db):
-    """COACH account on the coach_free tier (below coach_starter)."""
-    return _persist_user_with_sub(db, "COACH", "coach_free")
+    """COACH account on the coach_basic (free) tier."""
+    return _persist_user_with_sub(db, "COACH", "coach_basic")
 
 
 @pytest.fixture
+def coach_basic_user(db):
+    """COACH account on the coach_basic (free) tier."""
+    return _persist_user_with_sub(db, "COACH", "coach_basic")
+
+
+@pytest.fixture
+def coach_platinum_user(db):
+    """COACH account on the coach_platinum tier."""
+    return _persist_user_with_sub(db, "COACH", "coach_platinum")
+
+
+# Legacy alias
+@pytest.fixture
 def coach_starter_user(db):
-    """COACH account on the coach_starter tier (satisfies ai_chat coach requirement)."""
-    return _persist_user_with_sub(db, "COACH", "coach_starter")
+    """COACH account on the coach_platinum tier (legacy alias for coach_starter)."""
+    return _persist_user_with_sub(db, "COACH", "coach_platinum")
 
 
 @pytest.fixture
 def admin_user(db):
     """ADMIN account — no subscription needed, bypasses all gates."""
-    user = _make_user("ADMIN", "free")
+    user = _make_user("ADMIN", "bronze")
     db.add(user)
     db.commit()
     db.refresh(user)

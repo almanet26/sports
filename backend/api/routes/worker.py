@@ -594,7 +594,7 @@ def _get_academy_branding(coach_id: str, db: Session) -> "AcademyBranding | None
             .order_by(Subscription.started_at.desc())
             .first()
         )
-        if sub is None or sub.role != "academy":
+        if sub is None or sub.role != "coach_platinum":
             return None
         from database.models.academy_branding import AcademyBranding
         return db.query(AcademyBranding).filter(AcademyBranding.academy_id == coach_id).first()

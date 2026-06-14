@@ -21,7 +21,7 @@ from sqlalchemy.orm import Session
 from database.config import SessionLocal
 from database.models.user import User
 from database.models.subscription import Subscription
-from database.models.plan_config import PlanConfig
+from database.models.plan import Plan
 from utils.auth import get_password_hash, create_access_token
 
 
@@ -31,13 +31,11 @@ logger = logging.getLogger(__name__)
 
 TEST_PASSWORD = "Test@12345"
 PLAN_ORDER = [
-    "free",
-    "coach_free",
-    "basic",
-    "platinum",
-    "coach_starter",
-    "coach_pro",
-    "academy",
+    "bronze",
+    "silver",
+    "gold",
+    "coach_basic",
+    "coach_platinum",
 ]
 
 
@@ -49,17 +47,17 @@ def _build_name(plan_key: str) -> str:
     return f"{plan_key.replace('_', ' ').title()} Test User"
 
 
-def _ensure_user_and_subscription(db: Session, plan: PlanConfig) -> Dict[str, str]:
+def _ensure_user_and_subscription(db: Session, plan: Plan) -> Dict[str, str]:
     now = datetime.now(timezone.utc)
-    email = _build_email(plan.plan_key)
+    email = _build_email(plan.key)
 
-    account_type = "COACH" if plan.role.startswith("coach_") or plan.role == "academy" else "PLAYER"
+    account_type = "COACH" if plan.user_type == "coach" else "PLAYER"
     user = db.query(User).filter(User.email == email).first()
     if user is None:
         user = User(
             email=email,
             password_hash=get_password_hash(TEST_PASSWORD),
-            name=_build_name(plan.plan_key),
+            name=_build_name(plan.key),
             role=account_type,
             is_active=True,
             is_verified=True,
@@ -68,27 +66,30 @@ def _ensure_user_and_subscription(db: Session, plan: PlanConfig) -> Dict[str, st
         db.flush()
     else:
         user.password_hash = get_password_hash(TEST_PASSWORD)
-        user.name = _build_name(plan.plan_key)
+        user.name = _build_name(plan.key)
         user.role = account_type
         user.is_active = True
         user.is_verified = True
 
-    expires_at = now + timedelta(days=plan.duration_days)
+    duration_days = 36500 if plan.price_inr == 0 else (365 if plan.billing_period == "annual" else 30)
+    expires_at = now + timedelta(days=duration_days)
     subscription = db.query(Subscription).filter(Subscription.user_id == user.id).first()
 
     if subscription is None:
         subscription = Subscription(
             user_id=user.id,
-            plan_key=plan.plan_key,
-            role=plan.role,
+            plan_id=plan.id,
+            plan_key=plan.key,
+            role=plan.key,
             status="active",
             started_at=now,
             expires_at=expires_at,
         )
         db.add(subscription)
     else:
-        subscription.plan_key = plan.plan_key
-        subscription.role = plan.role
+        subscription.plan_id = plan.id
+        subscription.plan_key = plan.key
+        subscription.role = plan.key
         subscription.status = "active"
         subscription.started_at = now
         subscription.expires_at = expires_at
@@ -98,7 +99,7 @@ def _ensure_user_and_subscription(db: Session, plan: PlanConfig) -> Dict[str, st
 
     token = create_access_token({"sub": user.email, "role": user.role})
     return {
-        "plan_key": plan.plan_key,
+        "plan_key": plan.key,
         "user_id": str(user.id),
         "email": user.email,
         "token": token,
@@ -110,14 +111,14 @@ def seed_roles() -> None:
     db = SessionLocal()
 
     try:
-        plan_rows = db.query(PlanConfig).all()
-        plan_map = {row.plan_key: row for row in plan_rows}
+        plan_rows = db.query(Plan).all()
+        plan_map = {row.key: row for row in plan_rows}
 
         missing = [plan_key for plan_key in PLAN_ORDER if plan_key not in plan_map]
         if missing:
             missing_csv = ", ".join(missing)
             raise RuntimeError(
-                f"Missing plan_config rows for: {missing_csv}. Run Alembic migration first."
+                f"Missing plans rows for: {missing_csv}. Run Alembic migration / seed first."
             )
 
         results: List[Dict[str, str]] = []

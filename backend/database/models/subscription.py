@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, ForeignKey, DateTime, String, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database.config import Base
-from database.models.enums import ROLE_VALUES, SUBSCRIPTION_STATUS_VALUES
+from database.models.enums import SUBSCRIPTION_STATUS_VALUES
 
 
 class Subscription(Base):
@@ -13,11 +13,18 @@ class Subscription(Base):
     # All queries must filter by status='active' and expires_at > NOW() to obtain the current subscription.  Use get_active_subscription() from dependencies/feature_gate.py rather than querying directly.
     user_id = Column(String(36), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
 
-    plan_key = Column(String(50), nullable=False)
-    role = Column(
-        Enum(*ROLE_VALUES, name="subscription_role_enum", native_enum=False),
-        nullable=False,
+    # Authoritative link to the dynamic plan (entitlement engine reads via this).
+    # ON DELETE RESTRICT — a plan with active subscribers cannot be deleted without an explicit migration (see admin_plans.delete_plan).
+    plan_id = Column(
+        Integer,
+        ForeignKey("plans.id", ondelete="RESTRICT"),
+        nullable=True,
+        index=True,
     )
+
+    # plan_key / role are denormalized mirrors of the linked plan's key, kept so legacy reads (sub.role, sub.plan_key) keep working.  Free-form strings (not a bounded enum) so admin-created plans with any key can be mirrored here; plan_id is the authoritative link.
+    plan_key = Column(String(50), nullable=False)
+    role = Column(String(50), nullable=False)
     status = Column(
         Enum(*SUBSCRIPTION_STATUS_VALUES, name="subscription_status_enum", native_enum=False),
         nullable=False,
@@ -42,3 +49,5 @@ class Subscription(Base):
 
     # One user → many subscription history rows.
     user = relationship("User", back_populates="subscriptions")
+    # The linked plan (may be None for legacy rows until backfilled).
+    plan = relationship("Plan")

@@ -1,15 +1,18 @@
 """
-require_feature(feature_key) — FastAPI Depends factory.
+require_feature(feature_key) — FastAPI dependency factory (boolean access gate).
 
-Gate evaluation order (matches Step 3A spec):
-  1. ADMIN bypass — admins pass every gate unconditionally.
-  2. Account-type check — coach-only features reject PLAYER accounts regardless of tier.
-  3. Subscription active check — raises 402 when no active subscription exists.
-  4. Tier check — raises 403 when the user's current tier is below the feature minimum.
-     For ai_chat specifically: player minimum is "basic", coach minimum is "coach_starter".
+Authorization is resolved live from the database through the entitlement engine (services/entitlement_service), so plan/feature edits made by an admin take effect within the cache TTL with no redeploy.
 
-get_active_subscription() is the single canonical function for fetching the active
-subscription.  All route code must call this instead of querying subscriptions directly.
+Gate order:
+  1. ADMIN bypass — admins pass unconditionally.
+  2. Entitlement check — the user's active plan must grant the feature:
+       - boolean feature → value is true
+       - numeric feature → limit is unlimited (-1) or > 0
+     Otherwise 403.
+
+Account-type restriction is implicit: a user only ever holds a plan of their own user_type, and entitlements come from that plan — so a coach-only feature simply won't appear in a player's entitlements (→ 403) and vice-versa.
+
+get_active_subscription() remains the canonical accessor for the raw subscription row (with lazy expiry) used by billing/usage/dashboard code.
 """
 
 from __future__ import annotations
@@ -20,54 +23,23 @@ from typing import Optional
 from fastapi import Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from config.feature_map import FEATURE_MAP, TIER_HIERARCHY
 from database.config import get_db
 from database.models.subscription import Subscription
 from database.models.user import User
+from services import entitlement_service
 from utils.auth import get_current_user
 
 
-# Features that require a COACH account type regardless of subscription tier.
-# A PLAYER with a coach_starter subscription (should never exist after Step 3C enforcement, but defended here anyway) must still be rejected.
-ACCOUNT_TYPE_FOR_FEATURE: dict[str, Optional[str]] = {
-    "ocr_highlights":        "COACH",
-    "video_annotation":      "COACH",
-    "player_dashboard":      "COACH",
-    "player_submission":     "PLAYER",
-    "coach_submission_inbox": "COACH",
-    "csv_export":            "COACH",
-    "white_label_reports":   "COACH",
-    "multi_seat_roles":      "COACH",
-    "recruitment_desk":      "COACH",
-    # Player-accessible features — no account-type restriction
-    "biomechanics_analysis": None,
-    "pdf_report":            None,
-    "ai_chat":               None,  # accessible to both; tier checked per account type below
-    "pro_benchmarking":      None,
-    "injury_risk_alerts":    None,
-    "priority_processing":   None,
-    # Scouting
-    "scouting_visibility":   "PLAYER",  # Only players toggle their own visibility
-    "scouting_access":       "COACH",   # Only coaches browse the directory
-}
-
-# Coach subscription tiers (used for account-type check fallback).
-_COACH_TIERS = frozenset({"coach_free", "coach_starter", "coach_pro", "academy"})
-
-
 # ---------------------------------------------------------------------------
-# Shared helper — single source of truth for subscription state
+# Shared helper — canonical subscription accessor with lazy expiry
 # ---------------------------------------------------------------------------
 
 def get_active_subscription(user: User, db: Session) -> Optional[Subscription]:
     """
     Return the most recent subscription for `user`, applying lazy expiry:
 
-    • If expires_at has passed but status is still "active", this function
-      atomically flips status → "expired" before returning so callers always
-      see a consistent, already-expired record.
-
-    • Returns None if the user has no subscription row at all.
+    - If expires_at has passed but status is still "active", atomically flip status → "expired" so callers see a consistent record.
+    - Returns None if the user has no subscription row at all.
     """
     sub: Optional[Subscription] = (
         db.query(Subscription)
@@ -78,11 +50,13 @@ def get_active_subscription(user: User, db: Session) -> Optional[Subscription]:
 
     if sub is not None and sub.status == "active":
         exp = sub.expires_at
-        if exp.tzinfo is None:
-            exp = exp.replace(tzinfo=timezone.utc)
-        if exp < datetime.now(timezone.utc):
-            sub.status = "expired"
-            db.commit()
+        if exp is not None:
+            if exp.tzinfo is None:
+                exp = exp.replace(tzinfo=timezone.utc)
+            if exp < datetime.now(timezone.utc):
+                sub.status = "expired"
+                db.commit()
+                entitlement_service.invalidate_user(user.id)
 
     return sub
 
@@ -93,87 +67,25 @@ def get_active_subscription(user: User, db: Session) -> Optional[Subscription]:
 
 def require_feature(feature_key: str):
     """
-    Returns a FastAPI dependency that enforces the four-gate sequence above.
-    Returns the authenticated User on success.
+    Returns a FastAPI dependency that allows the request only if the user's active plan grants `feature_key`.  Returns the authenticated User on success.
     """
-    if feature_key not in FEATURE_MAP:
-        raise ValueError(
-            f"Unknown feature key: '{feature_key}'. Add it to config/feature_map.py."
-        )
-
-    required_tier: str = FEATURE_MAP[feature_key]
-    required_account_type: Optional[str] = ACCOUNT_TYPE_FOR_FEATURE.get(feature_key)
 
     def _gate(
         user: User = Depends(get_current_user),
         db: Session = Depends(get_db),
     ) -> User:
-        # ── Gate 1: ADMIN bypass ─────────────────────────────────────────────
         if user.role == "ADMIN":
             return user
 
-        # ── Gate 2: account-type check ───────────────────────────────────────
-        if required_account_type is not None and user.role != required_account_type:
+        if not entitlement_service.is_feature_enabled(user, feature_key, db):
             raise HTTPException(
                 status_code=403,
                 detail={
-                    "error": "wrong_account_type",
-                    "detail": f"This feature requires a {required_account_type} account",
+                    "error": "feature_not_available",
+                    "feature": feature_key,
+                    "message": "Your current plan does not include this feature.",
                 },
             )
-
-        # ── Gate 3: active subscription ──────────────────────────────────────
-        sub = get_active_subscription(user, db)
-        if sub is None or sub.status != "active":
-            raise HTTPException(
-                status_code=402,
-                detail={"error": "subscription_inactive"},
-            )
-
-        # ── Gate 4: tier check ───────────────────────────────────────────────
-        # Special case: ai_chat has different minimum tiers per account type.
-        # coach_free (level 0) must be blocked; coach_starter (level 3) is the minimum.
-        # free (level 0) must be blocked; basic (level 1) is the player minimum.
-        if feature_key == "ai_chat":
-            if user.role == "COACH":
-                # Coach minimum for AI Chat is coach_starter
-                if TIER_HIERARCHY.get(sub.role, -1) < TIER_HIERARCHY["coach_starter"]:
-                    raise HTTPException(
-                        status_code=403,
-                        detail={
-                            "error": "tier_required",
-                            "required": "coach_starter",
-                            "current": sub.role,
-                            "message": "AI Chat requires Coach Starter plan or above",
-                        },
-                    )
-            else:
-                # Player minimum for AI Chat is basic
-                if TIER_HIERARCHY.get(sub.role, -1) < TIER_HIERARCHY["basic"]:
-                    raise HTTPException(
-                        status_code=403,
-                        detail={
-                            "error": "tier_required",
-                            "required": "basic",
-                            "current": sub.role,
-                            "message": "AI Chat requires Basic plan or above",
-                        },
-                    )
-        else:
-            # Generic tier check for all other features
-            user_tier = TIER_HIERARCHY.get(sub.role, -1)
-            required_tier_level = TIER_HIERARCHY[required_tier]
-
-            if user_tier < required_tier_level:
-                raise HTTPException(
-                    status_code=403,
-                    detail={
-                        "error": "tier_required",
-                        "required": required_tier,
-                        "current": sub.role,
-                    },
-                )
-
         return user
 
     return _gate

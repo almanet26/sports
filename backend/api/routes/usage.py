@@ -1,21 +1,17 @@
 """
 Two routers exported from this module:
+  - internal_router  — POST /report 
+  Registered at /internal/usage in main.py.  Called by the Cloud Tasks workerto report actual consumption after a job completes.  Auth viaX-Internal-Secret header (or ADMIN JWT).
 
-  internal_router  — POST /report
-    Registered at /internal/usage in main.py.
-    Called by the Cloud Tasks worker to report actual consumption after a job
-    completes.  Not JWT-protected; uses X-Internal-Secret header instead.
-
-  billing_router   — GET /usage
-    Registered at /api/v1/billing in main.py.
-    Returns the current user's subscription state and monthly quota snapshot.
+  - billing_router   — POST /create-order, POST /verify-payment, GET /usage
+    Registered at /api/v1/billing in main.py.  User-facing billing + the entitlement/quota snapshot consumed by the frontend.
 """
 
 from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -24,42 +20,26 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database.config import get_db
-from database.models.monthly_usage import MonthlyUsage
-from database.models.plan_config import PlanConfig
+from database.models.plan import Plan
 from database.models.subscription import Subscription
 from database.models.user import User
 from dependencies.feature_gate import get_active_subscription
 from dependencies.quota_gate import increment_usage
-from services.usage_service import get_or_create_monthly_usage, report_ocr_usage
+from services import entitlement_service
+from services.usage_service import get_monthly_usage_map, report_ocr_usage
 from utils.auth import get_current_user, verify_access_token
 
 _optional_bearer = HTTPBearer(auto_error=False)
 
 logger = logging.getLogger(__name__)
 
-# Loaded once at startup; injected via Secret Manager → env var in Cloud Run.
 _INTERNAL_SECRET: str = os.getenv("INTERNAL_API_SECRET", "")
 
 internal_router = APIRouter(tags=["internal"])
 billing_router = APIRouter(tags=["billing"])
 
-# Plan key → subscription role mapping (single source of truth for billing)
-_PLAN_KEY_TO_ROLE: dict[str, str] = {
-    "free":               "free",
-    "coach_free":         "coach_free",
-    "basic_90d":          "basic",
-    "basic":              "basic",
-    "platinum_180d":      "platinum",
-    "platinum":           "platinum",
-    "coach_starter_180d": "coach_starter",
-    "coach_starter":      "coach_starter",
-    "coach_pro_365d":     "coach_pro",
-    "coach_pro":          "coach_pro",
-    "academy_365d":       "academy",
-    "academy":            "academy",
-}
-_PLAYER_ROLES = frozenset({"free", "basic", "platinum"})
-_COACH_ROLES  = frozenset({"coach_free", "coach_starter", "coach_pro", "academy"})
+# Account type → plan user_type.
+_ACCOUNT_TO_USER_TYPE = {"PLAYER": "player", "COACH": "coach"}
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +47,13 @@ _COACH_ROLES  = frozenset({"coach_free", "coach_starter", "coach_pro", "academy"
 # ---------------------------------------------------------------------------
 
 class CreateOrderRequest(BaseModel):
+    plan_key: str
+
+
+class VerifyPaymentRequest(BaseModel):
+    order_id: str
+    payment_id: str
+    signature: str
     plan_key: str
 
 
@@ -93,6 +80,7 @@ class BillingUsageResponse(BaseModel):
     role: str
     expires_at: Optional[datetime]
     status: str
+    entitlements: dict
     current_month: MonthlySnapshot
 
 
@@ -110,19 +98,14 @@ def internal_usage_report(
     """
     Called by the Cloud Tasks worker after a job completes.
 
-    Auth options (either is sufficient):
+    Auth (either is sufficient):
       1. X-Internal-Secret header matching INTERNAL_API_SECRET env var.
       2. Bearer JWT with role == "ADMIN".
-
-    Protected by X-Internal-Secret header — set INTERNAL_API_SECRET env var.
     """
-    # Allow admin JWT as an alternative to the internal secret
     if credentials is not None:
         try:
             payload = verify_access_token(credentials.credentials)
-            if payload.get("role") == "ADMIN":
-                pass  # authenticated as admin — proceed
-            else:
+            if payload.get("role") != "ADMIN":
                 raise HTTPException(status_code=403, detail="Only ADMIN may call this endpoint via JWT")
         except HTTPException:
             raise
@@ -130,9 +113,7 @@ def internal_usage_report(
             pass  # fall through to secret check
     elif x_internal_secret:
         if not _INTERNAL_SECRET:
-            logger.error(
-                "INTERNAL_API_SECRET not configured — rejecting /internal/usage/report"
-            )
+            logger.error("INTERNAL_API_SECRET not configured — rejecting /internal/usage/report")
             raise HTTPException(status_code=503, detail="Internal secret not configured")
         if x_internal_secret != _INTERNAL_SECRET:
             raise HTTPException(status_code=401, detail="Invalid internal secret")
@@ -141,36 +122,22 @@ def internal_usage_report(
 
     if body.ocr_hours_actual is not None:
         if body.ocr_hours_actual < 0:
-            raise HTTPException(
-                status_code=422,
-                detail="ocr_hours_actual must be >= 0",
-            )
+            raise HTTPException(status_code=422, detail="ocr_hours_actual must be >= 0")
         report_ocr_usage(body.user_id, body.ocr_hours_actual, db)
         logger.info(
             "Usage reconciled — user=%s job=%s ocr_hours=%.4f",
-            body.user_id,
-            body.job_id,
-            body.ocr_hours_actual,
+            body.user_id, body.job_id, body.ocr_hours_actual,
         )
 
     if body.biomech_count_delta is not None:
         if body.biomech_count_delta < 0:
-            raise HTTPException(
-                status_code=422,
-                detail="biomech_count_delta must be >= 0",
-            )
+            raise HTTPException(status_code=422, detail="biomech_count_delta must be >= 0")
         if body.biomech_count_delta > 0:
             import asyncio
 
-            # increment_usage is async def but uses sync DB internally.
-            # Run it in the current event loop if available, else sync fallback.
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
-                    # Inside an async context (uvicorn) — schedule as a coroutine.
-                    # Since this endpoint is a sync def, use run_coroutine_threadsafe.
-                    import concurrent.futures
-
                     future = asyncio.run_coroutine_threadsafe(
                         increment_usage(body.user_id, "biomech_count", body.biomech_count_delta, db),
                         loop,
@@ -184,12 +151,9 @@ def internal_usage_report(
                 asyncio.run(
                     increment_usage(body.user_id, "biomech_count", body.biomech_count_delta, db)
                 )
-
             logger.info(
                 "Biomech count incremented — user=%s job=%s delta=%d",
-                body.user_id,
-                body.job_id,
-                body.biomech_count_delta,
+                body.user_id, body.job_id, body.biomech_count_delta,
             )
 
 
@@ -197,41 +161,110 @@ def internal_usage_report(
 # POST /billing/create-order
 # ---------------------------------------------------------------------------
 
+def _resolve_purchasable_plan(plan_key: str, current_user: User, db: Session) -> Plan:
+    plan = db.query(Plan).filter(Plan.key == plan_key, Plan.is_active.is_(True)).first()
+    if plan is None:
+        raise HTTPException(status_code=404, detail=f"Plan '{plan_key}' not found")
+
+    if current_user.role == "ADMIN":
+        raise HTTPException(status_code=403, detail="Admins do not require a subscription")
+
+    expected = _ACCOUNT_TO_USER_TYPE.get(current_user.role)
+    if expected is not None and plan.user_type != expected:
+        raise HTTPException(
+            status_code=403,
+            detail=f"This plan is not available for {current_user.role} accounts",
+        )
+    return plan
+
+
 @billing_router.post("/create-order")
 def create_billing_order(
     body: CreateOrderRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """
-    Validates account-type eligibility before creating a Razorpay order.
+    """Create a Razorpay order for a paid plan after validating eligibility."""
+    plan = _resolve_purchasable_plan(body.plan_key, current_user, db)
 
-    Players   → may only purchase: free, basic, platinum
-    Coaches   → may only purchase: coach_free, coach_starter, coach_pro, academy
-    """
-    tier = _PLAN_KEY_TO_ROLE.get(body.plan_key)
-    if tier is None:
-        raise HTTPException(status_code=422, detail=f"Unknown plan key: {body.plan_key!r}")
-
-    account_type = current_user.role  # PLAYER | COACH | ADMIN
-
-    if account_type == "ADMIN":
-        raise HTTPException(status_code=403, detail="Admins do not require a subscription")
-
-    if account_type == "PLAYER" and tier in _COACH_ROLES:
+    if plan.price_inr == 0:
         raise HTTPException(
-            status_code=403,
-            detail="This plan is not available for player accounts",
+            status_code=400,
+            detail="Free plans do not require payment. Use POST /subscriptions/subscribe instead.",
         )
 
-    if account_type == "COACH" and tier in _PLAYER_ROLES:
-        raise HTTPException(
-            status_code=403,
-            detail="This plan is not available for coach accounts",
-        )
+    from services.razorpay_service import create_razorpay_order
 
-    # Phase 9: create Razorpay order here and return order_id / amount / key_id.
-    raise HTTPException(status_code=501, detail="Payment integration not yet available")
+    order = create_razorpay_order(plan, current_user)
+    return {
+        "order_id": order["id"],
+        "amount": order["amount"],
+        "currency": order["currency"],
+        "plan_key": plan.key,
+        "razorpay_key": os.getenv("RAZORPAY_KEY_ID", ""),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /billing/verify-payment
+# ---------------------------------------------------------------------------
+
+def _activate_subscription(user_id: str, plan: Plan, db: Session, *, order_id=None, payment_id=None) -> Subscription:
+    """Expire any active subscriptions and create a fresh active one for `plan`."""
+    db.query(Subscription).filter(
+        Subscription.user_id == user_id,
+        Subscription.status == "active",
+    ).update({"status": "expired"})
+
+    now = datetime.now(timezone.utc)
+    if plan.price_inr == 0:
+        duration_days = 36500
+    elif plan.billing_period == "annual":
+        duration_days = 365
+    else:
+        duration_days = 30
+
+    sub = Subscription(
+        user_id=user_id,
+        plan_id=plan.id,
+        plan_key=plan.key,
+        role=plan.key,
+        status="active",
+        started_at=now,
+        expires_at=now + timedelta(days=duration_days),
+        razorpay_order_id=order_id,
+        razorpay_payment_id=payment_id,
+    )
+    db.add(sub)
+    db.commit()
+    db.refresh(sub)
+    entitlement_service.invalidate_user(user_id)
+    return sub
+
+
+@billing_router.post("/verify-payment")
+def verify_payment(
+    body: VerifyPaymentRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    """Verify the Razorpay signature and activate the subscription."""
+    from services.razorpay_service import verify_payment_signature
+
+    if not verify_payment_signature(body.order_id, body.payment_id, body.signature):
+        raise HTTPException(status_code=400, detail="Payment signature verification failed")
+
+    plan = _resolve_purchasable_plan(body.plan_key, current_user, db)
+    sub = _activate_subscription(
+        current_user.id, plan, db, order_id=body.order_id, payment_id=body.payment_id
+    )
+    return {
+        "plan_key": sub.plan_key,
+        "role": sub.role,
+        "status": sub.status,
+        "started_at": sub.started_at.isoformat(),
+        "expires_at": sub.expires_at.isoformat(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -244,23 +277,14 @@ def get_billing_usage(
     db: Session = Depends(get_db),
 ) -> BillingUsageResponse:
     """
-    Returns the authenticated user's current subscription state and monthly
-    quota snapshot.  Creates a monthly_usage row if this is the user's first
-    request this month.
+    Returns the user's subscription state, resolved entitlements (for frontend
+    gating), and the current-month numeric quota snapshot.
     """
-    # ── Subscription (lazy expiry handled inside get_active_subscription) ───
     sub: Optional[Subscription] = get_active_subscription(current_user, db)
 
-    if sub is None:
-        if current_user.role == "COACH":
-            plan_key = "coach_free"
-            role = "coach_free"
-        elif current_user.role == "ADMIN":
-            plan_key = "academy_365d"
-            role = "academy"
-        else:
-            plan_key = "free"
-            role = "free"
+    if sub is None or sub.status != "active":
+        role = "coach_basic" if current_user.role == "COACH" else "bronze"
+        plan_key = role
         expires_at = None
         status = "inactive"
     else:
@@ -269,28 +293,25 @@ def get_billing_usage(
         expires_at = sub.expires_at
         status = sub.status
 
-    # ── Plan limits ─────────────────────────────────────────────────────────
-    plan: Optional[PlanConfig] = (
-        db.query(PlanConfig)
-        .filter(PlanConfig.role == role)
-        .first()
-    )
+    entitlements = entitlement_service.get_user_entitlements(current_user, db)
+    used_map = get_monthly_usage_map(current_user.id, db)
 
-    max_biomech: int = plan.max_biomech_per_month if plan else 0
-    max_ocr: float = plan.max_ocr_hours_per_month if plan else 0.0
-    max_submissions: int = plan.max_submissions_per_month if plan else 0
+    def _limit(feature_key: str) -> float:
+        ent = entitlements.get(feature_key)
+        return float(ent["value"]) if ent and ent["type"] == "numeric" else 0.0
 
-    # ── Monthly usage ────────────────────────────────────────────────────────
-    usage: MonthlyUsage = get_or_create_monthly_usage(current_user.id, db)
+    # Flat {feature_key: value} for the frontend entitlement gate.
+    flat = {k: v["value"] for k, v in entitlements.items()}
 
     return BillingUsageResponse(
         plan=plan_key,
         role=role,
         expires_at=expires_at,
         status=status,
+        entitlements=flat,
         current_month=MonthlySnapshot(
-            biomech=QuotaSlot(used=usage.biomech_count, limit=max_biomech),
-            ocr_hours=QuotaSlot(used=usage.ocr_hours_used, limit=max_ocr),
-            submissions=QuotaSlot(used=usage.submission_count, limit=max_submissions),
+            biomech=QuotaSlot(used=used_map.get("biomechanics_analysis", 0.0), limit=_limit("biomechanics_analysis")),
+            ocr_hours=QuotaSlot(used=used_map.get("ocr_highlights", 0.0), limit=_limit("ocr_highlights")),
+            submissions=QuotaSlot(used=used_map.get("player_submission", 0.0), limit=_limit("player_submission")),
         ),
     )

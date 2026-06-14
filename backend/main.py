@@ -13,6 +13,9 @@ from api.routes.report import router as report_router
 from api.routes.usage import billing_router as usage_billing_router
 from api.routes.usage import internal_router as usage_internal_router
 from api.routes import admin as admin_users
+from api.routes.admin_plans import router as admin_plans_router
+from api.routes.razorpay_webhook import router as razorpay_webhook_router
+from services.usage_reset import register_usage_reset_endpoint
 from api.routes import subscription
 from api.routes import match, notification
 from api.routes import auth, videos, player_videos, jobs, requests, player_stats, bowling, BOWLING_AVAILABLE, batting, BATTING_AVAILABLE, submissions, SUBMISSIONS_AVAILABLE, storage, GCS_AVAILABLE, worker, WORKER_AVAILABLE, admin_coaches
@@ -100,6 +103,114 @@ def _ensure_users_schema(db_session) -> None:
         logger.warning("Users schema patch skipped/failed: %s", patch_err)
 
 
+_LEGACY_PLAN_KEY_MAP = {
+    "bronze": "bronze", "silver": "silver", "gold": "gold",
+    "coach_basic": "coach_basic", "coach_platinum": "coach_platinum",
+    # Older tier names that may still be stored on existing subscription rows.
+    "free": "bronze", "basic": "silver", "platinum": "gold",
+    "coach_free": "coach_basic", "coach_starter": "coach_platinum",
+    "coach_pro": "coach_platinum", "academy": "coach_platinum",
+    "basic_90d": "silver", "platinum_180d": "gold",
+    "coach_starter_180d": "coach_platinum", "coach_pro_365d": "coach_platinum",
+    "academy_365d": "coach_platinum",
+}
+
+
+def _ensure_entitlement_tables(db_session) -> None:
+    """
+    Rebuild the dynamic-engine tables when a legacy `plans` table (the old
+    pre-plan_config table, which lacks a `key` column) shadows the new schema.
+
+    Base.metadata.create_all skips tables that already exist, so a stale `plans`
+    table leaves the Plan model mapped to the wrong columns.  Detect that and
+    drop+recreate the four engine tables with the correct schema.  Runs BEFORE
+    seeding.
+    """
+    try:
+        from sqlalchemy import inspect as sa_inspect
+        engine = db_session.bind
+        inspector = sa_inspect(engine)
+        tables = set(inspector.get_table_names())
+
+        if "plans" not in tables:
+            return  # create_all already made the correct table
+        cols = {c["name"] for c in inspector.get_columns("plans")}
+        if "key" in cols:
+            return  # already the new schema
+
+        dialect = engine.dialect.name
+        cascade = "" if dialect == "sqlite" else " CASCADE"
+        # Drop child→parent so SQLite (no CASCADE) is also satisfied.
+        for tbl in ("plan_entitlements", "feature_usage", "features", "plans"):
+            db_session.execute(text(f"DROP TABLE IF EXISTS {tbl}{cascade}"))
+        db_session.commit()
+
+        from database.models.plan import Plan
+        from database.models.feature import Feature
+        from database.models.plan_entitlement import PlanEntitlement
+        from database.models.feature_usage import FeatureUsage
+        Base.metadata.create_all(
+            bind=engine,
+            tables=[Plan.__table__, Feature.__table__, PlanEntitlement.__table__, FeatureUsage.__table__],
+        )
+        logger.info("Rebuilt dynamic entitlement tables (replaced legacy 'plans' table).")
+    except Exception as patch_err:
+        db_session.rollback()
+        logger.warning("Entitlement table rebuild skipped/failed: %s", patch_err)
+
+
+def _ensure_subscriptions_schema(db_session) -> None:
+    """
+    Patch the subscriptions table for the dynamic entitlement engine on existing
+    databases (create_all does not ALTER pre-existing tables):
+      • widen role to VARCHAR(50) and drop any stale role CHECK so admin-created
+        plan keys fit and aren't constrained to the old tier list,
+      • add the plan_id column + supporting indexes,
+      • backfill plan_id from the (already-seeded) plans by plan_key / role.
+
+    Must run AFTER _ensure_plans_and_features so the plans rows exist for backfill.
+    """
+    try:
+        dialect = db_session.bind.dialect.name if db_session.bind is not None else ""
+
+        if dialect == "sqlite":
+            cols = db_session.execute(text("PRAGMA table_info(subscriptions)")).fetchall()
+            existing = {str(c[1]).lower() for c in cols}
+            if "plan_id" not in existing:
+                db_session.execute(text("ALTER TABLE subscriptions ADD COLUMN plan_id INTEGER"))
+        else:
+            # Postgres: widen role, drop any CHECK referencing role, add plan_id + indexes.
+            db_session.execute(text("ALTER TABLE subscriptions ALTER COLUMN role TYPE VARCHAR(50)"))
+            db_session.execute(text("ALTER TABLE subscriptions ALTER COLUMN plan_key TYPE VARCHAR(50)"))
+            db_session.execute(text(
+                "DO $$ DECLARE r record; BEGIN "
+                "FOR r IN SELECT conname FROM pg_constraint "
+                "WHERE conrelid = 'subscriptions'::regclass AND contype = 'c' "
+                "AND pg_get_constraintdef(oid) ILIKE '%role%' "
+                "LOOP EXECUTE 'ALTER TABLE subscriptions DROP CONSTRAINT ' || quote_ident(r.conname); END LOOP; "
+                "END $$;"
+            ))
+            db_session.execute(text("ALTER TABLE subscriptions ADD COLUMN IF NOT EXISTS plan_id INTEGER"))
+            db_session.execute(text("CREATE INDEX IF NOT EXISTS ix_subscriptions_plan_id ON subscriptions (plan_id)"))
+            db_session.execute(text("CREATE INDEX IF NOT EXISTS ix_subscriptions_user_status ON subscriptions (user_id, status)"))
+        db_session.commit()
+
+        # Backfill plan_id from the seeded plans (idempotent — only fills NULLs).
+        for legacy_key, new_key in _LEGACY_PLAN_KEY_MAP.items():
+            db_session.execute(
+                text(
+                    "UPDATE subscriptions SET plan_id = (SELECT id FROM plans WHERE key = :nk) "
+                    "WHERE plan_id IS NULL AND (plan_key = :lk OR role = :lk)"
+                ),
+                {"nk": new_key, "lk": legacy_key},
+            )
+        db_session.commit()
+        logger.info("Subscriptions schema patch check completed.")
+    except Exception as patch_err:
+        db_session.rollback()
+        logger.warning("Subscriptions schema patch skipped/failed: %s", patch_err)
+
+
 def _ensure_videos_schema(db_session) -> None:
     """Patch legacy videos schema for large file uploads."""
     try:
@@ -134,61 +245,19 @@ def _ensure_submission_status_enum(db_session) -> None:
             "Submission status enum patch skipped/failed: %s", patch_err)
 
 
-def _ensure_plan_config(db_session) -> None:
-    """Keep plan_config aligned with the current monetization rules."""
+def _ensure_plans_and_features(db_session) -> None:
+    """
+    Seed/sync the dynamic entitlement catalog (plans, features, entitlements)
+    from config/default_entitlements.py.  Idempotent; admin-created plans and
+    features are never touched.
+    """
     try:
-        plan_rows = [
-            # plan_key, role, display_name, price_inr, duration_days, max_biomech, max_ocr_hours, max_submissions, max_players
-            ("free",           "free",          "Free",
-             0,     36500, 3,   0,   0,    0),
-            ("coach_free",     "coach_free",    "Coach Free",
-             0,     36500, 0,   0,   0,    0),
-            ("basic_90d",      "basic",         "Basic",
-             499,   90,   15,   0,   5,    0),
-            ("platinum_180d",  "platinum",      "Platinum",
-             1499,  180,  50,   0,   15,   0),
-            ("coach_starter",  "coach_starter",
-             "Coach Starter", 1999,  90,   999,  50,  150,  10),
-            ("coach_pro",      "coach_pro",     "Coach Pro",
-             4999,  180,  999,  150, 600,  100),
-            ("academy",        "academy",       "Academy",
-             14999, 365,  999,  500, 1500, -1),
-        ]
-
-        for plan_key, role, display_name, price_inr, duration_days, biomech, ocr_hours, submissions, players in plan_rows:
-            db_session.execute(
-                text(
-                    "INSERT INTO plan_config "
-                    "(plan_key, role, display_name, price_inr, duration_days, max_biomech_per_month, max_ocr_hours_per_month, max_submissions_per_month, max_players_in_dashboard) "
-                    "VALUES (:plan_key, :role, :display_name, :price_inr, :duration_days, :max_biomech_per_month, :max_ocr_hours_per_month, :max_submissions_per_month, :max_players_in_dashboard) "
-                    "ON CONFLICT(plan_key) DO UPDATE SET "
-                    "role = excluded.role, "
-                    "display_name = excluded.display_name, "
-                    "price_inr = excluded.price_inr, "
-                    "duration_days = excluded.duration_days, "
-                    "max_biomech_per_month = excluded.max_biomech_per_month, "
-                    "max_ocr_hours_per_month = excluded.max_ocr_hours_per_month, "
-                    "max_submissions_per_month = excluded.max_submissions_per_month, "
-                    "max_players_in_dashboard = excluded.max_players_in_dashboard"
-                ),
-                {
-                    "plan_key": plan_key,
-                    "role": role,
-                    "display_name": display_name,
-                    "price_inr": price_inr,
-                    "duration_days": duration_days,
-                    "max_biomech_per_month": biomech,
-                    "max_ocr_hours_per_month": ocr_hours,
-                    "max_submissions_per_month": submissions,
-                    "max_players_in_dashboard": players,
-                },
-            )
-
-        db_session.commit()
-        logger.info("Plan config patch check completed.")
+        from scripts.seed_entitlements import sync_entitlement_catalog
+        sync_entitlement_catalog(db_session)
+        logger.info("Entitlement catalog ensured.")
     except Exception as patch_err:
         db_session.rollback()
-        logger.warning("Plan config patch skipped/failed: %s", patch_err)
+        logger.warning("Entitlement catalog seed skipped/failed: %s", patch_err)
 
 
 # Ensure storage directories exist (skip on Cloud Run — ephemeral, uses /tmp/)
@@ -259,6 +328,9 @@ async def lifespan(app: FastAPI):
         _ensure_videos_schema(db)
         _ensure_submission_status_enum(db)
         _ensure_coach_tables(db)
+        _ensure_entitlement_tables(db)
+        _ensure_plans_and_features(db)
+        _ensure_subscriptions_schema(db)
         logger.info("Database tables ready.")
 
         db.close()
@@ -399,7 +471,7 @@ from api.routes import (
     admin_coaches,
     messages, MESSAGES_AVAILABLE,
     analytics, ANALYTICS_AVAILABLE,
-    performance, notification, match, billing
+    performance, notification, match
 )
 from api.routes import subscription, sessions
 try:
@@ -530,6 +602,10 @@ app.include_router(usage_internal_router,
 app.include_router(usage_billing_router,
                    prefix="/api/v1/billing", tags=["billing"])
 
+# Dynamic entitlement engine — admin control panel + Razorpay webhook
+app.include_router(admin_plans_router, prefix="/api/v1", tags=["admin-plans"])
+app.include_router(razorpay_webhook_router, prefix="/api/v1", tags=["webhooks"])
+
 # Phase 4 player-facing features
 
 app.include_router(report_router,     prefix="/api/v1", tags=["report"])
@@ -574,6 +650,8 @@ except Exception as e:
 
 # POST /internal/cron/expire-subscriptions
 register_expiry_endpoint(app)
+# POST /internal/cron/reset-usage
+register_usage_reset_endpoint(app)
 
 
 # Entry Point
