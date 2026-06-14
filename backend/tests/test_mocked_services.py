@@ -1,17 +1,12 @@
 """
 Tests for the external service layer with GCS and Cloud Tasks mocked out.
 
-Rule: unit tests must never upload to GCS or ping Cloud Tasks. Any test that
-exercises a code path touching these clients must patch the SDK clients so no
-real network call is made. This file shows the pattern and tests the key
-dispatch invariants for the OCR job pipeline.
+Rule: unit tests must never upload to GCS or ping Cloud Tasks. Any test that exercises a code path touching these clients must patch the SDK clients so no real network call is made. This file shows the pattern and tests the key dispatch invariants for the OCR job pipeline.
 
 What is tested:
-  1. CloudTasksManager.create_processing_task — task payload structure and
-     correct routing to client.create_task.
+  1. CloudTasksManager.create_processing_task — task payload structure and correct routing to client.create_task.
   2. GCSStorageManager.upload_video — blob creation and upload_from_filename call.
-  3. OCR job enqueue routing — priority queue for coach_pro/academy tiers,
-     standard queue for all other coach tiers.
+  3. OCR job enqueue routing — priority queue for coach_pro/academy tiers, standard queue for all other coach tiers.
 """
 
 import json
@@ -189,8 +184,7 @@ class TestOCRQueueRouting:
 
     def test_priority_tiers_use_priority_queue(self, monkeypatch):
         """coach_pro and academy tiers must use 'ocr-priority'."""
-        # CloudTasksManager is imported lazily inside _enqueue_ocr_task, so
-        # we patch it at its definition site, not at api.routes.jobs.
+        # CloudTasksManager is imported lazily inside _enqueue_ocr_task, so we patch it at its definition site, not at api.routes.jobs.
         with patch("services.cloud_tasks_service.CloudTasksManager") as mock_mgr:
             mock_mgr.return_value = MagicMock()
 
@@ -199,14 +193,14 @@ class TestOCRQueueRouting:
             importlib.reload(jobs_module)
 
             from fastapi import BackgroundTasks
-            for tier in ("coach_pro", "academy"):
+            for tier in ("coach_platinum",):
                 mock_mgr.reset_mock()
                 jobs_module._enqueue_ocr_task("vid", {}, tier, BackgroundTasks())
                 queue = mock_mgr.call_args[0][2]  # third positional = queue_name
                 assert queue == "ocr-priority", f"{tier} should route to ocr-priority"
 
     def test_standard_tiers_use_standard_queue(self, monkeypatch):
-        """coach_starter and coach_free tiers must use 'ocr-standard'."""
+        """coach_basic tier must use 'ocr-standard'."""
         with patch("services.cloud_tasks_service.CloudTasksManager") as mock_mgr:
             mock_mgr.return_value = MagicMock()
 
@@ -215,7 +209,7 @@ class TestOCRQueueRouting:
             importlib.reload(jobs_module)
 
             from fastapi import BackgroundTasks
-            for tier in ("coach_starter", "coach_free"):
+            for tier in ("coach_basic",):
                 mock_mgr.reset_mock()
                 jobs_module._enqueue_ocr_task("vid", {}, tier, BackgroundTasks())
                 queue = mock_mgr.call_args[0][2]  # third positional = queue_name
@@ -237,6 +231,6 @@ class TestOCRQueueRouting:
         bg = BackgroundTasks()
 
         with patch("api.routes.jobs.run_ocr_processing") as mock_ocr:
-            jobs_module._enqueue_ocr_task("vid_fallback", {}, "coach_starter", bg)
+            jobs_module._enqueue_ocr_task("vid_fallback", {}, "coach_basic", bg)
             # BackgroundTasks.add_task was called; CloudTasksManager was not.
             assert len(bg.tasks) == 1

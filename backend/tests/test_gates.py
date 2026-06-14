@@ -1,22 +1,17 @@
 """
-Tests for feature_gate and quota_gate dependencies.
+Tests for the dynamic entitlement gates (feature_gate + quota_gate).
 
-The dependency inner functions (_gate) are called directly with explicit
-`user` and `db` arguments, bypassing FastAPI's DI machinery entirely.
-This keeps tests fast (no HTTP layer) while still exercising the real
-database queries against an in-memory SQLite database.
+The dependency inner functions (_gate) are called directly with explicit `user` and `db` arguments, bypassing FastAPI's DI machinery, against an in-memory SQLite database seeded with the production entitlement catalog.
 
-Plan config seeded in conftest:
-  free          → max_biomech=3
-  basic         → max_biomech=10
-  platinum      → max_biomech=50
-  coach_free    → max_biomech=0, max_ocr=0
-  coach_starter → max_biomech=5, max_ocr=5.0, max_submissions=50
+Baseline entitlements (see conftest / config.default_entitlements):
+  bronze         → biomechanics_analysis=3,  player_submission=0
+  silver         → biomechanics_analysis=15, player_submission=5,  ai_chat
+  gold           → biomechanics_analysis=50, player_submission=15
+  coach_basic    → ocr_highlights=10, player_submission=5,  player_roster=5
+  coach_platinum → ocr_highlights=50, player_submission=100, video_annotation, ai_chat, ...
 """
 
 import sys
-import uuid
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -24,360 +19,164 @@ from fastapi import HTTPException
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from database.models.monthly_usage import MonthlyUsage
-from database.models.subscription import Subscription
-from database.models.user import User
 from dependencies.feature_gate import require_feature
-from dependencies.quota_gate import quota_check
+from dependencies.quota_gate import quota_check, check_entitlement
+from tests.conftest import seed_feature_usage
 
 
 # ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _seed_biomech_usage(db, user, count: int) -> MonthlyUsage:
-    from datetime import date
-    today = date.today()
-    usage = MonthlyUsage(
-        user_id=user.id,
-        year=today.year,
-        month=today.month,
-        biomech_count=count,
-        ocr_hours_used=0.0,
-        submission_count=0,
-    )
-    db.add(usage)
-    db.commit()
-    db.refresh(usage)
-    return usage
-
-
-# ---------------------------------------------------------------------------
-# require_feature tests
+# require_feature — boolean access gate
 # ---------------------------------------------------------------------------
 
 class TestRequireFeature:
-    def test_free_user_blocked_from_pdf_report(self, free_user, db):
-        """
-        A free-tier PLAYER with an active subscription must be rejected with 403
-        when requesting a feature that requires platinum or above.
-        """
+    def test_admin_bypasses_everything(self, admin_user, db):
+        gate = require_feature("white_label_reports")
+        assert gate(user=admin_user, db=db).id == admin_user.id
+
+    def test_granted_boolean_feature_allows(self, silver_user, db):
+        # Silver grants pdf_report
         gate = require_feature("pdf_report")
+        assert gate(user=silver_user, db=db).id == silver_user.id
 
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=free_user, db=db)
-
-        exc = exc_info.value
-        assert exc.status_code == 403
-        assert exc.detail["error"] == "tier_required"
-        assert exc.detail["required"] == "platinum"
-        assert exc.detail["current"] == "free"
-
-    def test_platinum_user_allowed_pdf_report(self, platinum_user, db):
-        """
-        A platinum-tier PLAYER with an active subscription must pass through the
-        gate and receive their User object back.
-        """
+    def test_ungranted_boolean_feature_403(self, bronze_user, db):
+        # Bronze does not grant pdf_report
         gate = require_feature("pdf_report")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=bronze_user, db=db)
+        assert exc.value.status_code == 403
+        assert exc.value.detail["error"] == "feature_not_available"
 
-        result = gate(user=platinum_user, db=db)
-
-        assert result.id == platinum_user.id
-        assert result.role == "PLAYER"
-
-    def test_inactive_subscription_raises_402(self, db):
-        """
-        Any user whose subscription status is not 'active' must get 402,
-        regardless of their tier.
-        """
-        user = User(
-            id=str(uuid.uuid4()),
-            name="Expired Platinum",
-            email=f"expired_{uuid.uuid4().hex[:6]}@test.invalid",
-            password_hash="$2b$12$placeholder",
-            role="PLAYER",
-            subscription_plan="BASIC",
-            is_active=True,
-            is_verified=True,
-        )
-        db.add(user)
-        db.flush()
-
-        now = datetime.now(timezone.utc)
-        db.add(Subscription(
-            user_id=user.id,
-            plan_key="platinum",
-            role="platinum",
-            status="expired",
-            started_at=now - timedelta(days=100),
-            expires_at=now - timedelta(days=10),
-        ))
-        db.commit()
-        db.refresh(user)
-
-        gate = require_feature("pdf_report")
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=user, db=db)
-
-        assert exc_info.value.status_code == 402
-        assert exc_info.value.detail["error"] == "subscription_inactive"
-
-    def test_no_subscription_raises_402(self, db):
-        """
-        A user with no subscription row at all must get 402.
-        """
-        user = User(
-            id=str(uuid.uuid4()),
-            name="No Sub User",
-            email=f"nosub_{uuid.uuid4().hex[:6]}@test.invalid",
-            password_hash="$2b$12$placeholder",
-            role="PLAYER",
-            subscription_plan="BASIC",
-            is_active=True,
-            is_verified=True,
-        )
-        db.add(user)
-        db.commit()
-
+    def test_numeric_feature_with_positive_limit_allows(self, bronze_user, db):
+        # Bronze grants biomechanics_analysis=3 (>0 → access granted)
         gate = require_feature("biomechanics_analysis")
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=user, db=db)
+        assert gate(user=bronze_user, db=db).id == bronze_user.id
 
-        assert exc_info.value.status_code == 402
-        assert exc_info.value.detail["error"] == "subscription_inactive"
-
-    def test_lazy_expiry_flips_active_to_expired(self, db):
-        """
-        get_active_subscription must atomically flip status "active" → "expired"
-        when expires_at has already passed, and the gate must then return 402.
-        This tests the lazy-expiry side-effect, not just a pre-expired record.
-        """
-        from dependencies.feature_gate import get_active_subscription
-
-        user = User(
-            id=str(uuid.uuid4()),
-            name="Lazy Expiry User",
-            email=f"lazyexp_{uuid.uuid4().hex[:6]}@test.invalid",
-            password_hash="$2b$12$placeholder",
-            role="PLAYER",
-            subscription_plan="BASIC",
-            is_active=True,
-            is_verified=True,
-        )
-        db.add(user)
-        db.flush()
-
-        # Subscription is still marked "active" but expires_at is in the past.
-        stale_sub = Subscription(
-            user_id=user.id,
-            plan_key="platinum",
-            role="platinum",
-            status="active",                           # ← not yet flipped
-            started_at=datetime.now(timezone.utc) - timedelta(days=100),
-            expires_at=datetime.now(timezone.utc) - timedelta(seconds=1),  # ← past
-        )
-        db.add(stale_sub)
-        db.commit()
-
-        returned_sub = get_active_subscription(user, db)
-
-        # The helper must have flipped the status in-place.
-        assert returned_sub.status == "expired"
-
-        # A fresh query must confirm the flip was persisted.
-        db.expire(stale_sub)
-        db.refresh(stale_sub)
-        assert stale_sub.status == "expired"
-
-        # The gate must now return 402.
-        gate = require_feature("pdf_report")
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=user, db=db)
-        assert exc_info.value.status_code == 402
-
-    def test_platinum_can_access_basic_feature(self, platinum_user, db):
-        """Higher tiers must pass gates for lower-tier features."""
-        gate = require_feature("biomechanics_analysis")
-        result = gate(user=platinum_user, db=db)
-        assert result.id == platinum_user.id
-
-    def test_admin_bypasses_all_gates(self, admin_user, db):
-        """
-        An ADMIN user must pass every gate unconditionally — no subscription
-        row is required and tier restrictions do not apply.
-        """
-        gate = require_feature("pdf_report")
-        result = gate(user=admin_user, db=db)
-        assert result.id == admin_user.id
-
-    def test_player_blocked_from_coach_only_feature(self, basic_player_user, db):
-        """
-        A PLAYER account must be rejected with 403 wrong_account_type when
-        requesting a feature that requires a COACH account (e.g. ocr_highlights).
-        The rejection happens at Gate 2, before the tier check.
-        """
-        gate = require_feature("ocr_highlights")
-
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=basic_player_user, db=db)
-
-        exc = exc_info.value
-        assert exc.status_code == 403
-        assert exc.detail["error"] == "wrong_account_type"
-
-    def test_coach_blocked_from_player_only_feature(self, coach_starter_user, db):
-        """
-        A COACH account must be rejected with 403 wrong_account_type when
-        requesting a feature restricted to PLAYER accounts (e.g. player_submission).
-        """
+    def test_numeric_feature_with_zero_limit_403(self, bronze_user, db):
+        # Bronze has player_submission=0 → not granted
         gate = require_feature("player_submission")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=bronze_user, db=db)
+        assert exc.value.status_code == 403
 
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=coach_starter_user, db=db)
+    def test_coach_feature_unavailable_to_player(self, gold_user, db):
+        # video_annotation is only on coach_platinum → player never has it
+        gate = require_feature("video_annotation")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=gold_user, db=db)
+        assert exc.value.status_code == 403
 
-        exc = exc_info.value
-        assert exc.status_code == 403
-        assert exc.detail["error"] == "wrong_account_type"
+    def test_player_feature_unavailable_to_coach(self, coach_platinum_user, db):
+        # scouting_visibility is a player feature; coach plans don't grant it
+        gate = require_feature("scouting_visibility")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=coach_platinum_user, db=db)
+        assert exc.value.status_code == 403
 
-    # -- ai_chat special-case: different minimum tiers per account type ----------
-
-    def test_ai_chat_blocks_free_player(self, free_user, db):
-        """
-        A PLAYER on the free tier must be blocked from ai_chat.
-        Player minimum is 'basic' (level 1); free is level 0.
-        """
+    def test_ai_chat_silver_player_allowed(self, silver_user, db):
         gate = require_feature("ai_chat")
+        assert gate(user=silver_user, db=db).id == silver_user.id
 
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=free_user, db=db)
-
-        exc = exc_info.value
-        assert exc.status_code == 403
-        assert exc.detail["error"] == "tier_required"
-        assert exc.detail["required"] == "basic"
-        assert exc.detail["current"] == "free"
-
-    def test_ai_chat_allows_basic_player(self, basic_player_user, db):
-        """A PLAYER on the basic tier (level 1) meets the ai_chat minimum."""
+    def test_ai_chat_bronze_player_403(self, bronze_user, db):
         gate = require_feature("ai_chat")
-        result = gate(user=basic_player_user, db=db)
-        assert result.id == basic_player_user.id
+        with pytest.raises(HTTPException) as exc:
+            gate(user=bronze_user, db=db)
+        assert exc.value.status_code == 403
 
-    def test_ai_chat_blocks_coach_free(self, coach_free_user, db):
-        """
-        A COACH on the coach_free tier must be blocked from ai_chat.
-        Coach minimum is 'coach_starter' (level 3); coach_free is level 0.
-        """
+    def test_ai_chat_coach_platinum_allowed(self, coach_platinum_user, db):
         gate = require_feature("ai_chat")
-
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=coach_free_user, db=db)
-
-        exc = exc_info.value
-        assert exc.status_code == 403
-        assert exc.detail["error"] == "tier_required"
-        assert exc.detail["required"] == "coach_starter"
-        assert exc.detail["current"] == "coach_free"
-
-    def test_ai_chat_allows_coach_starter(self, coach_starter_user, db):
-        """A COACH on the coach_starter tier (level 3) meets the ai_chat minimum."""
-        gate = require_feature("ai_chat")
-        result = gate(user=coach_starter_user, db=db)
-        assert result.id == coach_starter_user.id
+        assert gate(user=coach_platinum_user, db=db).id == coach_platinum_user.id
 
 
 # ---------------------------------------------------------------------------
-# quota_check tests
+# quota_check / check_entitlement — numeric quota gate
 # ---------------------------------------------------------------------------
 
 class TestQuotaCheck:
-    def test_quota_exceeded_raises_429(self, free_user, db):
-        """
-        When a user has consumed their full monthly quota (used == limit),
-        quota_check must raise 429 with structured detail.
-        Free plan: max_biomech_per_month = 3.
-        """
-        _seed_biomech_usage(db, free_user, count=3)
-        gate = quota_check("biomechanics_analysis")
-
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=free_user, db=db)
-
-        exc = exc_info.value
-        assert exc.status_code == 429
-        assert exc.detail["error"] == "quota_exceeded"
-        assert exc.detail["used"] == 3
-        assert exc.detail["limit"] == 3
-        assert exc.detail["resets"].endswith("-01")
-
-    def test_quota_under_limit_passes(self, free_user, db):
-        """
-        When usage is below the plan limit, quota_check must return
-        (user, usage_row) without raising.
-        Free plan: max_biomech_per_month = 3; seed 2 uses.
-        """
-        usage_row = _seed_biomech_usage(db, free_user, count=2)
-        gate = quota_check("biomechanics_analysis")
-
-        result_user, result_usage = gate(user=free_user, db=db)
-
-        assert result_user.id == free_user.id
-        assert result_usage.biomech_count == 2
-
-    def test_quota_no_usage_row_creates_and_passes(self, free_user, db):
-        """
-        When no monthly_usage row exists yet, quota_check must create one
-        (with zero counts) and allow the request through.
-        """
-        gate = quota_check("biomechanics_analysis")
-        result_user, result_usage = gate(user=free_user, db=db)
-
-        assert result_user.id == free_user.id
-        assert result_usage.biomech_count == 0
-
-    def test_quota_exceeded_over_limit_also_blocked(self, free_user, db):
-        """
-        Usage that somehow exceeds the limit (e.g. concurrent writes) must
-        still be blocked (used > limit, not just ==).
-        """
-        _seed_biomech_usage(db, free_user, count=5)
-        gate = quota_check("biomechanics_analysis")
-
-        with pytest.raises(HTTPException) as exc_info:
-            gate(user=free_user, db=db)
-
-        assert exc_info.value.status_code == 429
-        assert exc_info.value.detail["used"] == 5
-
-    def test_platinum_higher_quota_passes(self, platinum_user, db):
-        """
-        Platinum plan has max_biomech_per_month=50.
-        A usage of 3 (which blocks free) must pass for platinum.
-        """
-        _seed_biomech_usage(db, platinum_user, count=3)
-        gate = quota_check("biomechanics_analysis")
-
-        result_user, result_usage = gate(user=platinum_user, db=db)
-
-        assert result_user.id == platinum_user.id
-        assert result_usage.biomech_count == 3
-
     def test_admin_bypasses_quota(self, admin_user, db):
-        """
-        ADMIN accounts skip quota checks entirely and receive a zeroed
-        dummy usage row without touching the database.
-        """
         gate = quota_check("biomechanics_analysis")
-        result_user, result_usage = gate(user=admin_user, db=db)
+        user, usage = gate(user=admin_user, db=db)
+        assert user.id == admin_user.id
 
-        assert result_user.id == admin_user.id
-        assert result_usage.biomech_count == 0
-        # No real row should have been persisted for the admin.
-        from datetime import date
-        today = date.today()
-        persisted = (
-            db.query(MonthlyUsage)
-            .filter_by(user_id=admin_user.id, year=today.year, month=today.month)
+    def test_under_limit_allows_and_creates_row(self, bronze_user, db):
+        gate = quota_check("biomechanics_analysis")
+        user, usage = gate(user=bronze_user, db=db)
+        assert usage is not None
+        assert usage.used == 0
+
+    def test_at_limit_raises_429(self, bronze_user, db):
+        # Bronze biomech limit is 3 — consume all 3
+        seed_feature_usage(db, bronze_user.id, "biomechanics_analysis", 3)
+        gate = quota_check("biomechanics_analysis")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=bronze_user, db=db)
+        assert exc.value.status_code == 429
+        assert exc.value.detail["error"] == "quota_exceeded"
+        assert exc.value.detail["limit"] == 3
+
+    def test_just_under_limit_allows(self, bronze_user, db):
+        seed_feature_usage(db, bronze_user.id, "biomechanics_analysis", 2)
+        gate = quota_check("biomechanics_analysis")
+        user, usage = gate(user=bronze_user, db=db)
+        assert usage.used == 2
+
+    def test_zero_limit_raises_403(self, bronze_user, db):
+        # Bronze player_submission=0 → 403 (feature not available), not 429
+        gate = quota_check("player_submission")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=bronze_user, db=db)
+        assert exc.value.status_code == 403
+
+    def test_ocr_coach_basic_within_limit(self, coach_basic_user, db):
+        # coach_basic ocr_highlights=10
+        seed_feature_usage(db, coach_basic_user.id, "ocr_highlights", 9.5)
+        gate = quota_check("ocr_highlights")
+        user, usage = gate(user=coach_basic_user, db=db)
+        assert usage.used == 9.5
+
+    def test_ocr_coach_basic_at_limit_429(self, coach_basic_user, db):
+        seed_feature_usage(db, coach_basic_user.id, "ocr_highlights", 10)
+        gate = quota_check("ocr_highlights")
+        with pytest.raises(HTTPException) as exc:
+            gate(user=coach_basic_user, db=db)
+        assert exc.value.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Live plan edits take effect (no redeploy) — the core promise of the engine
+# ---------------------------------------------------------------------------
+
+class TestLiveEntitlementEdits:
+    def test_raising_limit_takes_effect_after_invalidation(self, bronze_user, db):
+        from database.models.plan import Plan
+        from database.models.feature import Feature
+        from database.models.plan_entitlement import PlanEntitlement
+        from services import entitlement_service
+
+        # Consume bronze's 3 biomech analyses → at limit
+        seed_feature_usage(db, bronze_user.id, "biomechanics_analysis", 3)
+        gate = quota_check("biomechanics_analysis")
+        with pytest.raises(HTTPException):
+            gate(user=bronze_user, db=db)
+
+        # Admin raises bronze's biomech limit to 10 (simulating a PATCH)
+        plan = db.query(Plan).filter(Plan.key == "bronze").first()
+        feature = db.query(Feature).filter(Feature.key == "biomechanics_analysis").first()
+        ent = (
+            db.query(PlanEntitlement)
+            .filter(PlanEntitlement.plan_id == plan.id, PlanEntitlement.feature_id == feature.id)
             .first()
         )
-        assert persisted is None
+        original = ent.value
+        try:
+            ent.value = "10"
+            db.commit()
+            entitlement_service.invalidate_all()
+
+            # Now the same user passes the gate with usage=3 < new limit 10
+            user, usage = gate(user=bronze_user, db=db)
+            assert usage.used == 3
+        finally:
+            # Restore the shared catalog so later tests see the baseline limit.
+            ent.value = original
+            db.commit()
+            entitlement_service.invalidate_all()
