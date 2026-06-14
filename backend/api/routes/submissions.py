@@ -134,7 +134,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 public_router = APIRouter(tags=["submissions-public"])
 
-_COACH_SUBMISSION_TIERS = ("coach_starter", "coach_pro", "academy")
+_COACH_SUBMISSION_TIERS = ("coach_basic", "coach_platinum")
 
 
 # ── Pydantic Models (must be defined before endpoints) ──────────────────────

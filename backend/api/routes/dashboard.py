@@ -25,15 +25,14 @@ from database.config import get_db
 from database.models.batting import BattingAnalysis
 from database.models.bowling import BowlingAnalysis
 from database.models.coach_player import CoachPlayer
-from database.models.monthly_usage import MonthlyUsage
 from database.models.user import User
 from database.models.video import HighlightJob, VideoStatus
-from dependencies.feature_gate import require_feature, get_active_subscription
+from dependencies.feature_gate import require_feature
+from services import entitlement_service
+from services.usage_service import get_feature_used_since
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
-
-_COACH_STARTER_CAP = 10   # max roster size for coach_starter plan
 
 
 # ---------------------------------------------------------------------------
@@ -76,16 +75,7 @@ def _latest_job_for(player_id: str, db: Session) -> Optional[HighlightJob]:
 
 def _biomech_this_month(player_id: str, db: Session) -> int:
     today = date.today()
-    row = (
-        db.query(MonthlyUsage)
-        .filter(
-            MonthlyUsage.user_id == player_id,
-            MonthlyUsage.year == today.year,
-            MonthlyUsage.month == today.month,
-        )
-        .first()
-    )
-    return row.biomech_count if row else 0
+    return int(get_feature_used_since(player_id, "biomechanics_analysis", today.replace(day=1), db))
 
 
 def _player_stats(entry: CoachPlayer, db: Session) -> PlayerStats:
@@ -116,18 +106,19 @@ def invite_player(
     if not player:
         raise HTTPException(status_code=404, detail="Player not found")
 
-    # Enforce coach_starter cap — check subscription tier, not account type
-    sub = get_active_subscription(current_user, db)
-    if sub and sub.role == "coach_starter":
+    # Enforce the roster cap from the live player_roster entitlement.
+    # -1 means unlimited; 0/absent means no roster; N caps at N players.
+    roster_limit = entitlement_service.get_limit(current_user, "player_roster", db)
+    if roster_limit >= 0:
         count = (
             db.query(func.count(CoachPlayer.player_id))
             .filter(CoachPlayer.coach_id == current_user.id)
             .scalar()
         )
-        if count >= _COACH_STARTER_CAP:
+        if count >= roster_limit:
             raise HTTPException(
                 status_code=403,
-                detail="Player limit reached for your plan",
+                detail=f"Player limit reached for your plan ({int(roster_limit)} players)",
             )
 
     # Idempotent insert — ignore if already on roster
@@ -233,18 +224,8 @@ def export_roster_csv(
             player: User = entry.player
 
             # --- 3-month biomech totals ----------------------------------
-            today = date.today()
-            usage_rows = (
-                db.query(MonthlyUsage)
-                .filter(
-                    MonthlyUsage.user_id == player.id,
-                    MonthlyUsage.year >= three_months_ago.year,
-                )
-                .all()
-            )
-            biomech_3m = sum(
-                r.biomech_count for r in usage_rows
-                if date(r.year, r.month, 1) >= three_months_ago.replace(day=1)
+            biomech_3m = int(
+                get_feature_used_since(player.id, "biomechanics_analysis", three_months_ago, db)
             )
 
             # --- avg joint angles from most recent batting analysis ------

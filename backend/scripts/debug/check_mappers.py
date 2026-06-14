@@ -3,7 +3,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 
 from database.models import *
 from database.models.chat_history import ChatHistory
-from database.models.monthly_usage import MonthlyUsage
+from database.models.feature_usage import FeatureUsage
 from database.models.player_profile import PlayerProfile
 from database.models.admin_audit_log import AdminAuditLog
 from database.models.coach_shortlist import CoachShortlist
