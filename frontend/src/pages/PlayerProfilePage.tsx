@@ -37,7 +37,7 @@ function StatCard({ label, value, unit }: { label: string; value: number | null 
 /* ── feature gate wrapper ─────────────────────────────────────── */
 function PlatinumGate({ children }: { children: React.ReactNode }) {
   const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
-  const isPlatinum = TIER_HIERARCHY[subscriptionTier] >= TIER_HIERARCHY['platinum'];
+  const isPlatinum = TIER_HIERARCHY[subscriptionTier] >= TIER_HIERARCHY['gold'];
   if (isPlatinum) return <>{children}</>;
   return (
     <div className="glass rounded-2xl p-6 border border-amber-500/30 bg-amber-500/5 text-center">

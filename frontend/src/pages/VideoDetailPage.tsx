@@ -62,7 +62,7 @@ export default function VideoDetailPage() {
   const videoWrapRef = useRef<HTMLDivElement | null>(null);
   const accountType = useSubscriptionStore((s) => s.accountType);
   const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
-  const canAnnotate = accountType === 'ADMIN' || (accountType === 'COACH' && subscriptionTier !== 'coach_free');
+  const canAnnotate = accountType === 'ADMIN' || (accountType === 'COACH' && subscriptionTier === 'coach_platinum');
 
   const needsPolling = (item: VideoDetail | null): boolean => {
     if (!item) return false;

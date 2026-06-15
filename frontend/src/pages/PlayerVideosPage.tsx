@@ -211,15 +211,13 @@ export default function PlayerVideosPage() {
 
     const subscriptionTier = useSubscriptionStore.getState().subscriptionTier as Tier;
     const UPLOAD_LIMITS: Record<Tier, number> = {
-      free: 10 * 1024 * 1024,
-      coach_free: 10 * 1024 * 1024,
-      basic: 50 * 1024 * 1024,
-      platinum: 100 * 1024 * 1024,
-      coach_starter: 50 * 1024 * 1024,
-      coach_pro: 100 * 1024 * 1024,
-      academy: 150 * 1024 * 1024,
+      bronze: 10 * 1024 * 1024,
+      coach_basic: 10 * 1024 * 1024,
+      silver: 50 * 1024 * 1024,
+      gold: 100 * 1024 * 1024,
+      coach_platinum: 100 * 1024 * 1024,
     };
-    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.free;
+    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.bronze;
     if (file.size > maxBytes) {
       setToast({ msg: `File size should be less than ${formatFileSize(maxBytes)}.`, type: "error" });
       return;

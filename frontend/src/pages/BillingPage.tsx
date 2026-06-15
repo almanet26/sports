@@ -100,7 +100,7 @@ export default function BillingPage() {
 
   const planDisplay  = PLAN_DISPLAY_CONFIG[subscriptionTier];
   const isPlayerTier = accountType === 'PLAYER';
-  const isForeverTier = subscriptionTier === 'free' || subscriptionTier === 'coach_free';
+  const isForeverTier = subscriptionTier === 'bronze' || subscriptionTier === 'coach_basic';
 
   const daysRemaining = !isForeverTier && expiresAt
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 86_400_000))

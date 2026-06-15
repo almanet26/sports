@@ -9,7 +9,7 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import { authApi, api } from '../lib/api';
 import { AxiosError } from 'axios';
-import type { Tier, SubscriptionStatus, QuotaUsage } from '../types/subscriptionPlans';
+import type { Tier, SubscriptionStatus, QuotaUsage, Entitlements } from '../types/subscriptionPlans';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -75,6 +75,8 @@ interface AuthState {
   subscriptionStatus: SubscriptionStatus;
   expiresAt: string | null;
   quotaUsage: QuotaUsage;
+  // Resolved feature entitlements from the dynamic engine (server-authoritative).
+  entitlements: Entitlements;
 
   // ── Auth actions ──
   login: (email: string, password: string) => Promise<boolean>;
@@ -113,10 +115,11 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
       error: null,
       accountType: 'PLAYER',
-      subscriptionTier: 'free' as Tier,
+      subscriptionTier: 'bronze' as Tier,
       subscriptionStatus: 'inactive' as SubscriptionStatus,
       expiresAt: null,
       quotaUsage: DEFAULT_QUOTA,
+      entitlements: {},
 
       // ── Auth actions ─────────────────────────────────────────────────────
 
@@ -164,7 +167,7 @@ export const useAuthStore = create<AuthState>()(
             user: userData,
             isAuthenticated: true,
             accountType: userData.role,
-            subscriptionTier: (user?.subscription_role ?? 'free') as Tier,
+            subscriptionTier: (user?.subscription_role ?? 'bronze') as Tier,
           });
 
           // Always fetch full profile to ensure role and all fields are correct
@@ -212,10 +215,11 @@ export const useAuthStore = create<AuthState>()(
             isAuthenticated: false,
             error: null,
             accountType: 'PLAYER',
-            subscriptionTier: 'free' as Tier,
+            subscriptionTier: 'bronze' as Tier,
             subscriptionStatus: 'inactive' as SubscriptionStatus,
             expiresAt: null,
             quotaUsage: DEFAULT_QUOTA,
+            entitlements: {},
           });
         }
       },
@@ -260,10 +264,11 @@ export const useAuthStore = create<AuthState>()(
             user: mappedUser,
             isAuthenticated: true,
             accountType: mappedUser.role,
-            subscriptionTier: (profile.subscription_role ?? usage.role ?? 'free') as Tier,
+            subscriptionTier: (profile.subscription_role ?? usage.role ?? 'bronze') as Tier,
             subscriptionStatus: ((usage.status ?? 'inactive') as SubscriptionStatus),
             expiresAt: (usage.expires_at as string) ?? null,
             quotaUsage: normalizeQuotaUsage(usage.current_month),
+            entitlements: (usage.entitlements as Entitlements) ?? {},
           });
         } catch {
           // Auth interceptor in api.ts handles 401 redirect
@@ -283,6 +288,7 @@ export const useAuthStore = create<AuthState>()(
             quotaUsage: normalizeQuotaUsage((data as { current_month?: unknown }).current_month),
             subscriptionStatus: (data.status ?? 'inactive') as SubscriptionStatus,
             expiresAt: data.expires_at ?? null,
+            entitlements: (data.entitlements as Entitlements) ?? {},
           });
         } catch {
           // Non-fatal
@@ -336,6 +342,7 @@ export const useAuthStore = create<AuthState>()(
 export const useSubscriptionStore = useAuthStore;
 
 // ── Selector hooks ────────────────────────────────────────────────────────────
+export const useEntitlements = () => useAuthStore((state) => state.entitlements);
 export const useUser = () => useAuthStore((state) => state.user);
 export const useIsAuthenticated = () => useAuthStore((state) => state.isAuthenticated);
 export const useUserRole = () => useAuthStore((state) => state.user?.role);

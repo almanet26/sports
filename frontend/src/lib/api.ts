@@ -1,5 +1,5 @@
 import axios, { AxiosError, type InternalAxiosRequestConfig } from 'axios';
-import type { PlanConfig } from '../types/subscriptionPlans';
+import type { AdminPlan, AdminFeature, EntitlementInput } from '../types/subscriptionPlans';
 import { useToastStore } from '../store/toastStore';
 
 // Base URL from environment or default
@@ -723,7 +723,18 @@ export const subscriptionApi = {
 export const billingApi = {
   /** Create a Razorpay order for the given plan_key */
   createOrder: (planKey: string) =>
-    api.post('/billing/create-order', { plan_key: planKey }),
+    api.post<{ order_id: string; amount: number; currency: string; plan_key: string; razorpay_key: string }>(
+      '/billing/create-order',
+      { plan_key: planKey },
+    ),
+
+  /** Verify Razorpay payment and activate subscription */
+  verifyPayment: (data: {
+    order_id: string;
+    payment_id: string;
+    signature: string;
+    plan_key: string;
+  }) => api.post('/billing/verify-payment', data),
 
   /** Monthly quota usage for the current user */
   getUsage: () =>
@@ -751,17 +762,46 @@ export const adminApi = {
   getActivityFeed: (limit = 20) =>
     api.get('/admin/activity', { params: { limit } }),
 
-  // Plan management
-  listPlans: () => api.get<PlanConfig[]>('/admin/plans'),
-  updatePlan: (planKey: string, data: {
+  // ── Dynamic entitlement engine — plan management ──
+  listPlans: () => api.get<AdminPlan[]>('/admin/plans'),
+  createPlan: (data: {
+    key: string;
+    display_name: string;
+    user_type: 'player' | 'coach';
+    price_inr: number;
+    billing_period: 'monthly' | 'annual';
+    sort_order?: number;
+    is_active?: boolean;
+    razorpay_plan_id?: string | null;
+    entitlements?: EntitlementInput[];
+  }) => api.post<AdminPlan>('/admin/plans', data),
+  updatePlan: (planId: number, data: {
     display_name?: string;
     price_inr?: number;
-    duration_days?: number;
-    max_biomech_per_month?: number;
-    max_ocr_hours_per_month?: number;
-    max_submissions_per_month?: number;
-    max_players_in_dashboard?: number;
-  }) => api.patch<PlanConfig>(`/admin/plans/${planKey}`, data),
+    billing_period?: 'monthly' | 'annual';
+    sort_order?: number;
+    is_active?: boolean;
+    razorpay_plan_id?: string | null;
+  }) => api.patch<AdminPlan>(`/admin/plans/${planId}`, data),
+  deletePlan: (planId: number, migrateTo?: number) =>
+    api.delete(`/admin/plans/${planId}`, { params: migrateTo ? { migrate_to: migrateTo } : {} }),
+  setPlanEntitlements: (planId: number, items: EntitlementInput[]) =>
+    api.put<AdminPlan>(`/admin/plans/${planId}/entitlements`, items),
+
+  // ── Feature catalog ──
+  listFeatures: () => api.get<AdminFeature[]>('/admin/features'),
+  createFeature: (data: {
+    key: string;
+    display_name: string;
+    type: 'boolean' | 'numeric';
+    description?: string;
+  }) => api.post<AdminFeature>('/admin/features', data),
+  updateFeature: (featureId: number, data: {
+    display_name?: string;
+    description?: string;
+    type?: 'boolean' | 'numeric';
+  }) => api.patch<AdminFeature>(`/admin/features/${featureId}`, data),
+  deleteFeature: (featureId: number) => api.delete(`/admin/features/${featureId}`),
 
   // User management
   listUsers: (params: {
