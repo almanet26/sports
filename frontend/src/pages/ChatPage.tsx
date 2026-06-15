@@ -231,14 +231,14 @@ export default function ChatPage() {
   // RoleGuard in routes.tsx, but defend here) get the coach gate.
   if (accountType === 'COACH') {
     return (
-      <FeatureGate requiredTier="coach_starter" feature="ai_chat">
+      <FeatureGate requiredTier="coach_platinum" feature="ai_chat">
         <ChatView />
       </FeatureGate>
     );
   }
 
   return (
-    <FeatureGate requiredTier="basic" feature="ai_chat">
+    <FeatureGate requiredTier="silver" feature="ai_chat">
       <ChatView />
     </FeatureGate>
   );
@@ -251,12 +251,12 @@ export default function ChatPage() {
 export function CoachChatPage() {
   const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
 
-  if (TIER_HIERARCHY[subscriptionTier] >= TIER_HIERARCHY['coach_starter']) {
+  if (TIER_HIERARCHY[subscriptionTier] >= TIER_HIERARCHY['coach_platinum']) {
     return <ChatView />;
   }
 
   return (
-    <FeatureGate requiredTier="coach_starter" feature="ai_chat">
+    <FeatureGate requiredTier="coach_platinum" feature="ai_chat">
       <ChatView />
     </FeatureGate>
   );

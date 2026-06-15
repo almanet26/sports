@@ -15,6 +15,7 @@ export default function FeatureGate({ requiredTier, feature, children }: Feature
   const accountType = useSubscriptionStore((s) => s.accountType);
   const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
   const subscriptionStatus = useSubscriptionStore((s) => s.subscriptionStatus);
+  const entitlements = useSubscriptionStore((s) => s.entitlements);
 
   const outcome = getFeatureGateOutcome({
     accountType,
@@ -22,6 +23,7 @@ export default function FeatureGate({ requiredTier, feature, children }: Feature
     subscriptionStatus,
     requiredTier,
     feature,
+    entitlements,
   });
 
   if (outcome.decision === 'allow') {

@@ -1,5 +1,5 @@
-import type { AccountType, Tier, SubscriptionStatus } from '../../types/plans';
-import { TIER_HIERARCHY, getFeatureRequiredTier, type FeatureKey } from '../../types/plans';
+import type { AccountType, Tier, SubscriptionStatus, Entitlements } from '../../types/plans';
+import { TIER_HIERARCHY } from '../../types/plans';
 
 export type FeatureGateDecision = 'allow' | 'upgrade' | 'expired';
 
@@ -9,11 +9,19 @@ export interface FeatureGateInput {
   subscriptionStatus: SubscriptionStatus;
   requiredTier: Tier;
   feature: string;
+  // Server-resolved entitlements (feature key → granted value). When presentand non-empty, this is authoritative - the feature's value decides access. When empty (not yet loaded), the gate falls back to static tier comparison.
+  entitlements?: Entitlements;
 }
 
 export interface FeatureGateOutcome {
   decision: FeatureGateDecision;
   effectiveRequiredTier: Tier;
+}
+
+function isGranted(value: number | boolean | undefined): boolean {
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === -1 || value > 0;
+  return false;
 }
 
 export function getFeatureGateOutcome({
@@ -22,35 +30,36 @@ export function getFeatureGateOutcome({
   subscriptionStatus,
   requiredTier,
   feature,
+  entitlements,
 }: FeatureGateInput): FeatureGateOutcome {
-  if (accountType === 'ADMIN' || requiredTier === 'free') {
-    return {
-      decision: 'allow',
-      effectiveRequiredTier: requiredTier,
-    };
+  // Admins always pass.
+  if (accountType === 'ADMIN') {
+    return { decision: 'allow', effectiveRequiredTier: requiredTier };
   }
 
-  const wasSubscribed = subscriptionTier !== 'free' && subscriptionTier !== 'coach_free';
-  if (subscriptionStatus !== 'active' && wasSubscribed) {
-    return {
-      decision: 'expired',
-      effectiveRequiredTier: requiredTier,
-    };
+  const wasPaid = subscriptionTier !== 'bronze' && subscriptionTier !== 'coach_basic';
+
+  // ── Entitlement-driven path (authoritative when loaded) ───────────────────
+  if (entitlements && Object.keys(entitlements).length > 0) {
+    if (isGranted(entitlements[feature])) {
+      return { decision: 'allow', effectiveRequiredTier: requiredTier };
+    }
+    // Not granted: a lapsed paid plan shows "renew", otherwise "upgrade".
+    if (subscriptionStatus !== 'active' && wasPaid) {
+      return { decision: 'expired', effectiveRequiredTier: requiredTier };
+    }
+    return { decision: 'upgrade', effectiveRequiredTier: requiredTier };
   }
 
-  const effectiveRequiredTier: Tier = feature === 'ai_chat'
-    ? getFeatureRequiredTier(feature as FeatureKey, accountType)
-    : requiredTier;
-
-  if (TIER_HIERARCHY[subscriptionTier] < TIER_HIERARCHY[effectiveRequiredTier]) {
-    return {
-      decision: 'upgrade',
-      effectiveRequiredTier,
-    };
+  // ── Fallback: static tier comparison (entitlements not yet loaded) ────────
+  if (requiredTier === 'bronze') {
+    return { decision: 'allow', effectiveRequiredTier: requiredTier };
   }
-
-  return {
-    decision: 'allow',
-    effectiveRequiredTier,
-  };
+  if (subscriptionStatus !== 'active' && wasPaid) {
+    return { decision: 'expired', effectiveRequiredTier: requiredTier };
+  }
+  if (TIER_HIERARCHY[subscriptionTier] < TIER_HIERARCHY[requiredTier]) {
+    return { decision: 'upgrade', effectiveRequiredTier: requiredTier };
+  }
+  return { decision: 'allow', effectiveRequiredTier: requiredTier };
 }

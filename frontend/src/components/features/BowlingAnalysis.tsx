@@ -332,7 +332,7 @@ const BowlingAnalysis: React.FC = () => {
   }, []);
 
   if (biomechUsage.limit > 0 && biomechUsage.used >= biomechUsage.limit) {
-    return <UpgradePrompt requiredTier="basic" />;
+    return <UpgradePrompt requiredTier="silver" />;
   }
 
 

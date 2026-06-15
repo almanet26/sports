@@ -6,6 +6,14 @@ export {
   type PlanConfig,
   type AccountType,
   type PlanDisplayInfo,
+  type Entitlements,
+  type FeatureType,
+  type PlanUserType,
+  type BillingPeriod,
+  type AdminFeature,
+  type AdminEntitlement,
+  type AdminPlan,
+  type EntitlementInput,
   TIER_HIERARCHY,
   FEATURE_MAP,
   PLAN_DISPLAY_CONFIG,
@@ -14,90 +22,77 @@ export {
 
 import { FEATURE_MAP, type AccountType, type FeatureKey, type Tier } from './subscriptionPlans';
 
-const FREE_PLAYER_FEATURES = [
-  '3 biomechanics analyses/month',
-  'Public library access',
-  'Community voting',
+// ─── Cumulative feature lists for UpgradePrompt delta display ─────────────────
+
+const BRONZE_FEATURES = [
+  '3 Biomechanical Analyses / month',
+  'Basic performance stats & match history',
+  'Public library & community voting',
+  'Streak counters & milestone badges',
 ];
 
-const BASIC_PLAYER_FEATURES = [
-  '15 biomechanics analyses/month',
-  '5 coach submissions/month',
-  'AI Chat assistant',
+const SILVER_FEATURES = [
+  ...BRONZE_FEATURES,
+  '15 Biomechanical Analyses / month',
+  '5 Coach Submissions / month',
   'Ad-free experience',
-  'Public library access',
-  'Community voting',
+  'Professional PDF performance reports',
+  'Advanced stats history',
+  'AI Coach Chat (24/7 technique queries)',
 ];
 
-const PLATINUM_PLAYER_FEATURES = [
-  '50 biomechanics analyses/month',
-  '15 coach submissions/month',
-  'Professional PDF reports',
-  'Pro benchmarking',
-  'Scouting visibility (opt-in)',
-  'AI Chat assistant',
-  'Ad-free experience',
-  'Public library access',
-  'Community voting',
+const GOLD_FEATURES = [
+  ...SILVER_FEATURES.filter(
+    (f) => !f.includes('15 Biomechanical') && !f.includes('5 Coach Submissions'),
+  ),
+  '50 Biomechanical Analyses / month',
+  '15 Coach Submissions / month',
+  'Weekly AI skill-building tips',
+  'Pro-Benchmarking vs professional pose data',
+  'Injury Risk Alerts',
+  'Verified Scouting Profile (visible to scouts & franchises)',
 ];
 
-const COACH_FREE_FEATURES = [
-  'Public library access',
-  'Basic coach profile',
-  'Community voting',
+const COACH_BASIC_FEATURES = [
+  'Coach Dashboard, Profile & Verification',
+  'Submission inbox (review & earnings)',
+  '10 OCR match-hours / month',
+  'Athlete roster (up to 5 players)',
+  '5 player submissions / month',
+  'Basic session & availability management',
 ];
 
-const COACH_STARTER_FEATURES = [
-  '50 OCR match hours/month',
-  '150 player submissions/month',
-  'Player dashboard (up to 10 players)',
-  'Video annotation tools',
-  'Upload match videos',
-  'AI Chat assistant',
-  'Public library access',
-  'Community voting',
-];
-
-const COACH_PRO_FEATURES = [
-  '150 OCR match hours/month',
-  '600 player submissions/month',
-  '100 players in dashboard',
-  'Priority OCR processing',
-  'CSV data export',
-  'Video annotation tools',
-  'Upload match videos',
-  'AI Chat assistant',
-  'Public library access',
-  'Community voting',
+const COACH_PLATINUM_FEATURES = [
+  ...COACH_BASIC_FEATURES.filter(
+    (f) => !f.includes('10 OCR') && !f.includes('up to 5 players') && !f.includes('5 player submissions'),
+  ),
+  '50 OCR match-hours / month',
+  '100 player submissions / month',
+  'Multi-player dashboard (up to 25 players)',
+  'Training Schedule Calendar with attendance tracking',
+  'Athlete Training Plans & development programs',
+  'Video Annotation Tools for remote feedback',
+  'Match Highlight Generation + priority processing',
+  'AI Coach Chat (24/7 technique queries)',
+  'CSV data exports',
+  'Leaderboard & content management',
+  'White-Label Reporting',
 ];
 
 export const PLAN_CUMULATIVE_FEATURES: Record<Tier, string[]> = {
-  free: FREE_PLAYER_FEATURES,
-  basic: BASIC_PLAYER_FEATURES,
-  platinum: PLATINUM_PLAYER_FEATURES,
-  coach_free: COACH_FREE_FEATURES,
-  coach_starter: COACH_STARTER_FEATURES,
-  coach_pro: COACH_PRO_FEATURES,
-  academy: [
-    ...COACH_PRO_FEATURES.filter(f => !f.includes('OCR match hours') && !f.includes('player submissions') && !f.includes('players in dashboard')),
-    '500 OCR match hours/month',
-    '1,500 player submissions/month',
-    'White-label reports',
-    'Multi-seat role controls',
-    'Recruitment desk',
-    'Unlimited players in dashboard',
-  ],
+  bronze:         BRONZE_FEATURES,
+  silver:         SILVER_FEATURES,
+  gold:           GOLD_FEATURES,
+  coach_basic:    COACH_BASIC_FEATURES,
+  coach_platinum: COACH_PLATINUM_FEATURES,
 };
 
 
-export function getFeatureRequiredTier(feature: FeatureKey, accountType: AccountType): Tier {
-  if (feature === 'ai_chat') {
-    return accountType === 'COACH' ? 'coach_starter' : 'basic';
-  }
+export function getFeatureRequiredTier(feature: FeatureKey, _accountType: AccountType): Tier {
   return FEATURE_MAP[feature];
 }
 
 export function getUpgradeFeatureDelta(currentTier: Tier, targetTier: Tier): string[] {
   const current = new Set(PLAN_CUMULATIVE_FEATURES[currentTier] ?? []);
-  return (PLAN_CUMULATIVE_FEATURES[targetTier] ?? []).filter((feature) => !current.has(feature));
+  return (PLAN_CUMULATIVE_FEATURES[targetTier] ?? []).filter((f) => !current.has(f));
 }

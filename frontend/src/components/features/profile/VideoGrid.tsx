@@ -24,13 +24,11 @@ const ACCEPTED_TYPES = ["video/mp4", "video/quicktime", "video/x-msvideo", "vide
 const FREE_UPLOAD_LIMIT = 5;
 
 const UPLOAD_LIMITS: Record<Tier, number> = {
-  free: 10 * 1024 * 1024,
-  coach_free: 10 * 1024 * 1024,
-  basic: 50 * 1024 * 1024,
-  platinum: 100 * 1024 * 1024,
-  coach_starter: 50 * 1024 * 1024,
-  coach_pro: 100 * 1024 * 1024,
-  academy: 150 * 1024 * 1024,
+  bronze: 10 * 1024 * 1024,
+  coach_basic: 10 * 1024 * 1024,
+  silver: 50 * 1024 * 1024,
+  gold: 100 * 1024 * 1024,
+  coach_platinum: 100 * 1024 * 1024,
 };
 
 function formatDate(value: string) {
@@ -138,7 +136,7 @@ export default function VideoGrid({
       onError("Please choose an MP4, MOV, AVI, or M4V video.");
       return;
     }
-    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.free;
+    const maxBytes = UPLOAD_LIMITS[subscriptionTier] ?? UPLOAD_LIMITS.bronze;
     if (file.size > maxBytes) {
       onError(`File size should be less than ${formatFileSize(maxBytes)}.`);
       return;
