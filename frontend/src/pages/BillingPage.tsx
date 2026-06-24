@@ -11,7 +11,7 @@ import {
   type PlanConfig,
   type SubscriptionStatus,
 } from '../types/plans';
-import { billingApi } from '../lib/api';
+import { startPlanCheckout } from '../lib/razorpayCheckout';
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
@@ -78,6 +78,7 @@ export default function BillingPage() {
   const expiresAt        = useSubscriptionStore((s) => s.expiresAt);
   const quotaUsage       = useSubscriptionStore((s) => s.quotaUsage);
   const fetchMe          = useSubscriptionStore((s) => s.fetchMe);
+  const user             = useSubscriptionStore((s) => s.user);
   const [now] = useState(() => Date.now());
 
   useEffect(() => { fetchMe(); }, [fetchMe]);
@@ -106,14 +107,28 @@ export default function BillingPage() {
     ? Math.max(0, Math.ceil((new Date(expiresAt).getTime() - now) / 86_400_000))
     : null;
 
-  const handleUpgrade = async (planKey: string) => {
-    try {
-      const res = await billingApi.createOrder(planKey);
-      console.log('[Billing] Order created:', res.data);
-      // TODO Phase 9: open Razorpay modal with res.data
-    } catch (err) {
-      console.error('[Billing] Failed to create order:', err);
-    }
+  const [notice, setNotice] = useState<{ msg: string; ok: boolean } | null>(null);
+  const [upgradingKey, setUpgradingKey] = useState<string | null>(null);
+
+  const handleUpgrade = async (plan: PlanConfig) => {
+    setNotice(null);
+    setUpgradingKey(plan.plan_key);
+    await startPlanCheckout({
+      planKey: plan.plan_key,
+      isFree: plan.price_inr === 0,
+      displayName: plan.display_name,
+      userEmail: user?.email,
+      onSuccess: async () => {
+        await fetchMe();
+        setNotice({ msg: `${plan.display_name} is now active.`, ok: true });
+        setUpgradingKey(null);
+      },
+      onError: (msg) => {
+        setNotice({ msg, ok: false });
+        setUpgradingKey(null);
+      },
+      onDismiss: () => setUpgradingKey(null),
+    });
   };
 
   // ── Comparison table row definitions
@@ -162,6 +177,18 @@ export default function BillingPage() {
   return (
     <div className="mx-auto max-w-5xl space-y-8 p-6">
       <h1 className="text-2xl font-bold text-white">Billing &amp; Plans</h1>
+
+      {notice && (
+        <div
+          className={`rounded-lg border px-4 py-3 text-sm ${
+            notice.ok
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-red-500/30 bg-red-500/10 text-red-300'
+          }`}
+        >
+          {notice.msg}
+        </div>
+      )}
 
       {/* ── Current plan card ───────────────────────────────────────────── */}
       <div className="rounded-xl border border-zinc-700 bg-zinc-900 p-6">
@@ -300,13 +327,14 @@ export default function BillingPage() {
                     <span className="text-xs text-zinc-500">Your plan</span>
                   ) : isHigher ? (
                     <button
-                      onClick={() => handleUpgrade(PLAN_DISPLAY_CONFIG[plan.role].planKey)}
+                      onClick={() => handleUpgrade(plan)}
+                      disabled={upgradingKey === plan.plan_key}
                       className="flex w-full items-center justify-center gap-1 rounded-lg
                                  bg-amber-500 px-3 py-2 text-xs font-semibold text-zinc-900
-                                 transition-colors hover:bg-amber-400"
+                                 transition-colors hover:bg-amber-400 disabled:opacity-60"
                     >
                       <Zap className="h-3.5 w-3.5" />
-                      Upgrade
+                      {upgradingKey === plan.plan_key ? 'Processing…' : 'Upgrade'}
                     </button>
                   ) : (
                     <button
