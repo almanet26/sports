@@ -1,17 +1,9 @@
 import { useState } from 'react';
 import { CheckCircle, Zap, Loader2 } from 'lucide-react';
-import { billingApi } from '../../lib/api';
 import { PLAN_CUMULATIVE_FEATURES, PLAN_DISPLAY_CONFIG, getUpgradeFeatureDelta } from '../../types/plans';
 import type { Tier } from '../../types/plans';
 import { useSubscriptionStore } from '../../stores/authStore';
-
-// Razorpay checkout.js is loaded via index.html <script> tag.
-// Declare the global so TypeScript is happy.
-declare global {
-  interface Window {
-    Razorpay: new (options: Record<string, unknown>) => { open(): void };
-  }
-}
+import { startPlanCheckout } from '../../lib/razorpayCheckout';
 
 interface UpgradePromptProps {
   requiredTier: Tier;
@@ -35,69 +27,23 @@ export default function UpgradePrompt({ requiredTier }: UpgradePromptProps) {
 
   const handleUpgrade = async () => {
     setError(null);
-
-    // Free plan — direct subscribe without payment
-    if (config.priceInr === 0) {
-      setLoading(true);
-      try {
-        const { subscriptionApi } = await import('../../lib/api');
-        await subscriptionApi.subscribe(config.planKey);
+    setLoading(true);
+    await startPlanCheckout({
+      planKey: config.planKey,
+      isFree: config.priceInr === 0,
+      displayName: config.displayName,
+      userEmail: user?.email,
+      onSuccess: async () => {
         await fetchMe();
         setSuccess(true);
-      } catch {
-        setError('Could not activate free plan. Please try again.');
-      } finally {
         setLoading(false);
-      }
-      return;
-    }
-
-    setLoading(true);
-    try {
-      const { data: order } = await billingApi.createOrder(config.planKey);
-
-      if (!window.Razorpay) {
-        setError('Payment system is unavailable. Please refresh and try again.');
-        return;
-      }
-
-      const rzp = new window.Razorpay({
-        key: order.razorpay_key,
-        amount: order.amount,
-        currency: order.currency,
-        order_id: order.order_id,
-        name: 'PitchVision',
-        description: `${config.displayName} Subscription`,
-        prefill: { email: user?.email ?? '' },
-        theme: { color: '#F59E0B' },
-        handler: async (response: {
-          razorpay_payment_id: string;
-          razorpay_order_id: string;
-          razorpay_signature: string;
-        }) => {
-          try {
-            await billingApi.verifyPayment({
-              order_id: response.razorpay_order_id,
-              payment_id: response.razorpay_payment_id,
-              signature: response.razorpay_signature,
-              plan_key: config.planKey,
-            });
-            await fetchMe();
-            setSuccess(true);
-          } catch {
-            setError('Payment succeeded but activation failed. Contact support with your payment ID: ' + response.razorpay_payment_id);
-          }
-        },
-        modal: {
-          ondismiss: () => setLoading(false),
-        },
-      });
-
-      rzp.open();
-    } catch {
-      setError('Could not initiate payment. Please try again.');
-      setLoading(false);
-    }
+      },
+      onError: (msg) => {
+        setError(msg);
+        setLoading(false);
+      },
+      onDismiss: () => setLoading(false),
+    });
   };
 
   if (success) {
