@@ -16,6 +16,7 @@ Environment Variables Required:
 import logging
 import asyncio
 import os
+import tempfile
 import threading
 import uuid
 import urllib.parse
@@ -76,8 +77,10 @@ _ALLOWED_CONTENT_TYPES = frozenset(
 # For files >100MB, use resumable uploads via POST /resumable-session instead
 _SIGNED_URL_EXPIRY = timedelta(minutes=120)
 
-# Local upload root (used for automatic fallback in local/dev)
-LOCAL_UPLOAD_ROOT = Path("storage/uploads")
+# Local upload root — used only when GCS signing is unavailable (local/dev).
+# On Cloud Run the signed-URL flow is always used; /tmp/ guards the rare fallback.
+_USE_TMP = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
+LOCAL_UPLOAD_ROOT = Path(tempfile.gettempdir()) / "uploads" if _USE_TMP else Path("storage/uploads")
 LOCAL_UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
 
 

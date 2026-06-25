@@ -193,9 +193,23 @@ def create_billing_order(
             detail="Free plans do not require payment. Use POST /subscriptions/subscribe instead.",
         )
 
-    from services.razorpay_service import create_razorpay_order
+    try:
+        from services.razorpay_service import create_razorpay_order
+        order = create_razorpay_order(plan, current_user)
+    except (RuntimeError, ImportError) as exc:
+        # Razorpay keys / SDK not configured on this environment.
+        logger.error("Razorpay not configured: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Online payments are not available right now. Please try again later.",
+        )
+    except Exception:
+        logger.exception("Razorpay order creation failed")
+        raise HTTPException(
+            status_code=502,
+            detail="Could not create the payment order. Please try again.",
+        )
 
-    order = create_razorpay_order(plan, current_user)
     return {
         "order_id": order["id"],
         "amount": order["amount"],
@@ -249,9 +263,17 @@ def verify_payment(
     db: Session = Depends(get_db),
 ) -> dict:
     """Verify the Razorpay signature and activate the subscription."""
-    from services.razorpay_service import verify_payment_signature
+    try:
+        from services.razorpay_service import verify_payment_signature
+        valid = verify_payment_signature(body.order_id, body.payment_id, body.signature)
+    except (RuntimeError, ImportError) as exc:
+        logger.error("Razorpay not configured: %s", exc)
+        raise HTTPException(
+            status_code=503,
+            detail="Online payments are not available right now. Please try again later.",
+        )
 
-    if not verify_payment_signature(body.order_id, body.payment_id, body.signature):
+    if not valid:
         raise HTTPException(status_code=400, detail="Payment signature verification failed")
 
     plan = _resolve_purchasable_plan(body.plan_key, current_user, db)
