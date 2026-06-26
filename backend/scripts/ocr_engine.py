@@ -1,11 +1,13 @@
 """
 Cricket Highlight Generator - OCR-Based Event Detection
 
-Detects Fours, Sixes, and Wickets by reading on-screen scoreboard using EasyOCR.
-Outputs individual clips and a supercut highlight reel via FFmpeg.
+Detects Fours, Sixes, and Wickets by reading on-screen scoreboard using
+RapidOCR (onnxruntime backend).  ONNX model weights are loaded from a GCS
+bucket at startup when GCS_MODEL_BUCKET is set; otherwise the models bundled
+inside the rapidocr-onnxruntime package are used automatically.
 
 Usage:
-    python ocr_engine.py --video-path "match.mp4" --gpu
+    python ocr_engine.py --video-path "match.mp4"
     python ocr_engine.py --video-path "match.mp4" --visualize --timestamp 5900
 """
 
@@ -26,12 +28,75 @@ from typing import Iterator, List, Dict, Optional, Tuple
 from collections import deque
 
 try:
-    import easyocr
+    from rapidocr_onnxruntime import RapidOCR as _RapidOCR
 except ImportError:
-    raise ImportError("EasyOCR required. Install with: pip install easyocr")
+    raise ImportError(
+        "rapidocr-onnxruntime required. Install with: pip install rapidocr-onnxruntime"
+    )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+class _EasyOCRCompat:
+    """
+    Thin wrapper around rapidocr_onnxruntime.RapidOCR that exposes the same
+    readtext() interface the rest of this module was written against.
+
+    EasyOCR result format (detail=1):
+        [(bbox_4pt, text, confidence), ...]
+    where bbox_4pt == [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
+
+    RapidOCR returns the identical layout, so the shim only needs to handle:
+      - detail=0 mode (text-only list)
+      - allowlist filtering (post-OCR character whitelist)
+      - None result when no text is detected
+    """
+
+    def __init__(self, engine: _RapidOCR) -> None:
+        self._engine = engine
+
+    def readtext(
+        self,
+        image,
+        detail: int = 1,
+        paragraph: bool = False,
+        allowlist: "str | None" = None,
+    ) -> list:
+        result, _ = self._engine(image)
+        if not result:
+            return []
+
+        # Post-OCR allowlist: keep only characters present in the whitelist set
+        if allowlist:
+            allowed = set(allowlist)
+            filtered = []
+            for bbox, text, conf in result:
+                text = "".join(c for c in text if c in allowed)
+                if text.strip():
+                    filtered.append((bbox, text, conf))
+            result = filtered
+
+        if detail == 0:
+            return [text for _, text, _ in result]
+
+        # detail=1: return as (bbox, text, confidence) — matches EasyOCR output
+        return [(bbox, text, conf) for bbox, text, conf in result]
+
+
+def _build_ocr_reader() -> _EasyOCRCompat:
+    """Instantiate a RapidOCR engine, optionally loading GCS-hosted ONNX weights."""
+    from services.model_loader import get_ocr_model_paths
+    det_path, rec_path = get_ocr_model_paths()
+    kwargs = {}
+    if det_path:
+        kwargs["det_model_path"] = det_path
+    if rec_path:
+        kwargs["rec_model_path"] = rec_path
+    engine = _RapidOCR(**kwargs)
+    logger.info("RapidOCR (onnxruntime) initialised — det=%s rec=%s",
+                det_path or "bundled", rec_path or "bundled")
+    return _EasyOCRCompat(engine)
 
 # OPTIMIZATION CLASSES - Added for Performance ImprovementS
 class VideoPreprocessor:
@@ -835,8 +900,7 @@ class OCRScoreReader:
     
     def __init__(self, config: ScoreboardConfig, use_gpu: bool = False):
         self.config = config
-        self.reader = easyocr.Reader(['en'], gpu=use_gpu)
-        logger.info(f"EasyOCR initialized (GPU: {use_gpu})")
+        self.reader = _build_ocr_reader()
 
     def _preprocess(self, roi) -> any:
         """Preprocessing pipeline: grayscale -> upscale -> blur -> CLAHE -> OTSU -> invert -> morph."""
@@ -1368,7 +1432,7 @@ def auto_calibrate_roi(video_path: str, sample_timestamps: List[float] = None, u
     logger.info(f"Sampling {len(sample_timestamps)} frames...")
     
     # Initialize OCR reader
-    reader = easyocr.Reader(['en'], gpu=use_gpu)
+    reader = _build_ocr_reader()
     
     # Score pattern: digits followed by / followed by 1-2 digits (e.g., "145/3", "23/0")
     score_pattern = re.compile(r'^\d{1,3}[/\\|]\d{1,2}$')

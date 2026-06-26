@@ -17,6 +17,7 @@ from pathlib import Path
 from datetime import datetime
 import logging
 import shutil
+import tempfile
 import time
 import uuid
 import os
@@ -145,7 +146,9 @@ def get_engine_functions():
 router = APIRouter(prefix="/videos", tags=["videos"])
 
 # ============ Storage Configuration ============
-UPLOAD_DIR = Path("storage/uploads")
+# Cloud Run is stateless — write to /tmp/ (tmpfs). Local dev uses storage/.
+_USE_TMP = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
+UPLOAD_DIR = Path(tempfile.gettempdir()) / "uploads" if _USE_TMP else Path("storage/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 # Shared constraints for file uploads
