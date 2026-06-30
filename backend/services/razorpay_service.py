@@ -26,7 +26,7 @@ def _client():
     return razorpay.Client(auth=(key_id, key_secret))
 
 
-def create_razorpay_order(plan: "PlanConfig", user: "User") -> dict:
+def create_razorpay_order(plan: "Plan", user: "User") -> dict:
     """
     Create a Razorpay order for a subscription plan purchase.
 
@@ -37,9 +37,9 @@ def create_razorpay_order(plan: "PlanConfig", user: "User") -> dict:
     order = client.order.create({
         "amount": plan.price_inr,  # already in paise
         "currency": "INR",
-        "receipt": f"sub_{user.id[:8]}_{plan.plan_key}",
+        "receipt": f"sub_{user.id[:8]}_{plan.key}",
         "notes": {
-            "plan_key": plan.plan_key,
+            "plan_key": plan.key,
             "user_id": user.id,
         },
     })
