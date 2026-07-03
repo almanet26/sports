@@ -9,6 +9,7 @@ import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { requestsApi } from '../lib/api';
 import { useAuthStore } from '../store/authStore';
+import { useToastStore } from '../store/toastStore';
 
 interface MatchRequest {
   id: string;
@@ -25,6 +26,7 @@ interface MatchRequest {
 
 export default function RequestsPage() {
   const { user } = useAuthStore();
+  const pushToast = useToastStore((s) => s.pushToast);
   const [requests, setRequests] = useState<MatchRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -64,9 +66,12 @@ export default function RequestsPage() {
       await requestsApi.create(formData);
       setFormData({ youtube_url: '', match_title: '', match_description: '' });
       setShowForm(false);
+      pushToast('Match request submitted successfully!', 'success');
       fetchRequests();
-    } catch (error) {
-      console.error('Failed to submit request:', error);
+    } catch (err: unknown) {
+      console.error('Failed to submit request:', err);
+      const error = err as { response?: { data?: { detail?: string } } };
+      pushToast(error.response?.data?.detail || 'Failed to submit request. Please try again.', 'error');
     } finally {
       setSubmitting(false);
     }

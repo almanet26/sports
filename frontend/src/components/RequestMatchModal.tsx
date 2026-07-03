@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { X, Loader2, Link2, Calendar, FileText } from 'lucide-react';
 import { requestsApi } from '../lib/api';
+import { useToastStore } from '../store/toastStore';
 
 interface RequestMatchModalProps {
   isOpen: boolean;
@@ -16,6 +17,7 @@ export default function RequestMatchModal({ isOpen, onClose, onSuccess }: Reques
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pushToast = useToastStore((s) => s.pushToast);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +45,7 @@ export default function RequestMatchModal({ isOpen, onClose, onSuccess }: Reques
       
       // Reset form and close
       setFormData({ youtube_url: '', match_title: '', match_description: '' });
+      pushToast('Match request submitted successfully!', 'success');
       onSuccess();
     } catch (err: unknown) {
       const error = err as { response?: { data?: { detail?: string } } };
