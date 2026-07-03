@@ -18,6 +18,7 @@ export {
   FEATURE_MAP,
   PLAN_DISPLAY_CONFIG,
   PLANS_FULL_CONFIG,
+  getNextTier,
 } from './subscriptionPlans';
 
 import { FEATURE_MAP, type AccountType, type FeatureKey, type Tier } from './subscriptionPlans';
@@ -32,7 +33,7 @@ const BRONZE_FEATURES = [
 ];
 
 const SILVER_FEATURES = [
-  ...BRONZE_FEATURES,
+  ...BRONZE_FEATURES.filter((f) => !f.includes('3 Biomechanical')),
   '15 Biomechanical Analyses / month',
   '5 Coach Submissions / month',
   'Ad-free experience',

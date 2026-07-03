@@ -2,6 +2,8 @@ import React, { useCallback, useRef, useState, useEffect } from "react";
 import { battingApi, cloudUploadAndProcess, pollSubmissionResult, resolveMediaUrl, reportDownloadUrl, type SubmissionDetail } from "../../lib/api";
 import { useSubscriptionStore } from "../../stores/authStore";
 import UpgradePrompt from "../gates/UpgradePrompt";
+import QuotaExhaustedNotice from "../gates/QuotaExhaustedNotice";
+import { getNextTier } from "../../types/plans";
 import { Card, CardContent, CardHeader, CardTitle } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { Progress } from "../ui/Progress";
@@ -266,6 +268,7 @@ const BattingAnalysis: React.FC = () => {
 
   const acceptedTypes = ".mp4,.mov,.avi";
   const biomechUsage = useSubscriptionStore((s) => s.quotaUsage.biomech);
+  const subscriptionTier = useSubscriptionStore((s) => s.subscriptionTier);
 
   // Fetch history on mount & after new analysis
   useEffect(() => {
@@ -355,8 +358,12 @@ const BattingAnalysis: React.FC = () => {
     if (fileRef.current) fileRef.current.value = "";
   }, []);
 
-  if (biomechUsage.limit > 0 && biomechUsage.used >= biomechUsage.limit) {
-    return <UpgradePrompt requiredTier="silver" />;
+  // Only block starting a *new* analysis once quota is exhausted — an analysis already in flight (or just completed) must be allowed to finish and render, even if refreshQuota() now reports the limit reached.
+  if (phase === "idle" && biomechUsage.limit > 0 && biomechUsage.used >= biomechUsage.limit) {
+    const nextTier = getNextTier(subscriptionTier);
+    return nextTier
+      ? <UpgradePrompt requiredTier={nextTier} />
+      : <QuotaExhaustedNotice limit={biomechUsage.limit} />;
   }
 
 

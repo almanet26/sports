@@ -18,6 +18,15 @@ export const TIER_HIERARCHY: Record<Tier, number> = {
   coach_platinum: 3,
 };
 
+// The next paid tier up from `currentTier`, staying on the same track (player: bronze → silver → gold; coach: coach_basic → coach_platinum). Returns null once already on the top tier of that track.
+export function getNextTier(currentTier: Tier): Tier | null {
+  const track = PLAN_DISPLAY_CONFIG[currentTier].account_type;
+  const higher = (Object.keys(PLAN_DISPLAY_CONFIG) as Tier[])
+    .filter((t) => PLAN_DISPLAY_CONFIG[t].account_type === track && TIER_HIERARCHY[t] > TIER_HIERARCHY[currentTier])
+    .sort((a, b) => TIER_HIERARCHY[a] - TIER_HIERARCHY[b]);
+  return higher[0] ?? null;
+}
+
 export type FeatureKey =
   // Player features
   | 'biomechanics_analysis'
