@@ -17,6 +17,7 @@ import pandas as pd
 
 from database.config import get_db
 from database.crud.bowling import create_bowling_analysis, get_analysis_by_id, list_analyses_for_player
+from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.user import User
 from schemas.bowling import (
     BowlingAnalysisResponse,
@@ -184,6 +185,14 @@ async def analyze_bowling(
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+def _find_summary_stat(summary: dict, needle: str, stat: str) -> float | None:
+    """Look up a MediaPipe summary stat (e.g. 'mean', 'std') by case-insensitive substring match on the metric label."""
+    for key, stats in summary.items():
+        if needle in key.lower():
+            return stats.get(stat)
+    return None
+
+
 @router.get("/history", response_model=BowlingAnalysisListResponse)
 def get_bowling_history(
     limit: int = Query(20, ge=1, le=100),
@@ -191,23 +200,52 @@ def get_bowling_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List the current player's past bowling analyses (newest first)."""
-    analyses, total = list_analyses_for_player(
-        db, current_user.id, limit=limit, offset=offset
+    """
+    List the current player's past bowling analyses (newest first).
+
+    Merges two sources: the legacy `bowling_analyses` table (written by the
+    old synchronous /bowling/analyze endpoint) and `video_submissions`
+    (written by the current cloudUploadAndProcess + Cloud Tasks pipeline).
+    """
+    legacy_results, _ = list_analyses_for_player(db, current_user.id, limit=1000, offset=0)
+    legacy_items = [
+        BowlingAnalysisSummary(
+            id=a.id,
+            original_filename=a.original_filename,
+            avg_elbow_angle=a.avg_elbow_angle,
+            release_consistency=a.release_consistency,
+            report_url=a.report_url,
+            created_at=a.created_at,
+        )
+        for a in legacy_results
+    ]
+
+    submissions = (
+        db.query(VideoSubmission)
+        .filter(
+            VideoSubmission.player_id == current_user.id,
+            VideoSubmission.analysis_type == "BOWLING",
+            VideoSubmission.status.in_([SubmissionStatus.DRAFT_REVIEW, SubmissionStatus.PUBLISHED]),
+        )
+        .all()
     )
+    submission_items = [
+        BowlingAnalysisSummary(
+            id=sub.id,
+            original_filename=sub.original_filename,
+            avg_elbow_angle=_find_summary_stat((sub.raw_biometrics or {}).get("summary", {}), "elbow", "mean"),
+            release_consistency=_find_summary_stat((sub.raw_biometrics or {}).get("summary", {}), "release", "std")
+            or _find_summary_stat((sub.raw_biometrics or {}).get("summary", {}), "wrist", "std"),
+            report_url=sub.pdf_report_url,
+            created_at=sub.created_at,
+        )
+        for sub in submissions
+    ]
+
+    combined = sorted(legacy_items + submission_items, key=lambda item: item.created_at, reverse=True)
     return BowlingAnalysisListResponse(
-        analyses=[
-            BowlingAnalysisSummary(
-                id=a.id,
-                original_filename=a.original_filename,
-                avg_elbow_angle=a.avg_elbow_angle,
-                release_consistency=a.release_consistency,
-                report_url=a.report_url,
-                created_at=a.created_at,
-            )
-            for a in analyses
-        ],
-        total=total,
+        analyses=combined[offset: offset + limit],
+        total=len(combined),
     )
 
 
