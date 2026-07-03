@@ -9,7 +9,6 @@ interface Player {
   email: string;
   submissions: number;
   lastActive: string;
-  type: string;
 }
 
 export default function CoachMyPlayersPage() {
@@ -17,30 +16,22 @@ export default function CoachMyPlayersPage() {
   const [players, setPlayers] = useState<Player[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [weekAgoStr] = useState(() => new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
 
   const glass = theme === 'dark' ? 'glass border-white/20' : 'bg-white border-gray-200 shadow-lg';
   const cardBg = theme === 'dark' ? 'glass border-white/10' : 'bg-gray-50 border-gray-200';
   const sub = theme === 'dark' ? 'text-white/60' : 'text-gray-500';
 
   useEffect(() => {
-    submissionsApi.coachInbox().then(r => {
-      // Deduplicate players from submissions
-      const map = new Map<string, Player>();
-      r.data.submissions.forEach((s) => {
-        if (!map.has(s.player_id)) {
-          map.set(s.player_id, {
-            id: s.player_id,
-            name: s.player_name || 'Unknown Player',
-            email: '',
-            submissions: 1,
-            lastActive: s.created_at?.slice(0, 10) || '',
-            type: s.analysis_type,
-          });
-        } else {
-          map.get(s.player_id)!.submissions += 1;
-        }
-      });
-      setPlayers(Array.from(map.values()));
+    // Roster is sourced from ALL submissions ever received (any status), so a player stays listed here even after their report is published — unlike coachInbox(), which only surfaces submissions still needing action.
+    submissionsApi.coachAthletes().then(r => {
+      setPlayers(r.data.athletes.map((a) => ({
+        id: a.id,
+        name: a.name || 'Unknown Player',
+        email: a.email || '',
+        submissions: a.total_submissions,
+        lastActive: (a.last_active_at || a.joined_at)?.slice(0, 10) || '',
+      })));
     }).catch(() => setPlayers([])).finally(() => setLoading(false));
   }, []);
 
@@ -72,7 +63,7 @@ export default function CoachMyPlayersPage() {
           {[
             { label: 'Total Players', value: players.length, icon: 'fas fa-users', color: 'from-blue-500 to-cyan-500' },
             { label: 'Total Submissions', value: players.reduce((a, p) => a + p.submissions, 0), icon: 'fas fa-video', color: 'from-purple-500 to-pink-500' },
-            { label: 'Active This Week', value: players.filter(p => p.lastActive >= new Date(Date.now() - 7*86400000).toISOString().slice(0,10)).length, icon: 'fas fa-fire', color: 'from-orange-500 to-red-500' },
+            { label: 'Active This Week', value: players.filter(p => p.lastActive >= weekAgoStr).length, icon: 'fas fa-fire', color: 'from-orange-500 to-red-500' },
           ].map(s => (
             <div key={s.label} className={`rounded-2xl border p-4 ${cardBg}`}>
               <div className={`w-9 h-9 rounded-xl bg-gradient-to-r ${s.color} flex items-center justify-center mb-2`}>
@@ -107,15 +98,10 @@ export default function CoachMyPlayersPage() {
                   <p className={`text-xs truncate ${sub}`}>{player.email || 'Player'}</p>
                 </div>
               </div>
-              <div className={`flex items-center gap-4 text-xs ${sub} mb-4`}>
+              <div className={`flex items-center gap-4 text-xs ${sub}`}>
                 <span><i className="fas fa-video mr-1"></i>{player.submissions} submissions</span>
                 <span><i className="fas fa-calendar mr-1"></i>{player.lastActive || 'N/A'}</span>
               </div>
-              <span className={`text-xs px-2 py-0.5 rounded-full border ${
-                player.type === 'BATTING'
-                  ? 'bg-blue-500/20 text-blue-400 border-blue-500/30'
-                  : 'bg-green-500/20 text-green-400 border-green-500/30'
-              }`}>{player.type}</span>
             </motion.div>
           ))}
         </div>

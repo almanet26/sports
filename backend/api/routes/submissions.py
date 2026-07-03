@@ -869,7 +869,8 @@ async def player_upload(
     coach_id: str = Form(...),
     analysis_type: str = Form("BATTING"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature("player_submission")),
+    _quota: tuple = Depends(quota_check("player_submission")),
 ):
     """
     Player uploads a video and selects a coach.
@@ -929,6 +930,15 @@ async def player_upload(
         analysis_type=analysis_type,
     )
 
+    charged = increment_usage_atomic(
+        current_user.id, "submission_count", "max_submissions_per_month", 1, db
+    )
+    if not charged:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached (concurrent request)."},
+        )
+
     logger.info(
         "Submission %s created: player=%s coach=%s type=%s",
         sub.id, current_user.id, coach_id, analysis_type,
@@ -943,7 +953,8 @@ def player_submit_existing_video(
     coach_id: str = Form(...),
     analysis_type: str = Form("BATTING"),
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(require_feature("player_submission")),
+    _quota: tuple = Depends(quota_check("player_submission")),
 ):
     """
     Player submits an already-uploaded private gallery video to a coach.
@@ -986,6 +997,15 @@ def player_submit_existing_video(
         video_url=video_url,
         analysis_type=analysis_type,
     )
+
+    charged = increment_usage_atomic(
+        current_user.id, "submission_count", "max_submissions_per_month", 1, db
+    )
+    if not charged:
+        raise HTTPException(
+            status_code=429,
+            detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached (concurrent request)."},
+        )
 
     logger.info(
         "Submission %s created from existing video: player=%s video=%s coach=%s type=%s",
@@ -1160,17 +1180,61 @@ def coach_inbox(
     )
 
 
+#  COACH: My Players (full roster, all statuses)
+@router.get("/coach/athletes")
+def coach_athletes(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Coach's full player roster, derived from every submission ever received.
+
+    Unlike /coach/me (the working inbox, which only surfaces PENDING/PROCESSING/DRAFT_REVIEW), this intentionally does NOT filter by status — a player must stay listed after their report is PUBLISHED, since "My Players" tracks who has ever submitted to this coach, not what's currently pending review.
+    """
+    if current_user.role not in ("COACH", "ADMIN"):
+        raise HTTPException(status_code=403, detail="Only coaches can access this endpoint.")
+
+    rows = (
+        db.query(VideoSubmission)
+        .filter(VideoSubmission.coach_id == current_user.id)
+        .order_by(VideoSubmission.created_at.asc())
+        .all()
+    )
+
+    by_player: dict[str, dict] = {}
+    for sub in rows:
+        # Rows are ordered oldest → newest, so `joined_at` (set once, on first sight) and `last_active_at` (overwritten every time) both fall out of this single ascending pass.
+        entry = by_player.setdefault(sub.player_id, {
+            "id": sub.player_id,
+            "name": sub.player.name if sub.player else "Unknown Player",
+            "email": sub.player.email if sub.player else "",
+            "team": None,
+            "total_submissions": 0,
+            "published_reports": 0,
+            "joined_at": sub.created_at.isoformat() if sub.created_at else None,
+        })
+        entry["total_submissions"] += 1
+        entry["last_active_at"] = sub.created_at.isoformat() if sub.created_at else None
+        if sub.status == SubmissionStatus.PUBLISHED:
+            entry["published_reports"] += 1
+
+    return {"athletes": list(by_player.values())}
+
+
 #  COACH: Run AI Analysis
 @router.post("/{submission_id}/analyze", response_model=SubmissionDetail)
 def coach_run_analysis(
     submission_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _quota: tuple = Depends(quota_check("player_submission")),
 ):
     """
     Coach triggers AI analysis.
     PENDING or PROCESSING → PROCESSING → DRAFT_REVIEW
     PROCESSING is allowed so coaches can retry stuck submissions.
+
+    Charges the coach's monthly "player_submission" allowance once, on the first successful analysis of a given submission — Coach Basic is capped at 5/month, Coach Platinum at 100/month.
     """
     if current_user.role not in ("COACH", "ADMIN"):
         raise HTTPException(status_code=403, detail="Only coaches can run analysis.")
@@ -1222,7 +1286,16 @@ def coach_run_analysis(
             annotated_video_url=annotated_video_url,
             key_frame_url=key_frame_url,
         )
-        
+
+        charged = increment_usage_atomic(
+            current_user.id, "submission_count", "max_submissions_per_month", 1, db
+        )
+        if not charged:
+            raise HTTPException(
+                status_code=429,
+                detail={"error": "quota_exceeded", "reason": "Monthly submission limit reached (concurrent request)."},
+            )
+
         # Notify player that analysis is complete
         try:
             from api.routes.notification import create_notification
@@ -1239,6 +1312,9 @@ def coach_run_analysis(
         logger.info("Analysis complete for submission %s → DRAFT_REVIEW", sub.id)
         return _to_detail(sub)
 
+    except HTTPException:
+        # Quota-exceeded (429) etc. — analysis results are already saved (DRAFT_REVIEW); only the quota charge failed, so don't roll the submission back to PENDING.
+        raise
     except Exception as e:
         # Roll back to PENDING on failure so coach can retry
         sub.status = SubmissionStatus.PENDING
