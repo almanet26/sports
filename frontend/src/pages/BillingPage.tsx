@@ -100,7 +100,6 @@ export default function BillingPage() {
   const colCount     = visiblePlans.length + 1; // +1 for the label column
 
   const planDisplay  = PLAN_DISPLAY_CONFIG[subscriptionTier];
-  const isPlayerTier = accountType === 'PLAYER';
   const isForeverTier = subscriptionTier === 'bronze' || subscriptionTier === 'coach_basic';
 
   const daysRemaining = !isForeverTier && expiresAt
@@ -239,20 +238,20 @@ export default function BillingPage() {
           used={safeQuotaUsage.biomech.used}
           limit={safeQuotaUsage.biomech.limit}
         />
-        {!isPlayerTier && (
-          <>
-            <UsageBar
-              label="OCR match hours"
-              used={safeQuotaUsage.ocr_hours.used}
-              limit={safeQuotaUsage.ocr_hours.limit}
-            />
-            <UsageBar
-              label="Player submissions"
-              used={safeQuotaUsage.submissions.used}
-              limit={safeQuotaUsage.submissions.limit}
-            />
-          </>
+        {/* OCR match hours is a coach-only quota (ocr_highlights is only ever entitled to coach_basic/coach_platinum) — gate strictly on COACH, not merely "not a player". */}
+        {accountType === 'COACH' && (
+          <UsageBar
+            label="OCR match hours"
+            used={safeQuotaUsage.ocr_hours.used}
+            limit={safeQuotaUsage.ocr_hours.limit}
+          />
         )}
+        {/* Player submissions is metered for BOTH sides (players submitting to a coach, coaches reviewing player submissions) — must render for players too, not just coaches. UsageBar already self-hides when limit === 0 (e.g. Bronze players). */}
+        <UsageBar
+          label="Player submissions"
+          used={safeQuotaUsage.submissions.used}
+          limit={safeQuotaUsage.submissions.limit}
+        />
       </div>
 
       {/* ── Plan comparison table ────────────────────────────────────────── */}
