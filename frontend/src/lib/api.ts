@@ -494,6 +494,7 @@ export interface VideoAnnotation {
 export interface CoachAthlete {
   id: string; name: string; email: string; team?: string;
   total_submissions: number; published_reports: number; joined_at?: string;
+  last_active_at?: string;
 }
 
 export interface PlayerProgress {
