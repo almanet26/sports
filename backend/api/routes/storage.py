@@ -31,8 +31,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from database.config import get_db
-from dependencies.quota_gate import increment_usage
-from dependencies.quota_gate import quota_check
+from dependencies.quota_gate import increment_usage, increment_usage_atomic, quota_check
+from services.ocr_task import resolve_video_source, probe_video_duration_seconds
 from database.models.user import User
 from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.video import Video, HighlightJob, VideoVisibility, VideoStatus
@@ -699,6 +699,40 @@ def start_processing(
         local_video_exists = _resolve_local_upload_path(sub.video_url).exists()
     except HTTPException:
         local_video_exists = False
+
+    # OCR match-hours quota — metered by the video's actual length, not "1 upload = 1 unit". ADMIN is unlimited by design and skips this entirely. For COACH, the video's full duration must fit within their remaining monthly hours; a video that would exceed the remaining quota is rejected outright before any processing is dispatched, never partially run.
+    if (sub.analysis_type or "").upper() == "FULL_MATCH" and current_user.role != "ADMIN":
+        probe_source = str(_resolve_local_upload_path(sub.video_url)) if local_video_exists else sub.video_url
+        resolved_source, _ = resolve_video_source(probe_source)
+        duration_seconds = probe_video_duration_seconds(resolved_source)
+        if duration_seconds is None:
+            raise HTTPException(
+                status_code=422,
+                detail="Could not determine video duration — file may be corrupt or unreadable.",
+            )
+
+        # Persist the source duration on the library Video row now, while it's known, so the existing OCR-hours refund path (worker.py) can reverse this exact reservation if processing later fails.
+        library_video, _ = _ensure_library_video_entry(db, sub)
+        if not library_video.duration_seconds:
+            library_video.duration_seconds = duration_seconds
+            db.commit()
+
+        estimated_hours = duration_seconds / 3600.0
+        charged = increment_usage_atomic(
+            current_user.id, "ocr_hours_used", "max_ocr_hours_per_month", estimated_hours, db
+        )
+        if not charged:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "quota_exceeded",
+                    "reason": "This video's length exceeds your remaining monthly OCR hours.",
+                },
+            )
+        logger.info(
+            "Reserved %.4f OCR hours for user=%s submission=%s (duration=%ss)",
+            estimated_hours, current_user.id, sub.id, duration_seconds,
+        )
 
     if local_video_exists:
         sub.status = SubmissionStatus.PROCESSING

@@ -34,6 +34,7 @@ const dashboardItems: Record<string, NavItem[]> = {
     { to: "/player/batting", icon: "fas fa-baseball-bat-ball", label: "Batting" },
     { to: "/player/submissions", icon: "fas fa-paper-plane", label: "Submissions" },
     { to: "/player/my-coaches", icon: "fas fa-chalkboard-teacher", label: "My Coaches" },
+    { to: "/player/messages", icon: "fas fa-comments", label: "Messages" },
     { to: "/player/subscription", icon: "fas fa-star", label: "Subscription" },
     { to: "/browse-content", icon: "fas fa-graduation-cap", label: "Learning Hub" },
     { to: "/chat", icon: "fas fa-robot", label: "AI Chat" },
@@ -45,6 +46,7 @@ const dashboardItems: Record<string, NavItem[]> = {
   ],
   COACH: [
     { to: '/coach', icon: 'fas fa-home', label: 'Dashboard' },
+    { to: '/coach/upload', icon: 'fas fa-cloud-upload-alt', label: 'Upload' },
     { to: '/coach/profile', icon: 'fas fa-user-circle', label: 'My Profile' },
     { to: '/coach/players', icon: 'fas fa-users', label: 'My Players' },
     { to: '/coach/submissions', icon: 'fas fa-inbox', label: 'Video Reviews' },
