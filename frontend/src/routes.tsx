@@ -250,6 +250,7 @@ export default function AppRouter() {
               <Route path="/player/batting" element={<BattingAnalysisPage />} />
               <Route path="/player/submissions" element={<PlayerSubmissionsPage />} />
               <Route path="/player/my-coaches" element={<PlayerMyCoachesPage />} />
+              <Route path="/player/messages" element={<CoachMessagesPage />} />
               <Route path="/player/subscription" element={<SubscriptionPage />} />
 
               <Route path="/player/settings" element={<PlayerSettingsPage />} />

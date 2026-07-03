@@ -78,7 +78,7 @@ def _generate_gcs_read_url(blob_name: str, hours: int = 6) -> str:
     )
 
 
-def _resolve_video_source(video_path: str) -> tuple[str, bool]:
+def resolve_video_source(video_path: str) -> tuple[str, bool]:
     """Resolve a processable source and whether it should use streaming mode."""
     if Path(video_path).exists():
         return video_path, False
@@ -114,7 +114,7 @@ def _store_supercut(video_id: str, local_supercut_path: str) -> str:
     return f"/static/highlights/{filename}"
 
 
-def _probe_video_duration_seconds(video_path: str) -> Optional[int]:
+def probe_video_duration_seconds(video_path: str) -> Optional[int]:
     """Return rounded media duration in seconds using ffprobe."""
     cmd = [
         "ffprobe",
@@ -245,7 +245,7 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
                 ocr_config.start_time = config['start_time']
         
         # Run OCR detection - choose best mode based on source type
-        video_source, use_streaming = _resolve_video_source(video.file_path)
+        video_source, use_streaming = resolve_video_source(video.file_path)
         
         # Check if parallel optimization is enabled (default: True for large videos)
         use_parallel = config.get('use_parallel', True) if config else True
@@ -340,7 +340,7 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
                 supercut_tmp = Path(work_dir) / f"{video_id}_highlights.mp4"
                 supercut_local = create_supercut(clips, str(supercut_tmp))
                 if supercut_local:
-                    supercut_duration_seconds = _probe_video_duration_seconds(supercut_local)
+                    supercut_duration_seconds = probe_video_duration_seconds(supercut_local)
                     supercut_path = _store_supercut(video_id, supercut_local)
         
         job.progress_percent = 80
