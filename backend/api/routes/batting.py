@@ -21,6 +21,7 @@ from database.crud.batting import (
     get_batting_analysis_by_id,
     list_batting_analyses_for_player,
 )
+from database.models.submission import VideoSubmission, SubmissionStatus
 from database.models.user import User
 from schemas.batting import (
     BattingAnalysisResponse,
@@ -228,6 +229,14 @@ async def analyze_batting(
         raise HTTPException(status_code=500, detail=error_msg)
 
 
+def _find_summary_metric(summary: dict, needle: str) -> float | None:
+    """Look up a MediaPipe summary stat by case-insensitive substring match on the metric label."""
+    for key, stats in summary.items():
+        if needle in key.lower():
+            return stats.get("mean")
+    return None
+
+
 # GET /batting/history
 @router.get("/history", response_model=BattingAnalysisListResponse)
 def get_batting_history(
@@ -236,24 +245,53 @@ def get_batting_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """List current user's past batting analyses (newest first)."""
-    results, total = list_batting_analyses_for_player(
-        db, current_user.id, limit=limit, offset=offset
+    """
+    List current user's past batting analyses (newest first).
+
+    Merges two sources: the legacy `batting_analyses` table (written by the
+    old synchronous /batting/analyze endpoint) and `video_submissions`
+    (written by the current cloudUploadAndProcess + Cloud Tasks pipeline).
+    """
+    legacy_results, _ = list_batting_analyses_for_player(db, current_user.id, limit=1000, offset=0)
+    legacy_items = [
+        BattingAnalysisSummary(
+            id=a.id,
+            original_filename=a.original_filename,
+            avg_head_alignment=a.avg_head_alignment,
+            avg_stride_length=a.avg_stride_length,
+            avg_front_knee_angle=a.avg_front_knee_angle,
+            report_url=a.report_url,
+            created_at=a.created_at,
+        )
+        for a in legacy_results
+    ]
+
+    submissions = (
+        db.query(VideoSubmission)
+        .filter(
+            VideoSubmission.player_id == current_user.id,
+            VideoSubmission.analysis_type == "BATTING",
+            VideoSubmission.status.in_([SubmissionStatus.DRAFT_REVIEW, SubmissionStatus.PUBLISHED]),
+        )
+        .all()
     )
+    submission_items = [
+        BattingAnalysisSummary(
+            id=sub.id,
+            original_filename=sub.original_filename,
+            avg_head_alignment=_find_summary_metric((sub.raw_biometrics or {}).get("summary", {}), "head"),
+            avg_stride_length=_find_summary_metric((sub.raw_biometrics or {}).get("summary", {}), "stride"),
+            avg_front_knee_angle=_find_summary_metric((sub.raw_biometrics or {}).get("summary", {}), "knee"),
+            report_url=sub.pdf_report_url,
+            created_at=sub.created_at,
+        )
+        for sub in submissions
+    ]
+
+    combined = sorted(legacy_items + submission_items, key=lambda item: item.created_at, reverse=True)
     return BattingAnalysisListResponse(
-        analyses=[
-            BattingAnalysisSummary(
-                id=a.id,
-                original_filename=a.original_filename,
-                avg_head_alignment=a.avg_head_alignment,
-                avg_stride_length=a.avg_stride_length,
-                avg_front_knee_angle=a.avg_front_knee_angle,
-                report_url=a.report_url,
-                created_at=a.created_at,
-            )
-            for a in results
-        ],
-        total=total,
+        analyses=combined[offset: offset + limit],
+        total=len(combined),
     )
 
 
