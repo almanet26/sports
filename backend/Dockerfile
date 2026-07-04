@@ -40,6 +40,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libgomp1 \
+    libxext6 \
+    libxrender-dev \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
