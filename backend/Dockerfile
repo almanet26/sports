@@ -41,10 +41,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsm6 \
     libgomp1 \
     libxext6 \
-    libxrender-dev \
-    libgl1-mesa-glx \
-    libxcb1 \
-    libxkbcommon0 \
+    libxrender1 \
+    libglvnd0 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
