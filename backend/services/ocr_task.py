@@ -26,6 +26,10 @@ logger = logging.getLogger(__name__)
 
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "")
 
+# Mirrors LOCAL_UPLOAD_ROOT in api/routes/storage.py — duplicated here (rather than imported) to avoid a circular import, since storage.py imports from this module.
+_USE_TMP = os.getenv("CLOUD_RUN", "").lower() in ("1", "true", "yes")
+LOCAL_UPLOAD_ROOT = Path(tempfile.gettempdir()) / "uploads" if _USE_TMP else Path("storage/uploads")
+
 _gcs_bucket = None
 try:
     from google.cloud import storage as gcs
@@ -82,6 +86,10 @@ def resolve_video_source(video_path: str) -> tuple[str, bool]:
     """Resolve a processable source and whether it should use streaming mode."""
     if Path(video_path).exists():
         return video_path, False
+
+    local_candidate = LOCAL_UPLOAD_ROOT / video_path
+    if local_candidate.exists():
+        return str(local_candidate), False
 
     blob_name = _extract_gcs_blob_name(video_path)
     if blob_name and _gcs_bucket is not None:

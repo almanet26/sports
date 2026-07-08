@@ -345,8 +345,9 @@ class FrameChangeDetector:
             self.last_roi_hist = None
             return True
         
-        # Calculate histogram for comparison
-        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        # Calculate histogram for comparison (roi from extract_score_roi is already
+        # single-channel — it's the preprocessed binary image, not a raw BGR crop)
+        gray = roi if roi.ndim == 2 or roi.shape[2] == 1 else cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
         hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
         cv2.normalize(hist, hist)
         

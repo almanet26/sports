@@ -13,9 +13,11 @@ Environment Variables Required:
   GOOGLE_APPLICATION_CREDENTIALS — Path to service-account JSON key file (OR use Workload Identity on Cloud Run)
 """
 
+import json
 import logging
 import asyncio
 import os
+import re
 import tempfile
 import threading
 import uuid
@@ -25,7 +27,7 @@ from pathlib import Path
 
 import google.auth
 import google.auth.transport.requests
-from fastapi import APIRouter, HTTPException, Depends, Query, Request
+from fastapi import APIRouter, HTTPException, Depends, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -115,6 +117,13 @@ def _build_local_upload_url(request: Request, blob_name: str) -> str:
     encoded_blob = urllib.parse.quote(blob_name, safe="/")
     base = str(request.base_url).rstrip("/")
     return f"{base}/api/v1/storage/local-upload/{encoded_blob}"
+
+
+def _build_local_resumable_url(request: Request, blob_name: str) -> str:
+    """Build a local chunked-PUT URL mimicking GCS resumable uploads when GCS signing is unavailable."""
+    encoded_blob = urllib.parse.quote(blob_name, safe="/")
+    base = str(request.base_url).rstrip("/")
+    return f"{base}/api/v1/storage/local-resumable/{encoded_blob}"
 
 
 def _build_submission(
@@ -504,6 +513,47 @@ async def local_upload(blob_path: str, request: Request):
     return {"ok": True, "blob_name": blob_path, "bytes": len(payload)}
 
 
+_LOCAL_RESUMABLE_LOCKS: dict[str, threading.Lock] = {}
+_CONTENT_RANGE_RE = re.compile(r"bytes (\d+)-(\d+)/(\d+)")
+
+
+@router.put("/local-resumable/{blob_path:path}")
+async def local_resumable_upload(blob_path: str, request: Request):
+    """
+    Local/dev stand-in for GCS resumable uploads.
+
+    Mimics the chunked-PUT protocol UpChunk speaks to GCS: each chunk carries a Content-Range header ("bytes start-end/total"); intermediate chunks get a 308 with a Range header reporting bytes received so far, the final chunk gets a 200. UpChunk sends chunks sequentially, so a simple seek+write is sufficient — no separate session-state store needed.
+    """
+    destination = _resolve_local_upload_path(blob_path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+
+    body = await request.body()
+    match = _CONTENT_RANGE_RE.match(request.headers.get("content-range", ""))
+    if match:
+        start, _end, total = (int(g) for g in match.groups())
+    else:
+        # No Content-Range header — treat as a single whole-file PUT.
+        start, total = 0, len(body)
+
+    lock = _LOCAL_RESUMABLE_LOCKS.setdefault(str(destination), threading.Lock())
+    with lock:
+        mode = "r+b" if destination.exists() else "wb"
+        with open(destination, mode) as f:
+            f.seek(start)
+            f.write(body)
+        bytes_received = destination.stat().st_size
+
+    if bytes_received < total:
+        return Response(status_code=308, headers={"Range": f"bytes=0-{bytes_received - 1}"})
+
+    logger.info("Local resumable upload complete: %s (%d bytes)", destination, bytes_received)
+    return Response(
+        status_code=200,
+        media_type="application/json",
+        content=json.dumps({"ok": True, "blob_name": blob_path, "bytes": bytes_received}),
+    )
+
+
 @router.post("/resumable-session", response_model=ResumableSessionResponse)
 def create_resumable_session(
     payload: ResumableSessionRequest,
@@ -526,9 +576,6 @@ def create_resumable_session(
     if analysis_type in ("BATTING", "BOWLING"):
         quota_check("biomechanics_analysis")(current_user, db)
 
-    if not GCS_AVAILABLE:
-        raise HTTPException(status_code=503, detail="GCS is not configured for resumable uploads.")
-
     safe_name = payload.filename.replace(" ", "_")
     upload_prefix = "raw_matches" if analysis_type == "FULL_MATCH" else "raw_videos"
     blob_name = f"{upload_prefix}/{uuid.uuid4().hex[:12]}_{safe_name}"
@@ -540,6 +587,20 @@ def create_resumable_session(
         analysis_type=analysis_type,
         blob_name=blob_name,
     )
+
+    if not GCS_AVAILABLE:
+        session_uri = _build_local_resumable_url(request, blob_name)
+        logger.info(
+            "Local resumable session created (GCS unavailable) — user=%s submission=%s blob=%s",
+            current_user.id,
+            submission.id,
+            blob_name,
+        )
+        return ResumableSessionResponse(
+            session_uri=session_uri,
+            blob_name=blob_name,
+            submission_id=submission.id,
+        )
 
     try:
         blob = _bucket.blob(blob_name)  # type: ignore[union-attr]
