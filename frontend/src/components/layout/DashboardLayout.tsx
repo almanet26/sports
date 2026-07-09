@@ -82,7 +82,7 @@ interface DashboardLayoutProps {
 
 export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) => {
   const { user, logout } = useAuthStore();
-  const { theme, toggleTheme } = useThemeStore();
+  const { theme } = useThemeStore();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = React.useState(false);
   const [playerProfile, setPlayerProfile] = React.useState(() => getStoredPlayerProfileSummary());
@@ -309,27 +309,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
             })}
           </nav>
 
-          {/* Theme Toggle */}
-          <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
-            <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={toggleTheme}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 group ${theme === 'dark'
-                  ? 'text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10'
-                  : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/70'
-                }`}
-            >
-              <div className={`w-9 h-9 rounded-lg flex items-center justify-center transition-all duration-300 ${theme === 'dark'
-                  ? 'bg-white/10 group-hover:bg-yellow-500/20'
-                  : 'bg-slate-200/70 group-hover:bg-blue-100/70'
-                }`}>
-                <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-sm`}></i>
-              </div>
-              <span className="font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-            </motion.button>
-          </div>
-
           {/* Logout */}
           <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
             <motion.button
@@ -443,22 +422,6 @@ export const DashboardLayout: React.FC<DashboardLayoutProps> = ({ children }) =>
                     </NavLink>
                   ))}
                 </nav>
-
-                {/* Theme Toggle */}
-                <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
-                  <button
-                    onClick={toggleTheme}
-                    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-300 ${theme === 'dark'
-                        ? 'text-white/60 hover:text-yellow-400 hover:bg-yellow-500/10'
-                        : 'text-slate-600 hover:text-blue-600 hover:bg-blue-50/70'
-                      }`}
-                  >
-                    <div className={`w-9 h-9 rounded-lg flex items-center justify-center ${theme === 'dark' ? 'bg-white/10' : 'bg-slate-200/70'}`}>
-                      <i className={`fas ${theme === 'dark' ? 'fa-sun' : 'fa-moon'} text-sm`}></i>
-                    </div>
-                    <span className="font-medium">{theme === 'dark' ? 'Light Mode' : 'Dark Mode'}</span>
-                  </button>
-                </div>
 
                 {/* Logout */}
                 <div className={`p-4 border-t ${theme === 'dark' ? 'border-white/10' : 'border-slate-200/60'}`}>
