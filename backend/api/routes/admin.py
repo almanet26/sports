@@ -13,6 +13,7 @@ from database.config import get_db
 from database.models.user import User
 from database.models.plan import Plan
 from database.models.subscription import Subscription
+from dependencies.feature_gate import get_active_subscription
 from services import entitlement_service
 from utils.auth import get_current_user
 from pydantic import BaseModel, ConfigDict
@@ -93,6 +94,8 @@ def list_users(
     search: Optional[str] = None,
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
+    subscription_status: Optional[str] = None,
+    plan: Optional[str] = None,
     current_user: User = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
@@ -107,30 +110,30 @@ def list_users(
     if is_active is not None:
         query = query.filter(User.is_active == is_active)
 
-    total = query.count()
-    users = query.order_by(User.created_at.desc()).offset((page - 1) * per_page).limit(per_page).all()
+    query = query.order_by(User.created_at.desc())
 
-    # Enrich each user with active subscription data
-    user_summaries = []
-    for u in users:
-        # Get active subscription (status='active' and expires_at > now)
-        active_sub = db.query(Subscription).filter(
-            Subscription.user_id == u.id,
-            Subscription.status == 'active',
-            Subscription.expires_at > func.now()
-        ).order_by(Subscription.expires_at.desc()).first()
-
+    def summarize(u: User) -> UserSummaryResponse:
+        sub = get_active_subscription(u, db)
         user_data = UserSummaryResponse.model_validate(u).model_dump()
-        if active_sub:
-            user_data['subscription_plan_key'] = active_sub.plan_key
-            user_data['subscription_status'] = active_sub.status
-            user_data['subscription_expires_at'] = active_sub.expires_at
-        else:
-            user_data['subscription_status'] = 'inactive'
-            user_data['subscription_plan_key'] = None
-            user_data['subscription_expires_at'] = None
+        user_data['subscription_status'] = sub.status if sub else 'inactive'
+        user_data['subscription_plan_key'] = sub.plan_key if sub else None
+        user_data['subscription_expires_at'] = sub.expires_at if sub else None
+        return UserSummaryResponse.model_validate(user_data)
 
-        user_summaries.append(UserSummaryResponse.model_validate(user_data))
+    if subscription_status or plan:
+        summaries = [summarize(u) for u in query.all()]
+        if subscription_status:
+            summaries = [s for s in summaries if s.subscription_status == subscription_status]
+        if plan:
+            summaries = [s for s in summaries if s.subscription_plan_key == plan]
+
+        total = len(summaries)
+        start = (page - 1) * per_page
+        user_summaries = summaries[start:start + per_page]
+    else:
+        total = query.count()
+        users = query.offset((page - 1) * per_page).limit(per_page).all()
+        user_summaries = [summarize(u) for u in users]
 
     return UserListPageResponse(
         users=user_summaries,

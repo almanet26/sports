@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { adminApi, api, resolveMediaUrl, reportDownloadUrl } from '../lib/api';
 import { useThemeStore } from '../store/themeStore';
+import type { AdminPlan } from '../types/subscriptionPlans';
 
 interface UserRow {
   id: string;
@@ -22,11 +23,6 @@ interface SubEditState {
   status: string;
   expires_at: string;
 }
-
-const PLAN_KEYS = [
-  'free', 'basic_90d', 'platinum_180d',
-  'coach_starter_180d', 'coach_pro_365d', 'academy_365d',
-];
 
 const roleBadge: Record<string, string> = {
   ADMIN:  'from-red-500/20 to-orange-500/20 text-red-400 border-red-500/30',
@@ -402,6 +398,7 @@ export default function AdminUsersPage() {
   const navigate = useNavigate();
 
   const [users, setUsers]       = useState<UserRow[]>([]);
+  const [plans, setPlans]       = useState<AdminPlan[]>([]);
   const [loading, setLoading]   = useState(true);
   const [search, setSearch]     = useState('');
   const [roleFilter, setRoleFilter]   = useState('');
@@ -449,10 +446,16 @@ export default function AdminUsersPage() {
 
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
 
+  useEffect(() => {
+    adminApi.listPlans()
+      .then(({ data }) => setPlans([...data].sort((a, b) => a.sort_order - b.sort_order)))
+      .catch(() => showToast('Failed to load plans', false));
+  }, []);
+
   function openSubEdit(user: UserRow) {
     setEditTarget(user);
     setSubEdit({
-      plan_key: user.subscription_plan_key ?? 'free',
+      plan_key: user.subscription_plan_key ?? plans[0]?.key ?? '',
       status: user.subscription_status ?? 'active',
       expires_at: user.subscription_expires_at
         ? user.subscription_expires_at.slice(0, 16)
@@ -603,12 +606,9 @@ export default function AdminUsersPage() {
               }`}
             >
               <option value="">All Plans</option>
-              <option value="free">Free</option>
-              <option value="basic">Basic</option>
-              <option value="platinum">Platinum</option>
-              <option value="coach_starter">Coach Starter</option>
-              <option value="coach_pro">Coach Pro</option>
-              <option value="academy">Academy</option>
+              {plans.map((p) => (
+                <option key={p.key} value={p.key}>{p.display_name}</option>
+              ))}
             </select>
           </div>
         </div>
@@ -784,8 +784,8 @@ export default function AdminUsersPage() {
                     onChange={(e) => setSubEdit({ ...subEdit, plan_key: e.target.value })}
                     className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 focus:border-blue-500 focus:outline-none text-sm text-white"
                   >
-                    {PLAN_KEYS.map((k) => (
-                      <option key={k} value={k}>{k}</option>
+                    {plans.map((p) => (
+                      <option key={p.key} value={p.key}>{p.display_name} ({p.key})</option>
                     ))}
                   </select>
                 </div>
