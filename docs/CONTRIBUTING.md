@@ -2,6 +2,8 @@
 
 Thank you for contributing! This guide explains how to set up your development environment, write code, and submit changes.
 
+**Quick Start:** See the comprehensive [Contributing section in README.md](../README.md#contributing) for the latest development workflow, API examples, and feature development examples.
+
 ---
 
 ## 📋 Table of Contents
