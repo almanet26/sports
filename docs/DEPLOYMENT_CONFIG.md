@@ -1,6 +1,9 @@
 # GCP Deployment Steps (Detailed)
 
-This guide covers the exact steps taken to deploy the application on Google Cloud Platform. 
+This guide covers the exact steps taken to deploy the application on Google Cloud Platform.
+
+**See also:** [README.md](../README.md) Deployment section for a quicker reference.
+**See also:** [cloudbuild.yaml](../backend/cloudbuild.yaml) for the actual pipeline configuration. 
 
 ## 1. Prerequisites Set Up
 Before triggering any automated pipelines, the following base infrastructure must be provisioned.

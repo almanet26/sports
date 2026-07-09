@@ -7,8 +7,15 @@ Complete reference for PostgreSQL database structure and relationships.
 ## 📋 Tables Overview
 
 ```
+Entitlements (Dynamic)
+  ├─ Plan (bronze, silver, gold, coach_basic, coach_platinum)
+  ├─ Feature (biomechanics_analysis, ocr_highlights, etc.)
+  └─ PlanEntitlement (links plan → feature with value)
+
 Users
   ├─ UserSession
+  ├─ Subscription (links user → plan with expiry)
+  ├─ FeatureUsage (tracks monthly consumption)
   ├─ Video
   │   ├─ HighlightEvent
   │   ├─ HighlightJob
@@ -16,6 +23,7 @@ Users
   ├─ BattingAnalysis
   ├─ BowlingAnalysis
   ├─ VideoSubmission
+  ├─ VideoAnnotation
   └─ UserVote
 ```
 
@@ -23,7 +31,7 @@ Users
 
 ## Table: `users`
 
-Stores user accounts with authentication and subscription info.
+Stores user accounts with authentication and profile info. Subscription is tracked in separate `Subscription` table.
 
 ```sql
 CREATE TABLE users (
@@ -35,19 +43,17 @@ CREATE TABLE users (
     phone VARCHAR(20),
     team VARCHAR(100),
     
-    -- Subscription info
-    subscription_plan VARCHAR(50) DEFAULT 'BASIC' CHECK (subscription_plan IN ('BASIC', 'PREMIUM', 'COACH')),
-    
-    -- Coach-specific fields
+    -- Coach-specific fields (only if role='COACH')
     coach_status VARCHAR(20) DEFAULT 'pending' CHECK (coach_status IN ('pending', 'approved', 'rejected')),
-    coach_document_url TEXT,  -- Path to uploaded document
+    coach_document_url TEXT,  -- Path to KYC/coaching credentials
     
-    -- Payment
-    stripe_customer_id VARCHAR(255),
+    -- Payment (Razorpay, not Stripe)
+    razorpay_customer_id VARCHAR(255),
     
     -- Metadata
     is_active BOOLEAN DEFAULT true,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
     CONSTRAINT valid_email CHECK (email ~ '^[^\s@]+@[^\s@]+\.[^\s@]+$')
@@ -85,6 +91,162 @@ CREATE TABLE user_session (
 
 CREATE INDEX idx_user_session_user_id ON user_session(user_id);
 CREATE INDEX idx_user_session_expires_at ON user_session(expires_at);
+```
+
+---
+
+## Table: `plan` (Dynamic Entitlements)
+
+Defines subscription plans (Bronze, Silver, Gold, Coach Basic, Coach Platinum).
+
+```sql
+CREATE TABLE plan (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key VARCHAR(50) UNIQUE NOT NULL,  -- 'bronze', 'silver', 'gold', 'coach_basic', 'coach_platinum'
+    display_name VARCHAR(100) NOT NULL,
+    user_type VARCHAR(20) NOT NULL CHECK (user_type IN ('player', 'coach')),
+    
+    -- Pricing
+    price_inr INT DEFAULT 0,
+    billing_period VARCHAR(20) NOT NULL CHECK (billing_period IN ('monthly', 'annual')),
+    
+    -- Ordering
+    sort_order INT DEFAULT 0,
+    
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX idx_plan_key ON plan(key);
+CREATE INDEX idx_plan_user_type ON plan(user_type);
+
+-- Example data:
+-- ('bronze', 'Bronze', 'player', 0, 'monthly', 0)
+-- ('silver', 'Silver', 'player', 20000, 'monthly', 1)
+-- ('gold', 'Gold', 'player', 50000, 'monthly', 2)
+-- ('coach_basic', 'Coach Basic', 'coach', 0, 'annual', 0)
+-- ('coach_platinum', 'Coach Platinum', 'coach', 120000, 'annual', 1)
+```
+
+---
+
+## Table: `feature` (Dynamic Entitlements)
+
+Defines features/capabilities that plans grant to users.
+
+```sql
+CREATE TABLE feature (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key VARCHAR(100) UNIQUE NOT NULL,  -- 'biomechanics_analysis', 'ocr_highlights', 'pdf_report', etc.
+    display_name VARCHAR(150) NOT NULL,
+    type VARCHAR(20) NOT NULL CHECK (type IN ('boolean', 'numeric')),
+    description TEXT,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE UNIQUE INDEX idx_feature_key ON feature(key);
+
+-- Example data:
+-- ('biomechanics_analysis', 'Biomechanical Analyses', 'numeric', 'AI biomechanical analyses per month')
+-- ('ocr_highlights', 'OCR Match Hours', 'numeric', 'OCR match-hours of highlight generation per month')
+-- ('pdf_report', 'Professional PDF Reports', 'boolean', 'Downloadable professional PDF performance reports')
+-- ('ai_chat', 'AI Coach Chat', 'boolean', '24/7 virtual AI chat assistant')
+```
+
+---
+
+## Table: `plan_entitlement` (Dynamic Entitlements)
+
+Maps plans to features with assigned values.
+
+```sql
+CREATE TABLE plan_entitlement (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    plan_id UUID NOT NULL REFERENCES plan(id) ON DELETE CASCADE,
+    feature_id UUID NOT NULL REFERENCES feature(id) ON DELETE CASCADE,
+    
+    -- Value representation depends on feature.type:
+    -- boolean feature: 'true' or 'false'
+    -- numeric feature: integer/float as string, '-1' = unlimited, '0' = none
+    value VARCHAR(255) NOT NULL,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT unique_plan_feature UNIQUE (plan_id, feature_id)
+);
+
+CREATE INDEX idx_plan_entitlement_plan_id ON plan_entitlement(plan_id);
+CREATE INDEX idx_plan_entitlement_feature_id ON plan_entitlement(feature_id);
+
+-- Example data:
+-- bronze + biomechanics_analysis = '3'
+-- silver + biomechanics_analysis = '15'
+-- silver + pdf_report = 'true'
+-- gold + pdf_report = 'true'
+-- gold + ai_chat = 'true'
+-- coach_platinum + ocr_highlights = '50'
+```
+
+---
+
+## Table: `subscription`
+
+Links users to their active plans with expiry dates.
+
+```sql
+CREATE TABLE subscription (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    plan_id UUID NOT NULL REFERENCES plan(id) ON DELETE CASCADE,
+    
+    -- Dates (fixed-duration, not recurring)
+    started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP NOT NULL,
+    
+    -- Metadata
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT future_expiry CHECK (expires_at > started_at)
+);
+
+CREATE INDEX idx_subscription_user_id ON subscription(user_id);
+CREATE INDEX idx_subscription_plan_id ON subscription(plan_id);
+CREATE INDEX idx_subscription_expires_at ON subscription(expires_at);
+```
+
+---
+
+## Table: `feature_usage`
+
+Tracks real-time feature consumption per user per month.
+
+```sql
+CREATE TABLE feature_usage (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    feature_id UUID NOT NULL REFERENCES feature(id) ON DELETE CASCADE,
+    
+    -- Year-month (e.g., '2026-07')
+    billing_month VARCHAR(7) NOT NULL,
+    
+    -- Current usage (compared against entitlement limit)
+    used INT DEFAULT 0,
+    
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    CONSTRAINT unique_user_feature_month UNIQUE (user_id, feature_id, billing_month),
+    CONSTRAINT non_negative_usage CHECK (used >= 0)
+);
+
+CREATE INDEX idx_feature_usage_user_id ON feature_usage(user_id);
+CREATE INDEX idx_feature_usage_billing_month ON feature_usage(billing_month);
+CREATE INDEX idx_feature_usage_user_month ON feature_usage(user_id, billing_month);
 ```
 
 ---

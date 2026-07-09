@@ -22,10 +22,21 @@ Complete reference for Google Cloud Platform services integration.
 
 Stores all video files, reports, and temporary data.
 
-**Buckets Created:**
-- `sports-ai-storage-raw`: Raw uploaded videos
-- `sports-ai-storage-processed`: Processed videos & highlights
-- `sports-ai-storage-reports`: Generated PDF reports
+**Bucket Structure:**
+
+Single bucket: `sports-ai-storage` with directory organization:
+
+```
+gs://sports-ai-storage/
+├── uploads/              # Raw uploaded videos
+├── highlight/            # Generated supercuts
+├── reports/              # PDF reports
+├── batting_videos/       # Batting analysis videos
+├── bowling_videos/       # Bowling analysis videos
+├── submission_videos/    # Player submission videos
+├── profile_images/       # User profile pictures
+└── coach_content/        # Coach teaching library
+```
 
 ### Upload Video
 

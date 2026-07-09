@@ -39,10 +39,12 @@ graph TD
 
 ## 3. Database Schema Layout Context
 **PostgreSQL** acts as the singular source of truth.
-*   `Users Table:` Stores profiles, hashed passwords, and account roles (`PLAYER`, `COACH`, `ADMIN`). Subscription tier is tracked separately via the `Subscription` table and `PlanConfig` rows, not as a column on the user.
-*   `Subscription Table:` Links a user to their active plan (e.g. `free`, `basic`, `platinum`, `coach_free`, `coach_starter`, `coach_pro`, `academy`) with start/expiry timestamps. Plans are fixed-duration (90/180/365 days), not recurring.
-*   `PlanConfig Table:` Defines per-plan quota limits (`max_biomech_per_month`, `max_ocr_hours_per_month`, `max_submissions_per_month`, `max_players_in_dashboard`). Seeded once at startup.
-*   `MonthlyUsage Table:` Tracks real-time usage counters per user per month; compared against `PlanConfig` limits by the feature gate layer.
+*   `Users Table:` Stores profiles, hashed passwords, and account roles (`PLAYER`, `COACH`, `ADMIN`). Subscription tier is tracked separately via the `Subscription` table, not as a column on the user.
+*   `Subscription Table:` Links a user to their active plan (e.g. `bronze`, `silver`, `gold`, `coach_basic`, `coach_platinum`) with start/expiry timestamps. Plans are fixed-duration, not recurring.
+*   `Plan Table:` Defines each plan with key, display name, user type, price, and billing period (dynamic entitlement engine).
+*   `Feature Table:` Defines features/capabilities (biomechanics_analysis, ocr_highlights, pdf_report, etc.) with type (numeric/boolean) and descriptions.
+*   `PlanEntitlement Table:` Maps plan→feature with assigned values (e.g., `bronze` → `biomechanics_analysis: 3`, `silver` → `biomechanics_analysis: 15`).
+*   `FeatureUsage Table:` Tracks real-time usage counters per user per month; compared against entitlements by the feature gate layer.
 *   `Videos Table:` Tracks uploaded file paths, status (`processing`, `failed`, `completed`), and visibility (`public`, `private`).
 *   `Highlights/Events Table:` Relational pointers connecting a parent video with specific timestamp clips, tracking whether it's a '4', '6', or 'Wicket'.
 *   `Submissions Table:` Enables player-to-coach video review workflows with statuses (`PENDING`, `PROCESSING`, `DRAFT_REVIEW`, `PUBLISHED`, `REJECTED`).
@@ -50,5 +52,5 @@ graph TD
 ---
 
 ## 4. Specific AI Engine Modules
-*   **OCR Match Highlights (`ocr_engine.py`):** Utilizes `yt-dlp` for ingress. Instead of analyzing every single frame, it scrubs effectively using a rolling median history queue to prevent scoreboard flickering from causing false positives.
-*   **Biomechanics (`batting_engine.py`):** Loads a pre-trained `.task` model. Applies body landmarking against a coordinate grid. Automatically highlights physical outliers (e.g., incorrect elbow angle on a cover drive).
+*   **OCR Match Highlights (`src/engine/ocr_engine.py`):** Utilizes `yt-dlp` for YouTube ingestion. Uses `RapidOCR-ONNX` (PyTorch-free, lightweight) for scoreboard text recognition. Applies rolling median history queue to prevent scoreboard flickering from causing false positives. Outputs event timestamps + supercut video.
+*   **Biomechanics (`src/engine/batting_engine.py`, `bowling_engine.py`):** Uses MediaPipe Pose (pinned to v0.10.14) for 33-point body landmark detection. Calculates biomechanical metrics (stance angle, bat lift, release height, etc.). Automatically flags technique outliers (e.g., high elbow, inconsistent release). Recommends drills via Google Gemini API.

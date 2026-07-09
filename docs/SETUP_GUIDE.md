@@ -49,9 +49,38 @@ cd sports
 
 ---
 
-## 3. Backend Setup
+## 3. Quick Start with Docker Compose (Backend + Database)
 
-### 3.1 Create Python Virtual Environment
+If Docker is installed, backend and database start with one command:
+
+```bash
+docker-compose up -d
+```
+
+**Components started:**
+- PostgreSQL 15 (port 5432)
+- FastAPI backend (port 8000, http://localhost:8000/docs)
+
+**View logs:**
+```bash
+docker-compose logs -f backend
+docker-compose logs -f postgres
+```
+
+**Stop services:**
+```bash
+docker-compose down
+```
+
+**Frontend:** Run separately (Step 5 below)
+
+**Note:** See root `docker-compose.yml` template in main README for customization.
+
+---
+
+## 4. Backend Setup (Manual - Alternative)
+
+### 4.1 Create Python Virtual Environment
 ```bash
 cd backend
 python -m venv venv
@@ -69,25 +98,27 @@ source venv/bin/activate
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-### 3.2 Install Dependencies
+### 4.2 Install Dependencies
 ```bash
 pip install --upgrade pip
 pip install -r requirements.txt
+pip install -r requirements-test.txt  # For running tests
 ```
 
 **If specific packages fail to install:**
 ```bash
-# Install MediaPipe separately (large file)
-pip install --no-cache-dir mediapipe
+# Install MediaPipe separately (large file, CPU-only on most systems)
+pip install --no-cache-dir mediapipe==0.10.14
+set MEDIAPIPE_DISABLE_GPU=1  # Or: export MEDIAPIPE_DISABLE_GPU=1 on macOS/Linux
 
-# Install yt-dlp
-pip install yt-dlp
+# Install RapidOCR (replaces EasyOCR, no PyTorch dependency)
+pip install rapidocr-onnxruntime>=1.3.22
 
-# Install EasyOCR
-pip install easyocr
+# Install yt-dlp for YouTube support
+pip install yt-dlp>=2025.1.15
 ```
 
-### 3.3 Configure Environment
+### 4.3 Configure Environment
 ```bash
 # Copy environment template
 cp .env.example .env
@@ -104,7 +135,7 @@ CLOUD_RUN=false
 GEMINI_API_KEY=your-key-if-available
 ```
 
-### 3.4 Setup PostgreSQL Database
+### 4.4 Setup PostgreSQL Database
 
 **Create Database:**
 ```bash
@@ -127,7 +158,7 @@ alembic upgrade head
 psql -U postgres -d sports_dev -c "\dt"
 ```
 
-### 3.5 Start Backend Server
+### 4.5 Start Backend Server
 ```bash
 cd backend
 uvicorn main:app --reload --port 8000
@@ -146,9 +177,9 @@ INFO:     Application startup complete
 
 ---
 
-## 4. Frontend Setup
+## 5. Frontend Setup
 
-### 4.1 Install Dependencies
+### 5.1 Install Dependencies
 ```bash
 cd frontend
 npm install
@@ -160,7 +191,7 @@ rm -r node_modules package-lock.json
 npm install
 ```
 
-### 4.2 Configure Environment
+### 5.2 Configure Environment
 ```bash
 cp .env.example .env
 # Or create .env with:
@@ -172,7 +203,7 @@ VITE_API_URL=http://localhost:8000
 VITE_APP_NAME=Cricket Analytics
 ```
 
-### 4.3 Start Development Server
+### 5.3 Start Development Server
 ```bash
 cd frontend
 npm run dev
@@ -192,15 +223,15 @@ npm run dev
 
 ---
 
-## 5. Testing Backend
+## 6. Testing Backend
 
-### 5.1 Run Tests
+### 6.1 Run Tests
 ```bash
 cd backend
 pytest --v
 ```
 
-### 5.2 Run with Coverage
+### 6.2 Run with Coverage
 ```bash
 pytest --cov=. --cov-report=html
 # Open htmlcov/index.html in browser
@@ -208,9 +239,9 @@ pytest --cov=. --cov-report=html
 
 ---
 
-## 6. Verify Full Stack
+## 7. Verify Full Stack
 
-### 6.1 Test API Connection
+### 7.1 Test API Connection
 ```bash
 # Terminal 1: Backend running
 cd backend && uvicorn main:app --reload
@@ -220,7 +251,7 @@ curl -X GET http://localhost:8000/health
 # Expected: {"status":"ok"}
 ```
 
-### 6.2 Test Frontend Connection
+### 7.2 Test Frontend Connection
 ```bash
 # Terminal 1: Backend running
 cd backend && uvicorn main:app --reload
@@ -235,16 +266,16 @@ curl -X GET http://localhost:5173/api/health
 
 ---
 
-## 7. Development Tools Setup (Optional)
+## 8. Development Tools Setup (Optional)
 
-### 7.1 Code Formatting
+### 8.1 Code Formatting
 ```bash
 cd backend
 pip install black
 black . --line-length=120
 ```
 
-### 7.2 Linting
+### 8.2 Linting
 ```bash
 cd backend
 pip install flake8
@@ -255,7 +286,7 @@ npm run lint
 npm run lint:fix
 ```
 
-### 7.3 Type Checking
+### 8.3 Type Checking
 ```bash
 cd backend
 pip install mypy
@@ -264,7 +295,7 @@ mypy backend/
 
 ---
 
-## 8. Common Issues & Fixes
+## 9. Common Issues & Fixes
 
 ### ❌ "ModuleNotFoundError: No module named 'mediapipe'"
 **Solution:**
@@ -314,7 +345,7 @@ brew install node
 
 ---
 
-## 9. IDE Setup (Recommended)
+## 10. IDE Setup (Recommended)
 
 ### VS Code Extensions
 - Python (ms-python.python)
@@ -331,9 +362,9 @@ brew install node
 
 ---
 
-## 10. Database Management
+## 11. Database Management
 
-### 10.1 View Database
+### 11.1 View Database
 ```bash
 # Connect to database
 psql -U postgres -d sports_dev
@@ -344,7 +375,7 @@ psql -U postgres -d sports_dev
 SELECT * FROM users LIMIT 5;  # View data
 ```
 
-### 10.2 Reset Database
+### 11.2 Reset Database
 ```bash
 # Drop all data
 dropdb -U postgres sports_dev
@@ -352,7 +383,7 @@ createdb -U postgres sports_dev
 cd backend && alembic upgrade head
 ```
 
-### 10.3 Seed Test Data
+### 11.3 Seed Test Data
 ```bash
 cd backend
 python scripts/seed_roles.py
@@ -360,7 +391,7 @@ python scripts/seed_roles.py
 
 ---
 
-## 11. Running All Services Together
+## 12. Running All Services Together
 
 **Terminal 1 - Backend:**
 ```bash
@@ -390,7 +421,7 @@ cd backend && pytest --watch
 
 ---
 
-## 12. Next Steps
+## 13. Next Steps
 
 1. **Read API Documentation:** `docs/API_REFERENCE.md`
 2. **Understand Architecture:** `docs/ARCHITECTURE.md`
@@ -400,7 +431,7 @@ cd backend && pytest --watch
 
 ---
 
-## 13. Getting Help
+## 14. Getting Help
 
 - **Docs:** Check `/docs` folder
 - **API Reference:** http://localhost:8000/docs
