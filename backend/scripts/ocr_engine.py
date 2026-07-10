@@ -103,37 +103,43 @@ class VideoPreprocessor:
     """Handles FFmpeg preprocessing: downscaling and FPS reduction."""
     
     @staticmethod
-    def preprocess_video(input_path: str, output_path: str, target_height: int = 720, target_fps: int = 15) -> str:
+    def preprocess_video(input_path: str, output_path: str, target_height: int = 720, target_fps: int = 15, trim_start: float = 0.0, trim_end: Optional[float] = None) -> str:
         """
         Preprocess video using FFmpeg: downscale to 720p and reduce FPS.
-        
+
         Args:
             input_path: Path to source video
             output_path: Path for preprocessed output
             target_height: Target height (width auto-calculated)
             target_fps: Target FPS (10-15 recommended)
-            
+            trim_start: Skip re-encoding everything before this offset (seconds)
+            trim_end: Skip re-encoding everything after this offset (seconds); None = to the end
+
         Returns:
             Path to preprocessed video
         """
         logger.info(f"Preprocessing video: {target_height}p @ {target_fps}fps")
         start_time = time.time()
-        
-        cmd = [
-            'ffmpeg', '-hide_banner', '-loglevel', 'error',
-            '-i', input_path,
+
+        cmd = ['ffmpeg', '-hide_banner', '-loglevel', 'error']
+        if trim_start > 0:
+            cmd.extend(['-ss', str(trim_start)])
+        cmd.extend(['-i', input_path])
+        if trim_end is not None:
+            cmd.extend(['-t', str(max(0.0, trim_end - trim_start))])
+        cmd.extend([
             '-vf', f'scale=-2:{target_height},fps={target_fps}',
             '-c:v', 'libx264', '-preset', 'fast', '-crf', '23',
             '-an',  # Remove audio (not needed for OCR)
             '-y', output_path
-        ]
-        
+        ])
+
         result = subprocess.run(cmd, capture_output=True)
-        
+
         if result.returncode != 0:
             logger.error(f"FFmpeg preprocessing failed: {result.stderr.decode()}")
             return input_path  # Fallback to original
-        
+
         elapsed = time.time() - start_time
         logger.info(f"Preprocessing complete: {elapsed:.1f}s")
         return output_path
@@ -1939,26 +1945,40 @@ def process_video_parallel(video_path: str, config: ScoreboardConfig,
     """
     perf_logger = PerformanceLogger()
     perf_logger.start_pipeline()
-    
+
+    trim_start = float(config.start_time or 0.0)
+    trim_end = float(config.end_time) if getattr(config, 'end_time', None) is not None else None
+
     # Step 1: Optional preprocessing
     processed_video = video_path
+    timestamp_offset = 0.0
     if preprocess:
         logger.info("Step 1: Preprocessing video...")
         temp_dir = Path(tempfile.gettempdir()) / "cricket_ocr"
         temp_dir.mkdir(parents=True, exist_ok=True)
-        
+
         preprocessed_path = str(temp_dir / f"preprocessed_{Path(video_path).stem}.mp4")
         processed_video = VideoPreprocessor.preprocess_video(
             video_path, preprocessed_path,
             target_height=720,
-            target_fps=15
+            target_fps=15,
+            trim_start=trim_start,
+            trim_end=trim_end,
         )
-    
+        if processed_video != video_path:
+            timestamp_offset = trim_start
+
     # Step 2: Create chunks
     logger.info(f"Step 2: Creating chunks ({chunk_duration}s each)...")
     chunker = VideoChunker(chunk_duration_sec=chunk_duration)
-    chunk_end_time = float(config.end_time) if getattr(config, 'end_time', None) is not None else None
-    chunks = chunker.create_chunks(processed_video, start_time=float(config.start_time or 0.0), end_time=chunk_end_time)
+    if timestamp_offset:
+        # processed_video was trimmed to [trim_start, trim_end] and now starts at 0
+        chunker_start = 0.0
+        chunker_end = (trim_end - trim_start) if trim_end is not None else None
+    else:
+        chunker_start = trim_start
+        chunker_end = trim_end
+    chunks = chunker.create_chunks(processed_video, start_time=chunker_start, end_time=chunker_end)
     
     # Step 3: Process chunks in parallel
     logger.info(f"⚡ Step 3: Processing {len(chunks)} chunks with {num_workers} workers...")
@@ -1995,9 +2015,14 @@ def process_video_parallel(video_path: str, config: ScoreboardConfig,
             except Exception as exc:
                 logger.error(f"Chunk {chunk_id} failed: {exc}")
     
+    # Correct timestamps back to the original (untrimmed) video's timeline
+    if timestamp_offset:
+        for event in all_events:
+            event['timestamp'] += timestamp_offset
+
     # Step 4: Sort events by timestamp (chunks may complete out of order)
     all_events.sort(key=lambda e: e['timestamp'])
-    
+
     # Remove duplicate events at chunk boundaries (30s overlap)
     all_events = remove_duplicate_events(all_events, time_window=25.0)
     
