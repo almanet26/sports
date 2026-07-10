@@ -181,8 +181,14 @@ async def trigger_ocr_job(
 
     # Reserve estimated OCR hours immediately at dispatch.
     # Uses the atomic check-and-increment so two simultaneous trigger requests cannot both succeed when the user is near their monthly OCR limit.
-    estimated_hours = (video.duration_seconds or 0) / 3600.0
-    if estimated_hours > 0:
+    # A custom start_time/end_time window only scans that slice of the video, so bill for the requested window rather than the full source duration.
+    window_start = request.config.get("start_time") if request.config else None
+    window_end = request.config.get("end_time") if request.config else None
+    if window_start is not None and window_end is not None:
+        estimated_hours = max(0.0, float(window_end) - float(window_start)) / 3600.0
+    else:
+        estimated_hours = (video.duration_seconds or 0) / 3600.0
+    if estimated_hours > 0 and current_user.role != "ADMIN":
         charged = increment_usage_atomic(
             current_user.id, "ocr_hours_used", "max_ocr_hours_per_month", estimated_hours, db
         )
