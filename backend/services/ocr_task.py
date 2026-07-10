@@ -251,6 +251,8 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
                 ocr_config.use_gpu = config['use_gpu']
             if 'start_time' in config:
                 ocr_config.start_time = config['start_time']
+            if 'end_time' in config:
+                ocr_config.end_time = config['end_time']
         
         # Run OCR detection - choose best mode based on source type
         video_source, use_streaming = resolve_video_source(video.file_path)
@@ -287,8 +289,17 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
                 min_confidence=0.4,
             )
         
+        # Safety net: guarantee events fall within the requested timeline regardless of which processing mode ran (parallel chunking / streaming / sequential each enforce the cutoff independently, but this keeps the contract airtight).
+        if config and ('start_time' in config or 'end_time' in config):
+            range_start = float(config.get('start_time') or 0.0)
+            range_end = config.get('end_time')
+            events = [
+                e for e in events
+                if e['timestamp'] >= range_start and (range_end is None or e['timestamp'] <= float(range_end))
+            ]
+
         logger.info(f"Detected {len(events)} events for video {video_id}")
-        
+
         # Update job progress
         job.progress_percent = 50
         

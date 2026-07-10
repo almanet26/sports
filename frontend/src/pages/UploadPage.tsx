@@ -28,6 +28,10 @@ export default function UploadPage() {
   const refreshQuota = useAuthStore((state) => state.refreshQuota);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [youtubeTitle, setYoutubeTitle] = useState('');
+  const [timelineStart, setTimelineStart] = useState('');
+  const [timelineEnd, setTimelineEnd] = useState('');
+  const [paddingBefore, setPaddingBefore] = useState('');
+  const [paddingAfter, setPaddingAfter] = useState('');
   const [youtubeBusy, setYoutubeBusy] = useState(false);
   const [youtubeMessage, setYoutubeMessage] = useState<string | null>(null);
   const [activeJob, setActiveJob] = useState<UploadJobCard | null>(null);
@@ -107,6 +111,34 @@ export default function UploadPage() {
       return;
     }
 
+    const startSeconds = timelineStart.trim() ? Number(timelineStart) : undefined;
+    const endSeconds = timelineEnd.trim() ? Number(timelineEnd) : undefined;
+
+    if (startSeconds !== undefined && (!Number.isFinite(startSeconds) || startSeconds < 0)) {
+      setYoutubeMessage('Start time must be a valid number of seconds (0 or more).');
+      return;
+    }
+    if (endSeconds !== undefined && (!Number.isFinite(endSeconds) || endSeconds <= 0)) {
+      setYoutubeMessage('End time must be a valid number of seconds greater than 0.');
+      return;
+    }
+    if (startSeconds !== undefined && endSeconds !== undefined && endSeconds <= startSeconds) {
+      setYoutubeMessage('End time must be after start time.');
+      return;
+    }
+
+    const paddingBeforeSeconds = paddingBefore.trim() ? Number(paddingBefore) : undefined;
+    const paddingAfterSeconds = paddingAfter.trim() ? Number(paddingAfter) : undefined;
+
+    if (paddingBeforeSeconds !== undefined && (!Number.isFinite(paddingBeforeSeconds) || paddingBeforeSeconds < 0)) {
+      setYoutubeMessage('Padding before must be a valid number of seconds (0 or more).');
+      return;
+    }
+    if (paddingAfterSeconds !== undefined && (!Number.isFinite(paddingAfterSeconds) || paddingAfterSeconds < 0)) {
+      setYoutubeMessage('Padding after must be a valid number of seconds (0 or more).');
+      return;
+    }
+
     try {
       setYoutubeBusy(true);
       setYoutubeMessage('Downloading from YouTube and preparing OCR...');
@@ -124,7 +156,13 @@ export default function UploadPage() {
       }
 
       setYoutubeMessage('Starting OCR highlight generation...');
-      await jobsApi.trigger(videoId, { delete_source_after_processing: true });
+      await jobsApi.trigger(videoId, {
+        delete_source_after_processing: true,
+        ...(startSeconds !== undefined ? { start_time: startSeconds } : {}),
+        ...(endSeconds !== undefined ? { end_time: endSeconds } : {}),
+        ...(paddingBeforeSeconds !== undefined ? { padding_before: paddingBeforeSeconds } : {}),
+        ...(paddingAfterSeconds !== undefined ? { padding_after: paddingAfterSeconds } : {}),
+      });
       await refreshQuota();
 
       setActiveJob({
@@ -137,6 +175,10 @@ export default function UploadPage() {
       pushToast('YouTube upload queued. Processing started.', 'info');
       setYoutubeUrl('');
       setYoutubeTitle('');
+      setTimelineStart('');
+      setTimelineEnd('');
+      setPaddingBefore('');
+      setPaddingAfter('');
     } catch (error: any) {
       const status = error?.response?.status;
       const detail = error?.response?.data?.detail;
@@ -204,6 +246,61 @@ export default function UploadPage() {
             className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
             disabled={youtubeBusy}
           />
+
+          <div>
+            <p className="text-xs font-medium text-slate-400">Custom timeline (optional)</p>
+            <p className="text-xs text-slate-500">
+              Only scan this portion of the match for highlights. Leave blank to scan the full video.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <input
+                type="number"
+                min={0}
+                value={timelineStart}
+                onChange={(e) => setTimelineStart(e.target.value)}
+                placeholder="Start (seconds)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                disabled={youtubeBusy}
+              />
+              <input
+                type="number"
+                min={0}
+                value={timelineEnd}
+                onChange={(e) => setTimelineEnd(e.target.value)}
+                placeholder="End (seconds)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                disabled={youtubeBusy}
+              />
+            </div>
+          </div>
+
+          <div>
+            <p className="text-xs font-medium text-slate-400">Clip padding (optional)</p>
+            <p className="text-xs text-slate-500">
+              Extra seconds kept before/after each detected event. Defaults to 12s before, 8s after.
+            </p>
+            <div className="mt-2 grid grid-cols-2 gap-3">
+              <input
+                type="number"
+                min={0}
+                value={paddingBefore}
+                onChange={(e) => setPaddingBefore(e.target.value)}
+                placeholder="Before (seconds, default 12)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                disabled={youtubeBusy}
+              />
+              <input
+                type="number"
+                min={0}
+                value={paddingAfter}
+                onChange={(e) => setPaddingAfter(e.target.value)}
+                placeholder="After (seconds, default 8)"
+                className="w-full rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-100 placeholder:text-slate-500 focus:border-blue-500 focus:outline-none"
+                disabled={youtubeBusy}
+              />
+            </div>
+          </div>
+
           <button
             type="submit"
             disabled={youtubeBusy}
