@@ -149,28 +149,35 @@ class VideoChunker:
         """
         self.chunk_duration = chunk_duration_sec
     
-    def create_chunks(self, video_path: str, start_time: float = 0.0) -> List[Dict]:
+    def create_chunks(self, video_path: str, start_time: float = 0.0, end_time: Optional[float] = None) -> List[Dict]:
         """
         Create logical chunks without actual file splitting.
-        
+
         Args:
             video_path: Path to video file
             start_time: Start time offset (for resuming processing)
-            
+            end_time: Optional cutoff — chunks are not created past this point (None = scan to the end)
+
         Returns:
             List of chunk metadata dicts with start/end times
         """
         duration = self._get_video_duration(video_path)
-        
+
         if duration is None:
             logger.warning("Could not determine video duration, using single chunk")
+            fallback_end = start_time + 3600  # Assume 1 hour
+            if end_time is not None:
+                fallback_end = min(fallback_end, end_time)
             return [{
                 'chunk_id': 0,
                 'start_time': start_time,
-                'end_time': start_time + 3600,  # Assume 1 hour
+                'end_time': fallback_end,  # Assume 1 hour
                 'video_path': video_path
             }]
-        
+
+        if end_time is not None:
+            duration = min(duration, end_time)
+
         # Calculate chunks with overlap for boundary events
         overlap = 30  # 30 second overlap between chunks
         num_chunks = int(np.ceil((duration - start_time) / self.chunk_duration))
@@ -441,6 +448,8 @@ class ScoreboardConfig:
         self._load_config(config_file)
         self.use_gpu = False
         # start_time can be set from config or CLI
+        # end_time caps how far into the video scanning goes (None = scan to the end)
+        self.end_time: Optional[float] = None
 
     def _load_config(self, config_file: Optional[str]):
         """Load from file or use calibrated defaults."""
@@ -1948,7 +1957,8 @@ def process_video_parallel(video_path: str, config: ScoreboardConfig,
     # Step 2: Create chunks
     logger.info(f"Step 2: Creating chunks ({chunk_duration}s each)...")
     chunker = VideoChunker(chunk_duration_sec=chunk_duration)
-    chunks = chunker.create_chunks(processed_video, start_time=float(config.start_time or 0.0))
+    chunk_end_time = float(config.end_time) if getattr(config, 'end_time', None) is not None else None
+    chunks = chunker.create_chunks(processed_video, start_time=float(config.start_time or 0.0), end_time=chunk_end_time)
     
     # Step 3: Process chunks in parallel
     logger.info(f"⚡ Step 3: Processing {len(chunks)} chunks with {num_workers} workers...")
@@ -2097,8 +2107,14 @@ def process_video(video_path: str, config: ScoreboardConfig, sample_interval: fl
     batsman_read_counter = 0
     batsman_read_interval = 2  # Read batsmen details every 2 successful score reads
 
+    end_time = getattr(config, 'end_time', None)
+
     try:
         while True:
+            if end_time is not None and (frame_count / fps) >= end_time:
+                logger.info(f"Reached end_time cutoff ({end_time}s), stopping scan")
+                break
+
             ret, frame = video.read()
             if not ret:
                 break
@@ -2355,6 +2371,8 @@ def process_video_streaming(
     logger.info("Sampling: every %.2fs", sample_interval)
     logger.info("Confidence threshold: %.2f", min_confidence)
 
+    end_time = getattr(config, 'end_time', None)
+
     processed = 0
     for _, timestamp, frame in _iter_ffmpeg_sampled_frames(
         video_source,
@@ -2362,6 +2380,10 @@ def process_video_streaming(
         start_time=float(config.start_time or 0.0),
         max_frames=max_frames,
     ):
+        if end_time is not None and timestamp >= end_time:
+            logger.info(f"Reached end_time cutoff ({end_time}s), stopping stream")
+            break
+
         processed += 1
 
         prev_wickets = detector.get_last_wickets()
