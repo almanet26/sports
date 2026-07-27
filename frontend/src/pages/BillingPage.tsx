@@ -8,6 +8,7 @@ import {
   PLAN_DISPLAY_CONFIG,
   PLANS_FULL_CONFIG,
   TIER_HIERARCHY,
+  getPlanDisplay,
   type PlanConfig,
   type SubscriptionStatus,
 } from '../types/plans';
@@ -99,7 +100,7 @@ export default function BillingPage() {
   );
   const colCount     = visiblePlans.length + 1; // +1 for the label column
 
-  const planDisplay  = PLAN_DISPLAY_CONFIG[subscriptionTier];
+  const planDisplay  = getPlanDisplay(subscriptionTier);
   const isForeverTier = subscriptionTier === 'bronze' || subscriptionTier === 'coach_basic';
 
   const daysRemaining = !isForeverTier && expiresAt
@@ -313,7 +314,7 @@ export default function BillingPage() {
             <div className="p-4" />
             {visiblePlans.map((plan) => {
               const isCurrent = plan.role === subscriptionTier;
-              const isHigher  = TIER_HIERARCHY[plan.role] > TIER_HIERARCHY[subscriptionTier];
+              const isHigher  = TIER_HIERARCHY[plan.role] > (TIER_HIERARCHY[subscriptionTier] ?? -1);
 
               return (
                 <div

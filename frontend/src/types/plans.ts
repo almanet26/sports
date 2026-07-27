@@ -19,6 +19,7 @@ export {
   PLAN_DISPLAY_CONFIG,
   PLANS_FULL_CONFIG,
   getNextTier,
+  getPlanDisplay,
 } from './subscriptionPlans';
 
 import { FEATURE_MAP, type AccountType, type FeatureKey, type Tier } from './subscriptionPlans';
