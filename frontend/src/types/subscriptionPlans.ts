@@ -18,13 +18,28 @@ export const TIER_HIERARCHY: Record<Tier, number> = {
   coach_platinum: 3,
 };
 
-// The next paid tier up from `currentTier`, staying on the same track (player: bronze → silver → gold; coach: coach_basic → coach_platinum). Returns null once already on the top tier of that track.
+// The next paid tier up from `currentTier`, staying on the same track (player: bronze → silver → gold; coach: coach_basic → coach_platinum). Returns null once already on the top tier of that track, or if `currentTier` isn't one of the known static tiers (e.g. a custom plan key from the entitlement engine).
 export function getNextTier(currentTier: Tier): Tier | null {
-  const track = PLAN_DISPLAY_CONFIG[currentTier].account_type;
+  const track = PLAN_DISPLAY_CONFIG[currentTier]?.account_type;
+  if (!track) return null;
   const higher = (Object.keys(PLAN_DISPLAY_CONFIG) as Tier[])
     .filter((t) => PLAN_DISPLAY_CONFIG[t].account_type === track && TIER_HIERARCHY[t] > TIER_HIERARCHY[currentTier])
     .sort((a, b) => TIER_HIERARCHY[a] - TIER_HIERARCHY[b]);
   return higher[0] ?? null;
+}
+
+// Safe accessor for PLAN_DISPLAY_CONFIG: `subscriptionTier` is typed as `Tier` but at runtime can be any plan key created via the admin entitlement-engine panel, which won't have a static entry here. Falls back to a generic display using the raw key instead of letting `PLAN_DISPLAY_CONFIG[tier]` be `undefined`.
+export function getPlanDisplay(tier: string): PlanDisplayInfo {
+  return (
+    PLAN_DISPLAY_CONFIG[tier as Tier] ?? {
+      displayName:  tier,
+      priceInr:     0,
+      billingCycle: '',
+      topFeatures:  ['', '', ''],
+      planKey:      tier,
+      account_type: 'PLAYER',
+    }
+  );
 }
 
 export type FeatureKey =
