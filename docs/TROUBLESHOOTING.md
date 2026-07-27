@@ -12,6 +12,7 @@ Common issues and solutions for development, deployment, and production.
 4. GCP/Cloud Issues
 5. Video Processing Issues
 6. Authentication Issues
+7. Admin & Entitlements Issues
 
 ---
 
@@ -216,6 +217,41 @@ ffprobe -v error video.mp4
 
 # 3. Re-encode if corrupted
 ffmpeg -i input_video.mp4 -c:v libx264 -crf 23 output_video.mp4
+```
+
+---
+
+### ❌ Custom trim/timeline (`start_time`/`end_time`) ignored during OCR processing
+
+**Symptoms:**
+```
+Job takes as long as the full video even though a trimmed window was requested
+Clips appear from outside the requested start/end range
+```
+
+**Cause:** `start_time`/`end_time`/`padding_before`/`padding_after` are passed as a free-form `config` dict (`JobTriggerRequest.config` in `backend/schemas/video.py`) — a missing key, wrong type (string vs number), or a value from a stale frontend build silently falls back to scanning/trimming the whole video.
+
+**Solutions:**
+
+```bash
+# 1. Confirm the trigger payload actually contains numeric trim fields
+POST /api/v1/jobs/trigger
+{
+  "video_id": "video-uuid",
+  "config": { "start_time": 120, "end_time": 900, "padding_before": 12, "padding_after": 10 }
+}
+
+# 2. Check the resolved trim values in ocr_engine.py logs
+# preprocess_video() logs elapsed re-encode time — a near-full-length
+# re-encode means trim_start/trim_end weren't applied (ocr_engine.py ~line 106-143)
+
+# 3. Verify JobConfig actually parsed the values
+# ocr_engine.py ~line 1949-1966: trim_start/trim_end are read from
+# config.start_time / config.end_time — confirm these aren't None
+
+# 4. For the YouTube upload UI specifically, confirm UploadPage.tsx is
+# sending paddingBeforeSeconds/paddingAfterSeconds (only sent if defined —
+# an undefined value is silently omitted from the request body)
 ```
 
 ---
@@ -587,6 +623,61 @@ tail -f backend/logs/ocr_engine.log
 
 ---
 
+### ❌ Resumable upload stuck / never reaches 100% (local dev)
+
+**Symptoms:**
+```
+UpChunk keeps retrying the same chunk
+Upload never finalizes; no error surfaces in the UI
+```
+
+**Cause:** In local dev (no GCS bucket configured, `GCS_AVAILABLE=false`), `/resumable-session` returns a **local** resumable URL that mimics GCS's chunked-PUT protocol (`backend/api/routes/storage.py`, `local_resumable_upload`). This local stand-in expects chunks to arrive **sequentially** with a `Content-Range: bytes start-end/total` header and returns `308` until all bytes are received — if a chunk is retried out of order, or `storage/uploads/` isn't writable, the byte count never reaches `total`.
+
+**Solutions:**
+
+```bash
+# 1. Check backend logs for the running byte count
+# "Local resumable upload complete: <path> (<bytes> bytes)" only logs once fully received
+
+# 2. Verify storage/uploads/ exists and is writable
+ls -la backend/storage/uploads
+
+# 3. Confirm the request is actually hitting the local fallback and not
+# silently trying to reach a real GCS session URI
+# (GCS_AVAILABLE=false should log "Local resumable session created (GCS unavailable)")
+
+# 4. If testing the real GCS signed-URL flow instead, set GCS_BUCKET_NAME
+# and GOOGLE_APPLICATION_CREDENTIALS so /resumable-session returns a real
+# GCS session_uri instead of the local fallback
+```
+
+---
+
+### ❌ YouTube timeline/padding options don't change the generated clips
+
+**Symptoms:**
+```
+Clips are the same length regardless of the padding sliders in UploadPage
+OCR scans the entire video instead of the selected timeline segment
+```
+
+**Cause:** Padding/timeline fields are optional and only included in the request when explicitly set (`frontend/src/pages/UploadPage.tsx`); if the value is `undefined` (e.g. slider never touched, or reset by a re-render), it's silently dropped from the payload and the backend falls back to defaults (`padding_before=12, padding_after=10` in `backend/api/routes/storage.py`, `_process_submission_ocr_fallback`).
+
+**Solutions:**
+
+```bash
+# 1. Inspect the actual request body in DevTools → Network for the
+# /jobs/trigger or upload-confirm call — confirm padding_before/
+# padding_after/start_time/end_time are present, not omitted
+
+# 2. Re-select the timeline range in the UI before submitting; a stale
+# state from a previous upload attempt may not carry over
+
+# 3. Check backend/services/ocr_task.py received the same values it was sent
+```
+
+---
+
 ## 6. Authentication Issues
 
 ### ❌ "Invalid JWT token" or "Token expired"
@@ -673,6 +764,63 @@ POST /api/v1/auth/register
 
 ---
 
+## 7. Admin & Entitlements Issues
+
+### ❌ Admin dashboard shows stale/hardcoded plan data
+
+**Symptoms:**
+```
+A plan created/edited in the admin panel doesn't appear (or shows old values)
+New plan keys are missing from AdminUsersPage filters
+```
+
+**Cause:** The admin dashboard fetches plans dynamically from the entitlement engine (`backend/api/routes/admin_plans.py`, mounted under `/admin`) rather than a hardcoded plan list — a stale value usually means the frontend cached an old response, the entitlement cache TTL hasn't expired yet, or the plan wasn't actually committed on the backend.
+
+**Solutions:**
+
+```bash
+# 1. Hard refresh the admin dashboard (cached fetch, not a hardcoded value)
+# DevTools → Network → Disable cache, or Ctrl+Shift+R
+
+# 2. Confirm the plan exists via the API directly
+curl -H "Authorization: Bearer <admin_token>" http://localhost:8000/api/v1/admin/plans
+
+# 3. Check the plan/entitlement rows were actually committed
+psql -U postgres -d sports_dev -c "SELECT id, key, name FROM plans;"
+psql -U postgres -d sports_dev -c "SELECT * FROM plan_entitlements;"
+
+# 4. Every admin mutation should invalidate the entitlement cache
+# (services/entitlement_service.py) — if a change still doesn't show up
+# after a hard refresh, check that invalidation actually fired in the logs
+```
+
+---
+
+### ❌ New user filters on AdminUsersPage return nothing
+
+**Symptoms:**
+```
+Filtering by plan/role in the admin Users page returns an empty list
+even though matching users exist
+```
+
+**Cause:** The `?plan=` filter on `GET /admin/users` (`backend/api/routes/admin.py`, `list_users`) matches against each user's **active subscription's** `plan_key` (`subscriptions.plan_key`), not a static field on the user row — a user with no active subscription, or one whose plan key doesn't exactly match (e.g. an old tier name like `pro` instead of `coach_platinum`), will never match.
+
+**Solutions:**
+
+```bash
+# 1. Confirm the plan key used in the filter matches an existing plan's key
+curl -H "Authorization: Bearer <admin_token>" http://localhost:8000/api/v1/admin/plans
+
+# 2. Check the user's actual active subscription in the DB
+psql -U postgres -d sports_dev -c "SELECT plan_key, status FROM subscriptions WHERE user_id = '<user_id>' ORDER BY created_at DESC LIMIT 1;"
+
+# 3. Re-run the filter with the exact plan key, not a display label —
+# users with no active subscription won't match any `plan` filter
+```
+
+---
+
 ## 📞 Getting More Help
 
 1. **Check logs:** `tail -f backend/logs/*.log`
@@ -682,4 +830,4 @@ POST /api/v1/auth/register
 
 ---
 
-**Last Updated:** March 16, 2026
+**Last Updated:** July 27, 2026
