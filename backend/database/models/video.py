@@ -177,8 +177,10 @@ class HighlightJob(Base):
     
     # Results
     events_detected = Column(JSON, nullable=True)  # Array of event dicts
-    supercut_path = Column(String(500), nullable=True)
-    
+    supercut_path = Column(String(500), nullable=True)  # Combined reel (all events)
+    boundaries_supercut_path = Column(String(500), nullable=True)  # Batting highlights: FOUR + SIX events only
+    wickets_supercut_path = Column(String(500), nullable=True)  # Bowling highlights: WICKET events only
+
     # Error handling
     error_message = Column(Text, nullable=True)
     retry_count = Column(Integer, default=0)
@@ -205,6 +207,8 @@ class HighlightJob(Base):
             "ocr_success_rate": self.ocr_success_rate,
             "events_detected": self.events_detected,
             "supercut_path": self.supercut_path,
+            "boundaries_supercut_path": self.boundaries_supercut_path,
+            "wickets_supercut_path": self.wickets_supercut_path,
             "error_message": self.error_message,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "started_at": self.started_at.isoformat() if self.started_at else None,

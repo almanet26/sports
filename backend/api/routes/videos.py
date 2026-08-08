@@ -498,6 +498,8 @@ def list_all_videos(
             created_at=v.created_at,
             file_path=v.file_path,
             supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+            boundaries_supercut_path=v.highlight_job.boundaries_supercut_path if v.highlight_job else None,
+            wickets_supercut_path=v.highlight_job.wickets_supercut_path if v.highlight_job else None,
         ) for v in videos],
         total=total,
         page=page,
@@ -546,6 +548,8 @@ def list_public_videos(
             created_at=v.created_at,
             file_path=v.file_path,
             supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+            boundaries_supercut_path=v.highlight_job.boundaries_supercut_path if v.highlight_job else None,
+            wickets_supercut_path=v.highlight_job.wickets_supercut_path if v.highlight_job else None,
         ) for v in videos],
         total=total,
         page=page,
@@ -596,6 +600,8 @@ def list_private_videos(
             created_at=v.created_at,
             file_path=v.file_path,
             supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+            boundaries_supercut_path=v.highlight_job.boundaries_supercut_path if v.highlight_job else None,
+            wickets_supercut_path=v.highlight_job.wickets_supercut_path if v.highlight_job else None,
         ) for v in videos],
         total=total,
         page=page,
@@ -642,6 +648,8 @@ def list_my_videos(
                 created_at=v.created_at,
                 file_path=v.file_path,
                 supercut_path=v.highlight_job.supercut_path if v.highlight_job else None,
+                boundaries_supercut_path=v.highlight_job.boundaries_supercut_path if v.highlight_job else None,
+                wickets_supercut_path=v.highlight_job.wickets_supercut_path if v.highlight_job else None,
             )
             for v in videos
         ],
@@ -678,10 +686,14 @@ def get_video(
         if video.uploaded_by != current_user.id and current_user.role != "ADMIN":
             raise HTTPException(status_code=403, detail="Access denied")
 
-    # Get supercut_path from highlight_job if available
+    # Get supercut paths from highlight_job if available
     supercut_path = None
-    if video.highlight_job and video.highlight_job.supercut_path:
+    boundaries_supercut_path = None
+    wickets_supercut_path = None
+    if video.highlight_job:
         supercut_path = video.highlight_job.supercut_path
+        boundaries_supercut_path = video.highlight_job.boundaries_supercut_path
+        wickets_supercut_path = video.highlight_job.wickets_supercut_path
 
     return VideoResponse(
         id=video.id,
@@ -701,6 +713,8 @@ def get_video(
         created_at=video.created_at,
         file_path=video.file_path,
         supercut_path=supercut_path,
+        boundaries_supercut_path=boundaries_supercut_path,
+        wickets_supercut_path=wickets_supercut_path,
     )
 
 
@@ -766,20 +780,24 @@ def stream_video(
 @router.get("/{video_id}/supercut")
 def stream_supercut(
     video_id: str,
+    kind: str = Query("highlights", description="Which reel to stream: highlights (combined), boundaries (4s/6s), or wickets"),
 ):
     """
-    Stream the generated highlight supercut video.
+    Stream a generated highlight reel video.
 
     **Access Control:**
     - Public videos: accessible to all (no auth required)
     - Private videos: require authentication (use /stream endpoint with auth)
 
     **Status:**
-    - 404 if supercut not yet generated (processing still in progress)
+    - 404 if the requested reel hasn't been generated (processing still in progress, or this video has no events of the requested type)
 
     Note: Database session is managed manually to prevent connection
     timeout during long video streams.
     """
+    if kind not in ("highlights", "boundaries", "wickets"):
+        raise HTTPException(status_code=400, detail="kind must be one of: highlights, boundaries, wickets")
+
     # Manually manage DB session to close before streaming
     from database.config import SessionLocal
     db = SessionLocal()
@@ -796,13 +814,18 @@ def stream_supercut(
             raise HTTPException(
                 status_code=401, detail="Authentication required for private videos")
 
-        # Check if highlight job exists and has supercut
-        if not video.highlight_job or not video.highlight_job.supercut_path:
+        reel_path_by_kind = {
+            "highlights": video.highlight_job.supercut_path if video.highlight_job else None,
+            "boundaries": video.highlight_job.boundaries_supercut_path if video.highlight_job else None,
+            "wickets": video.highlight_job.wickets_supercut_path if video.highlight_job else None,
+        }
+        supercut_path_str = reel_path_by_kind[kind]
+
+        if not supercut_path_str:
             raise HTTPException(
-                status_code=404, detail="Supercut not yet generated. Processing may still be in progress.")
+                status_code=404, detail=f"'{kind}' reel not available for this video.")
 
         # Extract needed data before closing session
-        supercut_path_str = video.highlight_job.supercut_path
         video_title = video.title
     finally:
         db.close()
@@ -820,7 +843,7 @@ def stream_supercut(
     return FileResponse(
         path=str(supercut_path),
         media_type="video/mp4",
-        filename=f"{video_title}_highlights.mp4",
+        filename=f"{video_title}_{kind}.mp4",
         headers={
             "Accept-Ranges": "bytes",
             "Cache-Control": "no-cache, no-store, must-revalidate",

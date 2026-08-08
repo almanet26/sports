@@ -54,6 +54,8 @@ class VideoResponse(BaseModel):
     duration_seconds: Optional[int]
     file_path: Optional[str] = None
     supercut_path: Optional[str] = None
+    boundaries_supercut_path: Optional[str] = None
+    wickets_supercut_path: Optional[str] = None
     match_date: Optional[datetime]
     teams: Optional[str]
     venue: Optional[str]
@@ -128,6 +130,8 @@ class JobResultResponse(BaseModel):
     status: str
     events_detected: Optional[List[dict]]
     supercut_path: Optional[str]
+    boundaries_supercut_path: Optional[str] = None
+    wickets_supercut_path: Optional[str] = None
     ocr_success_rate: Optional[float]
     completed_at: Optional[datetime]
 

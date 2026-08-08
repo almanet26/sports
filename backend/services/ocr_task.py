@@ -105,17 +105,20 @@ def resolve_video_source(video_path: str) -> tuple[str, bool]:
     return video_path, False
 
 
-def _store_supercut(video_id: str, local_supercut_path: str) -> str:
-    """Persist final supercut and return URL/path stored in DB."""
+def _store_supercut(video_id: str, local_supercut_path: str, kind: str = "highlights") -> str:
+    """Persist a generated supercut and return the URL/path stored in DB.
+
+    ``kind`` distinguishes the combined reel ("highlights", the default - kept for backward compatibility with existing stored paths) from the split batting ("boundaries") and bowling ("wickets") reels.
+    """
     if _gcs_bucket is not None:
-        highlight_blob = f"highlights/{video_id}_highlights.mp4"
+        highlight_blob = f"highlights/{video_id}_{kind}.mp4"
         blob = _gcs_bucket.blob(highlight_blob)
         blob.upload_from_filename(local_supercut_path)
         return f"https://storage.googleapis.com/{GCS_BUCKET_NAME}/{highlight_blob}"
 
     highlight_dir = Path("storage/highlight")
     highlight_dir.mkdir(parents=True, exist_ok=True)
-    filename = f"{video_id}_highlights.mp4"
+    filename = f"{video_id}_{kind}.mp4"
     target = highlight_dir / filename
     with open(local_supercut_path, "rb") as src, open(target, "wb") as dst:
         dst.write(src.read())
@@ -320,20 +323,58 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
         # temporary clips only inside a transient work directory.
         clip_before = config.get('padding_before', 12) if config else 12
         clip_after = config.get('padding_after', 8) if config else 8
+        use_parallel_clips = config.get('parallel_clips', True) if config else True
 
         logger.info(f"Extracting clips with padding: before={clip_before}s, after={clip_after}s")
+
+        # Batting highlights = FOUR/SIX events, bowling highlights = WICKET events - generated as separate reels alongside the existing combined supercut.
+        boundary_events = [e for e in events if e['type'] in ('FOUR', 'SIX')]
+        wicket_events = [e for e in events if e['type'] == 'WICKET']
+
+        def _extract_reel(event_subset: List[Dict], output_root: Path, kind: str) -> Optional[str]:
+            """Extract clips for a filtered subset of events and stitch them into a separately stored reel."""
+            if not event_subset:
+                return None
+
+            reel_clips_dir = output_root / f"clips_{kind}"
+            reel_clips_dir.mkdir(parents=True, exist_ok=True)
+
+            if use_parallel_clips and len(event_subset) > 5:
+                reel_clips = extract_clips_parallel(
+                    video_path=video_source,
+                    events=event_subset,
+                    output_dir=str(reel_clips_dir),
+                    before=clip_before,
+                    after=clip_after,
+                    max_workers=4
+                )
+            else:
+                reel_clips = extract_clips(
+                    video_path=video_source,
+                    events=event_subset,
+                    output_dir=str(reel_clips_dir),
+                    before=clip_before,
+                    after=clip_after,
+                )
+
+            if not reel_clips:
+                return None
+
+            reel_tmp = output_root / f"{video_id}_{kind}.mp4"
+            reel_local = create_supercut(reel_clips, str(reel_tmp))
+            return _store_supercut(video_id, reel_local, kind=kind) if reel_local else None
 
         clips: List[str] = []
         supercut_path: str | None = None
         supercut_duration_seconds: Optional[int] = None
+        boundaries_supercut_path: str | None = None
+        wickets_supercut_path: str | None = None
         with tempfile.TemporaryDirectory(prefix=f"ocr_{video_id}_") as work_dir:
-            clips_dir = Path(work_dir) / "clips"
+            work_root = Path(work_dir)
+            clips_dir = work_root / "clips"
             clips_dir.mkdir(parents=True, exist_ok=True)
 
             if events:
-                # Use parallel clip extraction for better performance
-                use_parallel_clips = config.get('parallel_clips', True) if config else True
-                
                 if use_parallel_clips and len(events) > 5:
                     logger.info("Using PARALLEL clip extraction")
                     clips = extract_clips_parallel(
@@ -356,11 +397,14 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
 
             # Create final supercut in the temp workspace and persist only the final artifact.
             if clips:
-                supercut_tmp = Path(work_dir) / f"{video_id}_highlights.mp4"
+                supercut_tmp = work_root / f"{video_id}_highlights.mp4"
                 supercut_local = create_supercut(clips, str(supercut_tmp))
                 if supercut_local:
                     supercut_duration_seconds = probe_video_duration_seconds(supercut_local)
                     supercut_path = _store_supercut(video_id, supercut_local)
+
+            boundaries_supercut_path = _extract_reel(boundary_events, work_root, "boundaries")
+            wickets_supercut_path = _extract_reel(wicket_events, work_root, "wickets")
         
         job.progress_percent = 80
         
@@ -414,6 +458,8 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
         job.completed_at = datetime.utcnow()
         job.events_detected = events
         job.supercut_path = supercut_path
+        job.boundaries_supercut_path = boundaries_supercut_path
+        job.wickets_supercut_path = wickets_supercut_path
 
         # Optional transient-source cleanup: keep only generated highlight artifact.
         if config and config.get("delete_source_after_processing") and source_video_path:
@@ -451,7 +497,9 @@ def run_ocr_processing(video_id: str, config: Optional[Dict] = None) -> None:
             job.completed_at = datetime.utcnow()
             job.events_detected = events
             job.supercut_path = supercut_path
-        
+            job.boundaries_supercut_path = boundaries_supercut_path
+            job.wickets_supercut_path = wickets_supercut_path
+
         db.commit()
         
         logger.info(f"Completed OCR processing for video {video_id}: "
