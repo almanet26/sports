@@ -23,6 +23,8 @@ interface VideoDetail {
   created_at: string;
   file_path?: string;
   supercut_path?: string;
+  boundaries_supercut_path?: string;
+  wickets_supercut_path?: string;
 }
 
 interface HighlightEvent {
@@ -36,6 +38,8 @@ interface HighlightEvent {
 }
 
 type EventFilter = 'all' | 'FOUR' | 'SIX' | 'WICKET';
+
+type ReelKind = 'all' | 'boundaries' | 'wickets';
 
 type Point = { x: number; y: number };
 
@@ -52,6 +56,7 @@ export default function VideoDetailPage() {
   const [annotations, setAnnotations] = useState<VideoAnnotation[]>([]);
   const [loading, setLoading] = useState(true);
   const [eventFilter, setEventFilter] = useState<EventFilter>('all');
+  const [activeReel, setActiveReel] = useState<ReelKind>('all');
   const [drawMode, setDrawMode] = useState(false);
   const [isDrawing, setIsDrawing] = useState(false);
   const [draft, setDraft] = useState<DrawingDraft>({ points: [], color: '#f59e0b', label: '' });
@@ -123,9 +128,16 @@ export default function VideoDetailPage() {
     };
   }, [videoId, eventFilter]);
 
-  const getSupercutPlaybackUrl = (item: VideoDetail): string => {
-    if (!item.supercut_path) return videosApi.getSupercutUrl(item.id);
-    return resolveMediaUrl(item.supercut_path);
+  const getReelPath = (item: VideoDetail, reel: ReelKind): string | undefined => {
+    if (reel === 'boundaries') return item.boundaries_supercut_path;
+    if (reel === 'wickets') return item.wickets_supercut_path;
+    return item.supercut_path;
+  };
+
+  const getReelPlaybackUrl = (item: VideoDetail, reel: ReelKind): string => {
+    const path = getReelPath(item, reel);
+    if (!path) return videosApi.getSupercutUrl(item.id, reel === 'all' ? 'highlights' : reel);
+    return resolveMediaUrl(path);
   };
 
 
@@ -411,24 +423,37 @@ export default function VideoDetailPage() {
         <div ref={videoWrapRef} className="aspect-video bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
           {/* Ambient background effect */}
           <div className="absolute inset-0 bg-gradient-to-br from-blue-500/10 via-purple-500/5 to-pink-500/10 animate-gradient"></div>
-          {video.supercut_path ? (
+
+          {(video.boundaries_supercut_path || video.wickets_supercut_path) && (
+            <div className="absolute top-4 left-4 z-30 flex items-center gap-1 rounded-2xl border border-white/15 bg-slate-950/80 p-1 backdrop-blur">
+              {([
+                { key: 'all', label: 'All Highlights' },
+                { key: 'boundaries', label: '4s & 6s' },
+                { key: 'wickets', label: 'Wickets' },
+              ] as { key: ReelKind; label: string }[]).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => setActiveReel(key)}
+                  className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors ${
+                    activeReel === key ? 'bg-blue-500 text-white' : 'text-white/60 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {getReelPath(video, activeReel) || (activeReel === 'all' && video.status === 'completed') ? (
             <video
+              key={activeReel}
               className="w-full h-full relative z-10"
               controls
               preload="metadata"
-              src={getSupercutPlaybackUrl(video)}
+              src={getReelPlaybackUrl(video, activeReel)}
             >
-              <source src={getSupercutPlaybackUrl(video)} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          ) : video.status === 'completed' ? (
-            <video
-              className="w-full h-full relative z-10"
-              controls
-              preload="metadata"
-              src={videosApi.getStreamUrl(video.id)}
-            >
-              <source src={videosApi.getStreamUrl(video.id)} type="video/mp4" />
+              <source src={getReelPlaybackUrl(video, activeReel)} type="video/mp4" />
               Your browser does not support the video tag.
             </video>
           ) : video.status === 'processing' ? (
@@ -443,6 +468,17 @@ export default function VideoDetailPage() {
               <div className="mt-4 flex items-center gap-2 text-sm text-white/40">
                 <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
                 Analyzing video content
+              </div>
+            </div>
+          ) : activeReel !== 'all' ? (
+            <div className="w-full h-full flex items-center justify-center relative z-10">
+              <div className="text-center">
+                <div className="w-20 h-20 mx-auto mb-4 rounded-2xl bg-gradient-to-br from-slate-700 to-slate-800 flex items-center justify-center">
+                  <Play className="w-10 h-10 text-slate-500" />
+                </div>
+                <p className="text-white/60 font-medium">
+                  No {activeReel === 'boundaries' ? 'boundary (4s/6s)' : 'wicket'} highlights in this video
+                </p>
               </div>
             </div>
           ) : (
@@ -571,17 +607,17 @@ export default function VideoDetailPage() {
               </div>
             </div>
             
-            {/* Download Supercut Button */}
-            {video.supercut_path && (
+            {/* Download Reel Button */}
+            {getReelPath(video, activeReel) && (
               <motion.a
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
-                href={getSupercutPlaybackUrl(video)}
-                download={`${video.title}_highlights.mp4`}
+                href={getReelPlaybackUrl(video, activeReel)}
+                download={`${video.title}_${activeReel === 'all' ? 'highlights' : activeReel}.mp4`}
                 className="flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-blue-500/30"
               >
                 <Download className="w-5 h-5" />
-                Download Highlights
+                Download {activeReel === 'all' ? 'Highlights' : activeReel === 'boundaries' ? '4s & 6s' : 'Wickets'}
               </motion.a>
             )}
           </div>

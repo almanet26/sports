@@ -296,9 +296,9 @@ export const videosApi = {
   getStreamUrl: (videoId: string) => 
     `${API_BASE_URL}/api/v1/videos/${videoId}/stream`,
   
-  // Get supercut stream URL (for highlight reel)
-  getSupercutUrl: (videoId: string) => 
-    `${API_BASE_URL}/api/v1/videos/${videoId}/supercut`,
+  // Get supercut stream URL (for highlight reel). `kind` selects the combined reel (default), the batting reel (4s/6s only), or the bowling reel (wickets only).
+  getSupercutUrl: (videoId: string, kind: 'highlights' | 'boundaries' | 'wickets' = 'highlights') =>
+    `${API_BASE_URL}/api/v1/videos/${videoId}/supercut?kind=${kind}`,
 };
 
 export const annotationsApi = {

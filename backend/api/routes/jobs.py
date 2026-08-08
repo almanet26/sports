@@ -159,6 +159,8 @@ async def trigger_ocr_job(
         existing_job.error_message = None
         existing_job.events_detected = None
         existing_job.supercut_path = None
+        existing_job.boundaries_supercut_path = None
+        existing_job.wickets_supercut_path = None
         job = existing_job
     else:
         job = HighlightJob(
@@ -372,6 +374,8 @@ def get_job_result(
         status=job.status,
         events_detected=job.events_detected,
         supercut_path=job.supercut_path,
+        boundaries_supercut_path=job.boundaries_supercut_path,
+        wickets_supercut_path=job.wickets_supercut_path,
         ocr_success_rate=job.ocr_success_rate,
         completed_at=job.completed_at,
     )
